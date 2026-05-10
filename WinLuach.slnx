@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="WinLuach/WinLuach.vcxproj" Id="114a9e15-02df-4cd2-93a1-121eb6a30ca2" />
+</Solution>
