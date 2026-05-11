@@ -109,6 +109,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_TRAY_OPEN, &CMainFrame::RestoreFromTray)
     ON_COMMAND(ID_TRAY_ABOUT, &CMainFrame::OnHelpAbout)
     ON_COMMAND(ID_TRAY_EXIT, &CMainFrame::OnTrayExit)
+    ON_COMMAND(ID_JUMP_GO, &CMainFrame::OnJumpGo)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -222,6 +223,34 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     m_pZmanim->Create(nullptr, nullptr,
         WS_CHILD | WS_VISIBLE,
         CRect(0, 0, 100, 100), this, 1003);
+
+    // Navigation buttons in the header bar
+    const DWORD btnStyle = WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON;
+    CRect r(0, 0, 64, 28);
+    m_btnPrevDecade.Create(L"«Decade", btnStyle, r, this, ID_VIEW_PREVDECADE);
+    m_btnPrevYear  .Create(L"« Year",  btnStyle, r, this, ID_VIEW_PREVYEAR);
+    m_btnPrevMonth .Create(L"« Month", btnStyle, r, this, ID_VIEW_PREVMONTH);
+    m_btnPrevDay   .Create(L"« Day",   btnStyle, r, this, ID_VIEW_PREVDAY);
+    m_btnToday     .Create(L"Today",   btnStyle, r, this, ID_VIEW_TODAY);
+    m_btnNextDay   .Create(L"Day »",   btnStyle, r, this, ID_VIEW_NEXTDAY);
+    m_btnNextMonth .Create(L"Month »", btnStyle, r, this, ID_VIEW_NEXTMONTH);
+    m_btnNextYear  .Create(L"Year »",  btnStyle, r, this, ID_VIEW_NEXTYEAR);
+    m_btnNextDecade.Create(L"Decade»", btnStyle, r, this, ID_VIEW_NEXTDECADE);
+
+    CFont* pSF = &m_fontSmall;
+    m_btnPrevDecade.SetFont(pSF);  m_btnPrevYear.SetFont(pSF);
+    m_btnPrevMonth .SetFont(pSF);  m_btnPrevDay .SetFont(pSF);
+    m_btnToday     .SetFont(pSF);
+    m_btnNextDay   .SetFont(pSF);  m_btnNextMonth.SetFont(pSF);
+    m_btnNextYear  .SetFont(pSF);  m_btnNextDecade.SetFont(pSF);
+
+    // Month quick-jump edit and Go button
+    m_editJump.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_CENTER | ES_AUTOHSCROLL,
+        CRect(0, 0, 180, 24), this, IDC_JUMP_EDIT);
+    m_editJump.SetFont(&m_fontNormal);
+    m_btnGo.Create(L"Go", btnStyle, CRect(0, 0, 40, 24), this, ID_JUMP_GO);
+    m_btnGo.SetFont(pSF);
+    UpdateJumpField();
 
     RefreshZmanim();
     RefreshWebCalendarEvents();
@@ -339,9 +368,49 @@ void CMainFrame::LayoutPanels(int cx, int cy)
 {
     if (!m_pCalView || !m_pSidebar || !m_pZmanim) return;
 
+    int calTop = HEADER_H + DAY_HDR_H;
+    int calH   = cy - ZMANIM_H - calTop;
+    if (calH < 0) calH = 0;
+
     m_pSidebar->MoveWindow(0, 0, SIDEBAR_W, cy - ZMANIM_H);
-    m_pZmanim->MoveWindow(0, cy - ZMANIM_H, cx, ZMANIM_H);
-    m_pCalView->MoveWindow(SIDEBAR_W, 0, cx - SIDEBAR_W, cy - ZMANIM_H);
+    m_pZmanim ->MoveWindow(0, cy - ZMANIM_H, cx, ZMANIM_H);
+    m_pCalView->MoveWindow(SIDEBAR_W, calTop, cx - SIDEBAR_W, calH);
+
+    // ── Navigation buttons (top strip, y=0..38) ──────────────────────────────
+    if (m_btnPrevDecade.GetSafeHwnd())
+    {
+        const int BTN_W = 64, BTN_H = 28, GAP = 4;
+        int totalW = 9 * BTN_W + 8 * GAP;
+        int availW = cx - SIDEBAR_W;
+        int startX = SIDEBAR_W + max(4, (availW - totalW) / 2);
+        int btnY   = (38 - BTN_H) / 2;
+
+        auto place = [&](CButton& b) {
+            b.MoveWindow(startX, btnY, BTN_W, BTN_H);
+            startX += BTN_W + GAP;
+        };
+        place(m_btnPrevDecade);
+        place(m_btnPrevYear);
+        place(m_btnPrevMonth);
+        place(m_btnPrevDay);
+        place(m_btnToday);
+        place(m_btnNextDay);
+        place(m_btnNextMonth);
+        place(m_btnNextYear);
+        place(m_btnNextDecade);
+    }
+
+    // ── Jump edit + Go (date display row, y=38..84) ───────────────────────────
+    if (m_editJump.GetSafeHwnd())
+    {
+        const int EDIT_W = 180, GO_W = 44, CTRL_H = 24;
+        int centerX = SIDEBAR_W + (cx - SIDEBAR_W) / 2;
+        int editX   = centerX - (EDIT_W + GO_W + 4) / 2;
+        int goX     = editX + EDIT_W + 4;
+        int ctrlY   = 38 + (46 - CTRL_H) / 2;
+        m_editJump.MoveWindow(editX, ctrlY, EDIT_W, CTRL_H);
+        m_btnGo   .MoveWindow(goX,   ctrlY, GO_W,   CTRL_H);
+    }
 
     Invalidate(FALSE);
 }
@@ -366,12 +435,17 @@ void CMainFrame::OnPaint()
 
 void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
 {
-    pDC->FillSolidRect(rc, CLR_HEADER_BG);
+    // Top 38 px: nav-button strip (darker navy)
+    CRect rcNav(rc.left, rc.top, rc.right, rc.top + 38);
+    pDC->FillSolidRect(rcNav, RGB(35, 60, 115));
 
-    GregorianDate first;
-    GregorianDate last;
-    CString gregStr;
-    CString hebFull;
+    // Bottom 46 px: date-label strip (blue)
+    CRect rcDate(rc.left, rc.top + 38, rc.right, rc.bottom);
+    pDC->FillSolidRect(rcDate, CLR_HEADER_BG);
+
+    // Build date strings
+    GregorianDate first, last;
+    CString gregStr, hebFull;
 
     if (m_hebrewMonthView)
     {
@@ -379,7 +453,7 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
         HebrewDate hLast(m_viewHebrewYear, m_viewHebrewMonth,
             DaysInHebrewMonth(m_viewHebrewMonth, m_viewHebrewYear));
         first = HebrewToGregorian(hFirst);
-        last = HebrewToGregorian(hLast);
+        last  = HebrewToGregorian(hLast);
 
         hebFull.Format(L"%s  %d",
             HebrewMonthName(m_viewHebrewMonth,
@@ -388,46 +462,50 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
 
         std::wstring gregRange = GregorianMonthName(first.month);
         if (first.month != last.month)
-            gregRange += L" - " + GregorianMonthName(last.month);
+            gregRange += L" – " + GregorianMonthName(last.month);
         gregRange += L" " + std::to_wstring(first.year);
         if (first.year != last.year)
-            gregRange += L" - " + std::to_wstring(last.year);
+            gregRange += L" – " + std::to_wstring(last.year);
         gregStr = gregRange.c_str();
     }
     else
     {
         first = GregorianDate(m_viewYear, m_viewMonth, 1);
-        last = GregorianDate(m_viewYear, m_viewMonth,
+        last  = GregorianDate(m_viewYear, m_viewMonth,
             DaysInGregorianMonth(m_viewMonth, m_viewYear));
         gregStr.Format(L"%s %d",
             GregorianMonthName(m_viewMonth).c_str(), m_viewYear);
     }
 
     HebrewDate hFirst = GregorianToHebrew(first);
-    HebrewDate hLast = GregorianToHebrew(last);
+    HebrewDate hLast  = GregorianToHebrew(last);
 
-    std::wstring hebStr = HebrewMonthName(hFirst.month,
-        IsHebrewLeapYear(hFirst.year));
+    std::wstring hebStr = HebrewMonthName(hFirst.month, IsHebrewLeapYear(hFirst.year));
     if (hFirst.month != hLast.month)
-        hebStr += L" - " + HebrewMonthName(hLast.month,
-            IsHebrewLeapYear(hLast.year));
+        hebStr += L" – " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
 
     if (!m_hebrewMonthView)
     {
         hebFull.Format(L"%s  %d", hebStr.c_str(), hFirst.year);
         if (hFirst.year != hLast.year)
-            hebFull.AppendFormat(L" - %d", hLast.year);
+            hebFull.AppendFormat(L" – %d", hLast.year);
     }
 
+    // Draw labels in the date strip
     pDC->SelectObject(&m_fontHeader);
     pDC->SetTextColor(CLR_HEADER_TXT);
     pDC->SetBkMode(TRANSPARENT);
 
-    CRect rcLeft = rc;
-    rcLeft.right = rc.left + rc.Width() / 2;
-    rcLeft.left += 20;
-    pDC->DrawText(gregStr, rcLeft, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    pDC->DrawText(hebFull, (CRect)rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    int w = rcDate.Width();
+    CRect rcLeft = rcDate;
+    rcLeft.right = rcDate.left + w * 38 / 100;
+    rcLeft.left += 12;
+    pDC->DrawText(gregStr, rcLeft, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+    CRect rcRight = rcDate;
+    rcRight.left  = rcDate.left + w * 62 / 100;
+    rcRight.right -= 12;
+    pDC->DrawText(hebFull, rcRight, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 void CMainFrame::DrawDayHeaders(CDC* pDC, const CRect& rc)
@@ -498,6 +576,8 @@ void CMainFrame::ChangeMonth(int deltaMonths)
         while (m_viewMonth > 12) { m_viewMonth -= 12; m_viewYear++; }
     }
 
+    UpdateJumpField();
+
     if (m_pCalView)
     {
         m_pCalView->RebuildCells();
@@ -520,6 +600,8 @@ void CMainFrame::ChangeYear(int deltaYears)
     {
         m_viewYear += deltaYears;
     }
+
+    UpdateJumpField();
 
     if (m_pCalView)
     {
@@ -556,6 +638,7 @@ void CMainFrame::SelectDate(const GregorianDate& g)
     if (outsideView)
     {
         SyncViewToSelected();
+        UpdateJumpField();
         if (m_pCalView) m_pCalView->RebuildCells();
         Invalidate(FALSE);
     }
@@ -989,4 +1072,140 @@ void CMainFrame::OnHelpAbout()
         L"Built with C++ and MFC.",
         L"About WinLuach",
         MB_OK | MB_ICONINFORMATION);
+}
+
+// =============================================================================
+// JUMP FIELD
+// =============================================================================
+
+void CMainFrame::UpdateJumpField()
+{
+    if (!m_editJump.GetSafeHwnd()) return;
+    CString text;
+    if (m_hebrewMonthView)
+    {
+        text.Format(L"%s %d",
+            HebrewMonthName(m_viewHebrewMonth,
+                IsHebrewLeapYear(m_viewHebrewYear)).c_str(),
+            m_viewHebrewYear);
+    }
+    else
+    {
+        text.Format(L"%s %d",
+            GregorianMonthName(m_viewMonth).c_str(),
+            m_viewYear);
+    }
+    m_editJump.SetWindowText(text);
+}
+
+static int ParseGregMonth(const std::wstring& s)
+{
+    static const wchar_t* names[12] = {
+        L"january", L"february", L"march", L"april", L"may", L"june",
+        L"july", L"august", L"september", L"october", L"november", L"december"
+    };
+    std::wstring lower = s;
+    for (auto& c : lower) c = (wchar_t)towlower(c);
+    for (int i = 0; i < 12; i++)
+    {
+        if (lower == names[i]) return i + 1;
+        if (lower.size() >= 3 && std::wstring(names[i]).substr(0, 3) == lower.substr(0, 3))
+            return i + 1;
+    }
+    try { int m = std::stoi(s); if (m >= 1 && m <= 12) return m; } catch (...) {}
+    return 0;
+}
+
+static int ParseHebMonth(const std::wstring& s, bool isLeap)
+{
+    struct { const wchar_t* name; int m; } tbl[] = {
+        { L"tishrei",     TISHREI  }, { L"tishri",      TISHREI  }, { L"tishrey",     TISHREI  },
+        { L"cheshvan",    CHESHVAN }, { L"heshvan",     CHESHVAN }, { L"marcheshvan", CHESHVAN },
+        { L"kislev",      KISLEV   }, { L"kislef",      KISLEV   },
+        { L"tevet",       TEVET    },
+        { L"shvat",       SHVAT    }, { L"shevat",      SHVAT    }, { L"shvos",       SHVAT    },
+        { L"adar i",      ADAR     }, { L"adar 1",      ADAR     },
+        { L"adar ii",     ADAR_II  }, { L"adar 2",      ADAR_II  },
+        { L"adar",        ADAR     },
+        { L"nissan",      NISSAN   }, { L"nisan",       NISSAN   },
+        { L"iyar",        IYAR     }, { L"iyyar",       IYAR     },
+        { L"sivan",       SIVAN    },
+        { L"tammuz",      TAMMUZ   }, { L"tamuz",       TAMMUZ   },
+        { L"av",          AV       },
+        { L"elul",        ELUL     },
+        { nullptr, 0 }
+    };
+    std::wstring lower = s;
+    for (auto& c : lower) c = (wchar_t)towlower(c);
+    for (int i = 0; tbl[i].name; i++)
+        if (lower == tbl[i].name) return tbl[i].m;
+    return 0;
+}
+
+void CMainFrame::OnJumpGo()
+{
+    CString ctext;
+    m_editJump.GetWindowText(ctext);
+    std::wstring s = ctext.GetString();
+
+    auto trimFn = [](std::wstring& str) {
+        size_t f = str.find_first_not_of(L" \t\r\n");
+        if (f == std::wstring::npos) { str.clear(); return; }
+        str = str.substr(f, str.find_last_not_of(L" \t\r\n") - f + 1);
+    };
+    trimFn(s);
+    if (s.empty()) return;
+
+    size_t sp = s.rfind(L' ');
+    if (sp == std::wstring::npos) { MessageBeep(MB_ICONEXCLAMATION); return; }
+
+    int year = 0;
+    try { year = std::stoi(s.substr(sp + 1)); } catch (...) {}
+    if (year <= 0) { MessageBeep(MB_ICONEXCLAMATION); return; }
+
+    std::wstring monthStr = s.substr(0, sp);
+    trimFn(monthStr);
+
+    // Try Gregorian first
+    int gregMonth = ParseGregMonth(monthStr);
+    if (gregMonth > 0 && year >= 1 && year <= 9999)
+    {
+        m_viewYear  = year;
+        m_viewMonth = gregMonth;
+        m_hebrewMonthView = false;
+        if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
+        Invalidate(FALSE);
+        UpdateJumpField();
+        if (m_pCalView) m_pCalView->SetFocus();
+        return;
+    }
+
+    // Try Hebrew
+    bool isLeap  = IsHebrewLeapYear(year);
+    int hebMonth = ParseHebMonth(monthStr, isLeap);
+    if (hebMonth > 0)
+    {
+        if (hebMonth == ADAR_II && !isLeap) { MessageBeep(MB_ICONEXCLAMATION); return; }
+        m_viewHebrewYear  = year;
+        m_viewHebrewMonth = hebMonth;
+        m_hebrewMonthView = true;
+        if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
+        Invalidate(FALSE);
+        UpdateJumpField();
+        if (m_pCalView) m_pCalView->SetFocus();
+        return;
+    }
+
+    MessageBeep(MB_ICONEXCLAMATION);
+}
+
+BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
+{
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN &&
+        m_editJump.GetSafeHwnd() && pMsg->hwnd == m_editJump.GetSafeHwnd())
+    {
+        OnJumpGo();
+        return TRUE;
+    }
+    return CFrameWnd::PreTranslateMessage(pMsg);
 }
