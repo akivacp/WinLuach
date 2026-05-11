@@ -24,19 +24,22 @@ struct CalPrintOptions
 {
     enum Range { RANGE_MONTH = 0, RANGE_YEAR = 1, RANGE_12 = 2 };
 
-    Range range     = RANGE_MONTH;
-    bool  landscape = true;
-    float mTop      = 0.75f;
-    float mBot      = 0.75f;
-    float mLeft     = 0.50f;
-    float mRight    = 0.50f;
+    Range range         = RANGE_MONTH;
+    bool  landscape     = true;
+    float mTop          = 0.75f;
+    float mBot          = 0.75f;
+    float mLeft         = 0.50f;
+    float mRight        = 0.50f;
+    bool  includeZmanim = false;
 };
 
 // ── Free functions ────────────────────────────────────────────────────────────
 
 // Renders one calendar month nicely to any DC, filling rcPage.
+// When opts.includeZmanim is true, a weekly zmanim table is drawn below the grid.
 void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
-                      int year, int month, CMainFrame* pFrame);
+                      int year, int month, CMainFrame* pFrame,
+                      const CalPrintOptions& opts = CalPrintOptions{});
 
 // Returns the ordered list of (year, month) pages for the given options.
 std::vector<std::pair<int, int>> BuildPageList(
@@ -70,6 +73,7 @@ private:
     CButton m_radPortrait, m_radLandscape;
     CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
     CButton m_chkPDF;
+    CButton m_chkZmanim;
     CButton m_btnPreview;
 
     enum {
@@ -84,6 +88,7 @@ private:
         IDC_PD_EDT_RIGHT   = 208,
         IDC_PD_CHK_PDF     = 209,
         IDC_PD_BTN_PREVIEW = 210,
+        IDC_PD_CHK_ZMANIM  = 211,
     };
 
     void ReadControls();

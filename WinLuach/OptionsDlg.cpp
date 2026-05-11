@@ -36,7 +36,6 @@
 #define IDC_OPT_MIN_STARTUP    323
 #define IDC_OPT_START_WINDOWS  324
 #define IDC_OPT_DESKTOP        325
-#define IDC_OPT_PRINT_ZMANIM   326
 #define IDC_OPT_HAFTARAH       327
 #define IDC_OPT_FONT_SIZE      328
 #define IDC_OPT_LANGUAGE       329
@@ -422,10 +421,6 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(175, y, 300, y + 20), this, IDC_OPT_DESKTOP);
     m_chkDesktopShortcut.SetFont(pFont);
-    m_chkPrintWeeklyZmanim.Create(L"print weekly zmanim",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(315, y, W - 18, y + 20), this, IDC_OPT_PRINT_ZMANIM);
-    m_chkPrintWeeklyZmanim.SetFont(pFont);
     y += 28;
 
     MakeCtrl(L"STATIC", L"Tray text color", 0, 18, y + 4, 100, 18, 372);
@@ -474,7 +469,6 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
     m_chkStartWithWindows.SetCheck(m_current.startWithWindows ? BST_CHECKED : BST_UNCHECKED);
     m_chkDesktopShortcut.SetCheck(m_current.desktopShortcut ? BST_CHECKED : BST_UNCHECKED);
-    m_chkPrintWeeklyZmanim.SetCheck(m_current.printWeeklyZmanim ? BST_CHECKED : BST_UNCHECKED);
 
     if (m_current.zmanimShita == 1) m_radMA72.SetCheck(BST_CHECKED);
     else if (m_current.zmanimShita == 2) m_radMA90.SetCheck(BST_CHECKED);
@@ -515,7 +509,6 @@ void COptionsDlg::OnOK()
     m_result.minimizeOnStartup = (m_chkMinimizeOnStartup.GetCheck() == BST_CHECKED);
     m_result.startWithWindows = (m_chkStartWithWindows.GetCheck() == BST_CHECKED);
     m_result.desktopShortcut = (m_chkDesktopShortcut.GetCheck() == BST_CHECKED);
-    m_result.printWeeklyZmanim = (m_chkPrintWeeklyZmanim.GetCheck() == BST_CHECKED);
     if (m_radMA72.GetCheck() == BST_CHECKED) m_result.zmanimShita = 1;
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;

@@ -425,10 +425,16 @@ void CCalendarView::OnLButtonDown(UINT nFlags, CPoint pt)
     CWnd::OnLButtonDown(nFlags, pt);
 }
 
-// Double-click — same as single click for now (future: open event editor)
+// Double-click — select the day and open the detailed day view popup.
 void CCalendarView::OnLButtonDblClk(UINT nFlags, CPoint pt)
 {
-    OnLButtonDown(nFlags, pt);
+    int idx = HitTest(pt);
+    if (idx >= 0 && idx < (int)m_cells.size())
+    {
+        SetFocus();
+        m_pFrame->SelectDate(m_cells[idx].greg);
+        m_pFrame->OpenDayViewForDate(m_cells[idx].greg);
+    }
 }
 
 // =============================================================================

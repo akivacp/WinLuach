@@ -9,6 +9,7 @@
 #include "MainFrame.h"
 #include "WinLuachApp.h"
 #include "Settings.h"
+#include "Zmanim.h"
 #include <afxdlgs.h>
 
 // =============================================================================
@@ -18,7 +19,8 @@
 // =============================================================================
 
 void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
-                      int year, int month, CMainFrame* pFrame)
+                      int year, int month, CMainFrame* pFrame,
+                      const CalPrintOptions& opts)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -100,9 +102,10 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     }
 
     // === Calendar cells =====================================================
-    int gridTop = dayHdrY + dayHdrH;
-    int gridH   = H - (gridTop - y0);
-    int cellH   = gridH / 6;
+    int gridTop  = dayHdrY + dayHdrH;
+    int availH   = H - (gridTop - y0);
+    int gridH    = opts.includeZmanim ? (availH * 56 / 100) : availH;
+    int cellH    = gridH / 6;
 
     DayOfWeek dow0     = GetDayOfWeek(gFirst);
     long      jdn0     = GregorianToJDN(gFirst) - (int)dow0;
@@ -270,6 +273,144 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->LineTo(colX[c], gridTop + 6 * cellH);
     }
     pDC->SelectObject(pOld);
+
+    // === Weekly Zmanim Table ================================================
+    if (opts.includeZmanim && pFrame)
+    {
+        int tblTop = gridTop + 6 * cellH;
+        int tblH   = y0 + H - tblTop;
+
+        if (tblH >= 40)
+        {
+            // Fonts for table
+            int fTbl = -(tblH * 8 / 100);
+            if (fTbl > -4) fTbl = -4;
+            CFont fontTbl;
+            fontTbl.CreateFont(fTbl, 0,0,0, FW_NORMAL,0,0,0, DEFAULT_CHARSET,0,0,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
+            CFont fontTblB;
+            fontTblB.CreateFont(fTbl, 0,0,0, FW_BOLD,0,0,0, DEFAULT_CHARSET,0,0,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
+
+            // Column layout: 1 label column + 15 data columns
+            static const wchar_t* kColHdr[16] = {
+                L"Week / Parasha",
+                L"Alos", L"Mishey.", L"Netz",
+                L"Shma MA", L"Shma GRA",
+                L"Tfla MA", L"Tfla GRA",
+                L"Chatzos", L"Mn.Gd.", L"Mn.Kt.",
+                L"Plag", L"Candle", L"Shkia", L"Tzais", L"Sha’a"
+            };
+            int lblW  = W * 21 / 100;
+            int timeW = (W - lblW) / 15;
+            int tblColX[17];
+            tblColX[0] = x0;
+            tblColX[1] = x0 + lblW;
+            for (int c = 2; c <= 15; c++) tblColX[c] = tblColX[c-1] + timeW;
+            tblColX[16] = x0 + W;
+
+            // Title row (10%)
+            int titleRowH = max(6, tblH * 10 / 100);
+            pDC->FillSolidRect(CRect(x0, tblTop, x0+W, tblTop+titleRowH), RGB(50,80,140));
+            pDC->SetBkMode(TRANSPARENT);
+            pDC->SetTextColor(RGB(255,255,255));
+            pDC->SelectObject(&fontTblB);
+            pDC->DrawText(L"Weekly Zmanim",
+                CRect(x0+4, tblTop, x0+W, tblTop+titleRowH),
+                DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+
+            // Header row (14%)
+            int hdrRowH = max(6, tblH * 14 / 100);
+            int hdrRowY = tblTop + titleRowH;
+            pDC->FillSolidRect(CRect(x0, hdrRowY, x0+W, hdrRowY+hdrRowH), RGB(70,100,160));
+            pDC->SetTextColor(RGB(255,255,255));
+            pDC->SelectObject(&fontTbl);
+            for (int c = 0; c < 16; c++)
+            {
+                int cx = tblColX[c], cw = tblColX[c+1] - tblColX[c];
+                pDC->DrawText(kColHdr[c], -1, CRect(cx, hdrRowY, cx+cw, hdrRowY+hdrRowH),
+                    DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+            }
+
+            // Data rows
+            int dataY    = hdrRowY + hdrRowH;
+            int dataRowH = max(4, (y0 + H - dataY) / 6);
+
+            for (int w = 0; w < 6; w++)
+            {
+                int ry = dataY + w * dataRowH;
+                COLORREF rowBg = (w % 2 == 0) ? RGB(248,250,255) : RGB(235,242,255);
+                pDC->FillSolidRect(CRect(x0, ry, x0+W, ry+dataRowH), rowBg);
+                pDC->SetBkMode(TRANSPARENT);
+
+                // Friday for this row (col 5 = Friday in Sun=0 layout)
+                long         fridayJDN = jdn0 + w * 7 + 5;
+                GregorianDate fri      = JDNToGregorian(fridayJDN);
+                HebrewDate    hShab    = JDNToHebrew(fridayJDN + 1);
+
+                ParashaInfo par = GetParasha(hShab, isIsrael);
+                CString lbl;
+                lbl.Format(L"Fri %d/%d", fri.month, fri.day);
+                if (!par.name.empty())
+                {
+                    lbl += L"  ";
+                    lbl += par.name.c_str();
+                    if (par.isCombined && !par.name2.empty())
+                    { lbl += L"–"; lbl += par.name2.c_str(); }
+                }
+                pDC->SelectObject(&fontTbl);
+                pDC->SetTextColor(RGB(30,30,80));
+                pDC->DrawText(lbl,
+                    CRect(x0+2, ry, x0+lblW-2, ry+dataRowH),
+                    DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+
+                bool         dst = IsDST(fri, pFrame->m_location);
+                ZmanimResult z   = CalculateZmanim(fri, pFrame->m_location, dst);
+
+                const TimeOfDay* kT[14] = {
+                    &z.alot_GRA,         &z.misheyakir_11,    &z.hanetz,
+                    &z.sofShema_MA72,    &z.sofShema_GRA,
+                    &z.sofTefilla_MA72,  &z.sofTefilla_GRA,
+                    &z.chatzot,          &z.minchaGedola_GRA, &z.minchaKetana_GRA,
+                    &z.plagMincha_GRA,   &z.candleLighting,
+                    &z.shkia,            &z.tzeit_GRA
+                };
+                pDC->SetTextColor(RGB(20,40,80));
+                for (int c = 0; c < 14; c++)
+                {
+                    if (!kT[c]->IsValid()) continue;
+                    std::wstring ts = FormatTime(*kT[c], true);
+                    int cx = tblColX[c+1], cw = tblColX[c+2] - tblColX[c+1];
+                    pDC->DrawText(ts.c_str(), -1, CRect(cx, ry, cx+cw, ry+dataRowH),
+                        DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+                }
+                if (z.shaahZmanit_GRA > 0.0)
+                {
+                    CString szs; szs.Format(L"%.0f", z.shaahZmanit_GRA);
+                    pDC->DrawText(szs,
+                        CRect(tblColX[15], ry, tblColX[16], ry+dataRowH),
+                        DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+                }
+            }
+
+            // Table grid lines
+            CPen penTbl(PS_SOLID, max(1,W/800), RGB(170,170,180));
+            CPen* pOldT = pDC->SelectObject(&penTbl);
+            pDC->MoveTo(x0, tblTop);  pDC->LineTo(x0+W, tblTop);
+            pDC->MoveTo(x0, hdrRowY); pDC->LineTo(x0+W, hdrRowY);
+            for (int r = 0; r <= 6; r++)
+            {
+                int gy = dataY + r * dataRowH;
+                pDC->MoveTo(x0, gy); pDC->LineTo(x0+W, gy);
+            }
+            for (int c = 0; c <= 16; c++)
+            {
+                pDC->MoveTo(tblColX[c], tblTop);
+                pDC->LineTo(tblColX[c], dataY + 6*dataRowH);
+            }
+            pDC->SelectObject(pOldT);
+        }
+    }
 }
 
 // =============================================================================
@@ -366,7 +507,7 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame)
     for (auto& [yr, mo] : pages)
     {
         dc.StartPage();
-        DrawCalMonthPage(&dc, rcContent, yr, mo, pFrame);
+        DrawCalMonthPage(&dc, rcContent, yr, mo, pFrame, opts);
         dc.EndPage();
     }
     dc.EndDoc();
@@ -409,7 +550,7 @@ INT_PTR CCalPrintDlg::DoModal()
     buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
-    buf.t.cy     = 260;
+    buf.t.cy     = 285;
     wcscpy_s(buf.title, L"Print Calendar");
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -427,12 +568,13 @@ BOOL CCalPrintDlg::OnInitDialog()
     // Restore saved print settings
     {
         const auto& ps = theApp.m_settings;
-        m_opts.landscape = ps.printLandscape;
-        m_opts.range     = (CalPrintOptions::Range)ps.printRange;
-        m_opts.mTop      = ps.printMarginTop;
-        m_opts.mBot      = ps.printMarginBot;
-        m_opts.mLeft     = ps.printMarginLeft;
-        m_opts.mRight    = ps.printMarginRight;
+        m_opts.landscape     = ps.printLandscape;
+        m_opts.range         = (CalPrintOptions::Range)ps.printRange;
+        m_opts.mTop          = ps.printMarginTop;
+        m_opts.mBot          = ps.printMarginBot;
+        m_opts.mLeft         = ps.printMarginLeft;
+        m_opts.mRight        = ps.printMarginRight;
+        m_opts.includeZmanim = ps.printWeeklyZmanim;
     }
 
     CRect rcClient;
@@ -514,9 +656,18 @@ BOOL CCalPrintDlg::OnInitDialog()
     mkEdit(m_editRight,  IDC_PD_EDT_RIGHT, fmtMargin(m_opts.mRight), 168, y, 50);
     y += 30;
 
+    // ── Include weekly zmanim ────────────────────────────────────────────────
+    m_chkZmanim.Create(
+        L"Include weekly zmanim table  (shows Friday zmanim for each week of the month)",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX | WS_GROUP,
+        CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_ZMANIM);
+    m_chkZmanim.SetFont(pF);
+    m_chkZmanim.SetCheck(m_opts.includeZmanim ? BST_CHECKED : BST_UNCHECKED);
+    y += 26;
+
     // ── PDF checkbox ─────────────────────────────────────────────────────────
     m_chkPDF.Create(L"Export to PDF  (select 'Microsoft Print to PDF' in next dialog)",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX | WS_GROUP,
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
                     CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_PDF);
     m_chkPDF.SetFont(pF);
     y += 30;
@@ -553,7 +704,8 @@ void CCalPrintDlg::ReadControls()
     else if (m_radYear.GetCheck()) m_opts.range = CalPrintOptions::RANGE_YEAR;
     else m_opts.range = CalPrintOptions::RANGE_12;
 
-    m_opts.landscape = (m_radLandscape.GetCheck() == BST_CHECKED);
+    m_opts.landscape     = (m_radLandscape.GetCheck() == BST_CHECKED);
+    m_opts.includeZmanim = (m_chkZmanim.GetCheck()    == BST_CHECKED);
 
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
@@ -573,12 +725,13 @@ void CCalPrintDlg::ReadControls()
 static void SavePrintOptsToSettings(const CalPrintOptions& opts)
 {
     auto& ps = theApp.m_settings;
-    ps.printLandscape   = opts.landscape;
-    ps.printRange       = (int)opts.range;
-    ps.printMarginTop   = opts.mTop;
-    ps.printMarginBot   = opts.mBot;
-    ps.printMarginLeft  = opts.mLeft;
-    ps.printMarginRight = opts.mRight;
+    ps.printLandscape    = opts.landscape;
+    ps.printRange        = (int)opts.range;
+    ps.printMarginTop    = opts.mTop;
+    ps.printMarginBot    = opts.mBot;
+    ps.printMarginLeft   = opts.mLeft;
+    ps.printMarginRight  = opts.mRight;
+    ps.printWeeklyZmanim = opts.includeZmanim;
     SaveSettings(ps);
 }
 
@@ -863,7 +1016,7 @@ void CCalPreviewDlg::OnPaint()
 
     // Draw calendar
     auto [yr, mo] = m_pages[m_curPage];
-    DrawCalMonthPage(&memDC, rcContent, yr, mo, m_pFrame);
+    DrawCalMonthPage(&memDC, rcContent, yr, mo, m_pFrame, m_opts);
 
     // Toolbar background
     CRect rcTool(0, H - toolH, W, H);

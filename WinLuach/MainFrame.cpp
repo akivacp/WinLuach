@@ -260,6 +260,211 @@ BEGIN_MESSAGE_MAP(CGotoDateDlg, CDialog)
     ON_WM_LBUTTONDOWN()
 END_MESSAGE_MAP()
 
+// =============================================================================
+// CDayViewDlg — detailed day-view popup (opened on double-click)
+// =============================================================================
+
+class CDayViewDlg : public CDialog
+{
+public:
+    CDayViewDlg(const GregorianDate& g, CMainFrame* pFrame, CWnd* pParent = nullptr)
+        : CDialog(), m_pFrame(pFrame), m_g(g)
+    {
+        m_pParentWnd = pParent;
+        m_h = GregorianToHebrew(g);
+        if (pFrame) {
+            bool dst = IsDST(g, pFrame->m_location);
+            m_z = CalculateZmanim(g, pFrame->m_location, dst);
+            m_use24hr = pFrame->m_use24hr;
+            m_hols = GetHolidays(m_h, pFrame->m_isIsrael);
+            m_omer = GetOmer(m_h);
+            m_learning = GetDailyLearning(m_h, g);
+            if (GetDayOfWeek(g) == SHABBAT)
+                m_parasha = GetParasha(m_h, pFrame->m_isIsrael);
+            m_userEvents = pFrame->GetUserEventsForDate(g);
+        }
+    }
+
+    INT_PTR DoModal() override {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        b.t.cx = 320; b.t.cy = 530;
+        wcscpy_s(b.title, L"Day Details");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Day Details");
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+        CButton* b = new CButton;
+        b->Create(L"Close", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON,
+            CRect(W/2-50, H-34, W/2+50, H-8), this, IDCANCEL);
+        b->SetFont(pF);
+        return TRUE;
+    }
+
+    afx_msg void OnPaint() {
+        CPaintDC dc(this);
+        CRect rcClient; GetClientRect(&rcClient);
+        int W = rcClient.Width(), H = rcClient.Height();
+
+        dc.FillSolidRect(rcClient, RGB(250, 250, 252));
+
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        dc.SelectObject(pF);
+
+        // --- Header band ---
+        int hdrH = 56;
+        dc.FillSolidRect(CRect(0, 0, W, hdrH), RGB(50, 80, 140));
+
+        CFont fBig;
+        fBig.CreateFont(-18, 0,0,0, FW_BOLD,0,0,0, DEFAULT_CHARSET,0,0,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
+        dc.SelectObject(&fBig);
+        dc.SetBkMode(TRANSPARENT);
+        dc.SetTextColor(RGB(255,255,255));
+
+        static const wchar_t* kDowN[] = {
+            L"Sunday",L"Monday",L"Tuesday",L"Wednesday",L"Thursday",L"Friday",L"Shabbos"};
+        CString gregStr;
+        gregStr.Format(L"%s,  %s %d,  %d",
+            kDowN[(int)GetDayOfWeek(m_g)],
+            GregorianMonthName(m_g.month).c_str(), m_g.day, m_g.year);
+        dc.DrawText(gregStr, CRect(8, 4, W-4, hdrH/2+4), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+
+        bool leap = IsHebrewLeapYear(m_h.year);
+        CString hebStr;
+        hebStr.Format(L"%d %s %d",
+            m_h.day, HebrewMonthName(m_h.month, leap).c_str(), m_h.year);
+        dc.SelectObject(pF);
+        dc.SetTextColor(RGB(200, 220, 255));
+        dc.DrawText(hebStr, CRect(8, hdrH/2+4, W-8, hdrH-4), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+
+        int y = hdrH + 4;
+
+        // Section header helper
+        auto drawSection = [&](const wchar_t* lbl) {
+            dc.FillSolidRect(CRect(0, y, W, y+18), RGB(200, 212, 240));
+            dc.SetBkMode(TRANSPARENT);
+            dc.SetTextColor(RGB(30, 50, 110));
+            dc.SelectObject(pF);
+            dc.DrawText(lbl, CRect(6, y, W-4, y+18), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+            y += 19;
+        };
+
+        // Row helper: label (gray) on left, value (colored) on right portion
+        auto drawRow = [&](const wchar_t* lbl, const std::wstring& val, COLORREF clr) {
+            if (y + 17 >= H - 40) return;
+            dc.SetBkMode(TRANSPARENT);
+            dc.SelectObject(pF);
+            dc.SetTextColor(RGB(120,120,120));
+            dc.DrawText(lbl, CRect(8, y, 150, y+16), DT_LEFT|DT_TOP|DT_SINGLELINE);
+            dc.SetTextColor(clr);
+            dc.DrawText(val.c_str(), -1, CRect(152, y, W-4, y+16),
+                DT_LEFT|DT_TOP|DT_SINGLELINE|DT_END_ELLIPSIS);
+            y += 17;
+        };
+
+        // --- Holidays & Special Days ---
+        bool hasSpecial = !m_hols.empty() || !m_parasha.name.empty() || m_omer.isOmerDay;
+        if (hasSpecial) {
+            drawSection(L"Holidays & Special Days");
+            for (auto& h : m_hols) {
+                if (h.flags & (HOLIDAY_SHABBOS_MEVAR | HOLIDAY_SPECIAL_SHAB)) continue;
+                std::wstring txt = h.name;
+                if (!h.subtitle.empty()) txt += L" – " + h.subtitle;
+                drawRow(L"", txt, RGB(170, 25, 25));
+            }
+            if (!m_parasha.name.empty()) {
+                std::wstring pt = L"Parshas " + m_parasha.name;
+                if (m_parasha.isCombined && !m_parasha.name2.empty())
+                    pt += L" – " + m_parasha.name2;
+                drawRow(L"Parasha:", pt, RGB(25, 70, 160));
+            }
+            if (m_omer.isOmerDay) {
+                CString ot; ot.Format(L"Day %d of the Omer", m_omer.day);
+                drawRow(L"Omer:", (LPCWSTR)ot, RGB(90, 50, 140));
+            }
+        }
+
+        // --- Calendar events ---
+        if (!m_userEvents.empty()) {
+            drawSection(L"Calendar Events");
+            for (auto& ev : m_userEvents)
+                drawRow(L"", ev, RGB(90, 20, 110));
+        }
+
+        // --- Daily Learning ---
+        bool anyLearn = m_pFrame &&
+            (!m_learning.dafYomi.empty() || !m_learning.yerushalmi.empty() ||
+             !m_learning.halachaYomit.empty() || !m_learning.mishnaYomit.empty() ||
+             !m_learning.tanachYomi.empty());
+        if (anyLearn) {
+            drawSection(L"Daily Learning");
+            if (m_pFrame->m_showDafYomi      && !m_learning.dafYomi.empty())
+                drawRow(L"Daf Yomi:",      m_learning.dafYomi,      RGB(0, 70, 160));
+            if (m_pFrame->m_showYerushalmi   && !m_learning.yerushalmi.empty())
+                drawRow(L"Yerushalmi:",    m_learning.yerushalmi,   RGB(0, 100, 100));
+            if (m_pFrame->m_showHalachaYomit && !m_learning.halachaYomit.empty())
+                drawRow(L"Halacha Yomit:", m_learning.halachaYomit, RGB(90, 50, 0));
+            if (m_pFrame->m_showMishnaYomit  && !m_learning.mishnaYomit.empty())
+                drawRow(L"Mishna Yomit:",  m_learning.mishnaYomit,  RGB(0, 90, 0));
+            if (m_pFrame->m_showTanachYomi   && !m_learning.tanachYomi.empty())
+                drawRow(L"Tanach Yomi:",   m_learning.tanachYomi,   RGB(70, 0, 70));
+        }
+
+        // --- Zmanim ---
+        drawSection(L"Zmanim");
+
+        auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
+            if (t.IsValid()) drawRow(lbl, FormatTime(t, m_use24hr), RGB(20, 60, 20));
+        };
+        zRow(L"Alot HaShachar:",     m_z.alot_GRA);
+        zRow(L"Misheyakir:",          m_z.misheyakir_11);
+        zRow(L"Hanetz (Netz):",       m_z.hanetz);
+        zRow(L"Sof Shema (MA):",      m_z.sofShema_MA72);
+        zRow(L"Sof Shema (GRA):",     m_z.sofShema_GRA);
+        zRow(L"Sof Tefilla (MA):",    m_z.sofTefilla_MA72);
+        zRow(L"Sof Tefilla (GRA):",   m_z.sofTefilla_GRA);
+        zRow(L"Chatzot:",             m_z.chatzot);
+        zRow(L"Mincha Gedola:",       m_z.minchaGedola_GRA);
+        zRow(L"Mincha Ketana:",       m_z.minchaKetana_GRA);
+        zRow(L"Plag HaMincha:",       m_z.plagMincha_GRA);
+        if (m_z.candleLighting.IsValid()) zRow(L"Candle Lighting:", m_z.candleLighting);
+        zRow(L"Shkia (Sunset):",      m_z.shkia);
+        zRow(L"Tzais HaKochavim:",    m_z.tzeit_GRA);
+        if (y + 17 < H - 40 && m_z.shaahZmanit_GRA > 0.0) {
+            CString szs; szs.Format(L"%.0f min (GRA)", m_z.shaahZmanit_GRA);
+            drawRow(L"Sha’a Zmanit:",  (LPCWSTR)szs, RGB(20, 60, 20));
+        }
+    }
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    CMainFrame*               m_pFrame;
+    GregorianDate             m_g;
+    HebrewDate                m_h;
+    ZmanimResult              m_z;
+    bool                      m_use24hr = false;
+    std::vector<HolidayInfo>  m_hols;
+    OmerInfo                  m_omer;
+    DailyLearning             m_learning;
+    ParashaInfo               m_parasha;
+    std::vector<std::wstring> m_userEvents;
+};
+
+BEGIN_MESSAGE_MAP(CDayViewDlg, CDialog)
+    ON_WM_PAINT()
+END_MESSAGE_MAP()
+
 BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_CREATE()
     ON_WM_SIZE()
@@ -1443,7 +1648,7 @@ void CMainFrame::OnHelpAbout()
 {
     MessageBoxW(
         L"2026 WinLuach - Hebrew Calendar\n\n"
-        L"Version 0.6.0\n\n"
+        L"Version 0.7.0\n\n"
         L"A modern Hebrew/Gregorian calendar\n"
         L"with halachic times (zmanim).\n\n"
         L"Built with C++ and MFC.",
@@ -1730,6 +1935,12 @@ void CMainFrame::OnCalGoTo()
     CGotoDateDlg dlg(m_selectedDate, this);
     if (dlg.DoModal() == IDOK)
         SelectDate(dlg.selectedDate);
+}
+
+void CMainFrame::OpenDayViewForDate(const GregorianDate& g)
+{
+    CDayViewDlg dlg(g, this, this);
+    dlg.DoModal();
 }
 
 void CMainFrame::OnFileRestore()

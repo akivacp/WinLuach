@@ -131,6 +131,9 @@ public:
 
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
 
+    // Opens the day detail popup for the given date
+    void OpenDayViewForDate(const GregorianDate& g);
+
     // Returns {candleStr, motzStr} zmanim labels for a calendar cell.
     std::pair<std::wstring, std::wstring> GetCellZmanimLabels(
         const GregorianDate& g, const HebrewDate& h,
