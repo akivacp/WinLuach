@@ -84,8 +84,9 @@ struct UserEventInfo
 #define ID_TRAY_OPEN        1015
 #define ID_TRAY_ABOUT       1016
 #define ID_TRAY_EXIT        1017
-#define ID_JUMP_GO          1018
-#define IDC_JUMP_EDIT       2001
+#define IDC_MONTH_COMBO     2002
+#define IDC_YEAR_EDIT       2003
+#define IDC_YEAR_SPIN       2004
 #define WM_WINLUACH_TRAY    (WM_APP + 101)
 
 // =============================================================================
@@ -164,9 +165,11 @@ public:
     CButton m_btnNextYear;
     CButton m_btnNextDecade;
 
-    // Month quick-jump field and Go button
-    CEdit   m_editJump;
-    CButton m_btnGo;
+    // Month/year picker: combo + year edit + spin
+    CComboBox          m_comboMonth;
+    CEdit              m_editYear;
+    CSpinButtonCtrl    m_spinYear;
+    bool               m_updatingControls = false;
 
 protected:
     // MFC message handlers
@@ -191,7 +194,8 @@ protected:
     afx_msg void OnDestroy();
     afx_msg void OnClose();
     afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-    afx_msg void OnJumpGo();
+    afx_msg void OnMonthComboChange();
+    afx_msg void OnYearSpinDelta(NMHDR* pNMHDR, LRESULT* pResult);
     virtual BOOL PreTranslateMessage(MSG* pMsg);
 
     // Recalculates zmanim for the selected date
@@ -221,8 +225,10 @@ protected:
     // Draws the Sun/Mon/.../Shabbos column labels
     void DrawDayHeaders(CDC* pDC, const CRect& rc);
 
-    // Syncs the jump-field text to the current view month
-    void UpdateJumpField();
+    // Repopulates the month combo for the current calendar mode
+    void PopulateMonthCombo();
+    // Syncs the month combo and year edit to the current view
+    void UpdateMonthYearControls();
 
     // Child panels
     CCalendarView* m_pCalView = nullptr;

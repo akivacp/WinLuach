@@ -109,7 +109,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_TRAY_OPEN, &CMainFrame::RestoreFromTray)
     ON_COMMAND(ID_TRAY_ABOUT, &CMainFrame::OnHelpAbout)
     ON_COMMAND(ID_TRAY_EXIT, &CMainFrame::OnTrayExit)
-    ON_COMMAND(ID_JUMP_GO, &CMainFrame::OnJumpGo)
+    ON_CBN_SELCHANGE(IDC_MONTH_COMBO, &CMainFrame::OnMonthComboChange)
+    ON_NOTIFY(UDN_DELTAPOS, IDC_YEAR_SPIN, &CMainFrame::OnYearSpinDelta)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -224,18 +225,18 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
         WS_CHILD | WS_VISIBLE,
         CRect(0, 0, 100, 100), this, 1003);
 
-    // Navigation buttons in the header bar
+    // Navigation buttons in the header bar (ASCII-safe labels)
     const DWORD btnStyle = WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON;
     CRect r(0, 0, 64, 28);
-    m_btnPrevDecade.Create(L"«Decade", btnStyle, r, this, ID_VIEW_PREVDECADE);
-    m_btnPrevYear  .Create(L"« Year",  btnStyle, r, this, ID_VIEW_PREVYEAR);
-    m_btnPrevMonth .Create(L"« Month", btnStyle, r, this, ID_VIEW_PREVMONTH);
-    m_btnPrevDay   .Create(L"« Day",   btnStyle, r, this, ID_VIEW_PREVDAY);
+    m_btnPrevDecade.Create(L"<< Dec",  btnStyle, r, this, ID_VIEW_PREVDECADE);
+    m_btnPrevYear  .Create(L"< Year",  btnStyle, r, this, ID_VIEW_PREVYEAR);
+    m_btnPrevMonth .Create(L"< Month", btnStyle, r, this, ID_VIEW_PREVMONTH);
+    m_btnPrevDay   .Create(L"< Day",   btnStyle, r, this, ID_VIEW_PREVDAY);
     m_btnToday     .Create(L"Today",   btnStyle, r, this, ID_VIEW_TODAY);
-    m_btnNextDay   .Create(L"Day »",   btnStyle, r, this, ID_VIEW_NEXTDAY);
-    m_btnNextMonth .Create(L"Month »", btnStyle, r, this, ID_VIEW_NEXTMONTH);
-    m_btnNextYear  .Create(L"Year »",  btnStyle, r, this, ID_VIEW_NEXTYEAR);
-    m_btnNextDecade.Create(L"Decade»", btnStyle, r, this, ID_VIEW_NEXTDECADE);
+    m_btnNextDay   .Create(L"Day >",   btnStyle, r, this, ID_VIEW_NEXTDAY);
+    m_btnNextMonth .Create(L"Month >", btnStyle, r, this, ID_VIEW_NEXTMONTH);
+    m_btnNextYear  .Create(L"Year >",  btnStyle, r, this, ID_VIEW_NEXTYEAR);
+    m_btnNextDecade.Create(L"Dec >>",  btnStyle, r, this, ID_VIEW_NEXTDECADE);
 
     CFont* pSF = &m_fontSmall;
     m_btnPrevDecade.SetFont(pSF);  m_btnPrevYear.SetFont(pSF);
@@ -244,13 +245,22 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     m_btnNextDay   .SetFont(pSF);  m_btnNextMonth.SetFont(pSF);
     m_btnNextYear  .SetFont(pSF);  m_btnNextDecade.SetFont(pSF);
 
-    // Month quick-jump edit and Go button
-    m_editJump.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_CENTER | ES_AUTOHSCROLL,
-        CRect(0, 0, 180, 24), this, IDC_JUMP_EDIT);
-    m_editJump.SetFont(&m_fontNormal);
-    m_btnGo.Create(L"Go", btnStyle, CRect(0, 0, 40, 24), this, ID_JUMP_GO);
-    m_btnGo.SetFont(pSF);
-    UpdateJumpField();
+    // Month combo + year edit + year spin
+    m_comboMonth.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWN | CBS_AUTOHSCROLL,
+        CRect(0, 0, 130, 300), this, IDC_MONTH_COMBO);
+    m_comboMonth.SetFont(&m_fontNormal);
+
+    m_editYear.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_CENTER | ES_NUMBER,
+        CRect(0, 0, 55, 24), this, IDC_YEAR_EDIT);
+    m_editYear.SetFont(&m_fontNormal);
+
+    m_spinYear.Create(WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS,
+        CRect(0, 0, 18, 24), this, IDC_YEAR_SPIN);
+    m_spinYear.SetBuddy(&m_editYear);
+    m_spinYear.SetRange(1, 9999);
+
+    PopulateMonthCombo();
+    UpdateMonthYearControls();
 
     RefreshZmanim();
     RefreshWebCalendarEvents();
@@ -400,16 +410,20 @@ void CMainFrame::LayoutPanels(int cx, int cy)
         place(m_btnNextDecade);
     }
 
-    // ── Jump edit + Go (date display row, y=38..84) ───────────────────────────
-    if (m_editJump.GetSafeHwnd())
+    // ── Month combo + year edit + spin (date display row, y=38..84) ─────────
+    if (m_comboMonth.GetSafeHwnd())
     {
-        const int EDIT_W = 180, GO_W = 44, CTRL_H = 24;
+        const int COMBO_W = 130, YEAR_W = 55, SPIN_W = 18, CTRL_H = 24, GAP = 4;
+        int totalW  = COMBO_W + GAP + YEAR_W + SPIN_W;
         int centerX = SIDEBAR_W + (cx - SIDEBAR_W) / 2;
-        int editX   = centerX - (EDIT_W + GO_W + 4) / 2;
-        int goX     = editX + EDIT_W + 4;
+        int comboX  = centerX - totalW / 2;
+        int yearX   = comboX + COMBO_W + GAP;
+        int spinX   = yearX + YEAR_W;
         int ctrlY   = 38 + (46 - CTRL_H) / 2;
-        m_editJump.MoveWindow(editX, ctrlY, EDIT_W, CTRL_H);
-        m_btnGo   .MoveWindow(goX,   ctrlY, GO_W,   CTRL_H);
+        // Height 300 allows dropdown to open downward; edit part = CTRL_H
+        m_comboMonth.MoveWindow(comboX, ctrlY, COMBO_W, 300);
+        m_editYear  .MoveWindow(yearX,  ctrlY, YEAR_W,  CTRL_H);
+        m_spinYear  .MoveWindow(spinX,  ctrlY, SPIN_W,  CTRL_H);
     }
 
     Invalidate(FALSE);
@@ -462,10 +476,10 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
 
         std::wstring gregRange = GregorianMonthName(first.month);
         if (first.month != last.month)
-            gregRange += L" – " + GregorianMonthName(last.month);
+            gregRange += L" - " + GregorianMonthName(last.month);
         gregRange += L" " + std::to_wstring(first.year);
         if (first.year != last.year)
-            gregRange += L" – " + std::to_wstring(last.year);
+            gregRange += L" - " + std::to_wstring(last.year);
         gregStr = gregRange.c_str();
     }
     else
@@ -482,13 +496,13 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
 
     std::wstring hebStr = HebrewMonthName(hFirst.month, IsHebrewLeapYear(hFirst.year));
     if (hFirst.month != hLast.month)
-        hebStr += L" – " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
+        hebStr += L" - " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
 
     if (!m_hebrewMonthView)
     {
         hebFull.Format(L"%s  %d", hebStr.c_str(), hFirst.year);
         if (hFirst.year != hLast.year)
-            hebFull.AppendFormat(L" – %d", hLast.year);
+            hebFull.AppendFormat(L" - %d", hLast.year);
     }
 
     // Draw labels in the date strip
@@ -576,7 +590,7 @@ void CMainFrame::ChangeMonth(int deltaMonths)
         while (m_viewMonth > 12) { m_viewMonth -= 12; m_viewYear++; }
     }
 
-    UpdateJumpField();
+    UpdateMonthYearControls();
 
     if (m_pCalView)
     {
@@ -601,7 +615,7 @@ void CMainFrame::ChangeYear(int deltaYears)
         m_viewYear += deltaYears;
     }
 
-    UpdateJumpField();
+    UpdateMonthYearControls();
 
     if (m_pCalView)
     {
@@ -638,7 +652,7 @@ void CMainFrame::SelectDate(const GregorianDate& g)
     if (outsideView)
     {
         SyncViewToSelected();
-        UpdateJumpField();
+        UpdateMonthYearControls();
         if (m_pCalView) m_pCalView->RebuildCells();
         Invalidate(FALSE);
     }
@@ -1047,6 +1061,8 @@ void CMainFrame::OnOptionsPrefs()
         theApp.m_settings = dlg.GetSettings();
         ApplySettings(theApp.m_settings);
         SaveSettings(theApp.m_settings);
+        PopulateMonthCombo();
+        UpdateMonthYearControls();
         if (m_minimizeToTray)
             AddTrayIcon();
         else
@@ -1075,137 +1091,133 @@ void CMainFrame::OnHelpAbout()
 }
 
 // =============================================================================
-// JUMP FIELD
+// MONTH / YEAR PICKER CONTROLS
 // =============================================================================
 
-void CMainFrame::UpdateJumpField()
+void CMainFrame::PopulateMonthCombo()
 {
-    if (!m_editJump.GetSafeHwnd()) return;
-    CString text;
+    if (!m_comboMonth.GetSafeHwnd()) return;
+    m_updatingControls = true;
+    m_comboMonth.ResetContent();
     if (m_hebrewMonthView)
     {
-        text.Format(L"%s %d",
-            HebrewMonthName(m_viewHebrewMonth,
-                IsHebrewLeapYear(m_viewHebrewYear)).c_str(),
-            m_viewHebrewYear);
+        int months = MonthsInHebrewYear(m_viewHebrewYear);
+        bool leap  = IsHebrewLeapYear(m_viewHebrewYear);
+        for (int m = 1; m <= months; m++)
+            m_comboMonth.AddString(HebrewMonthName(m, leap).c_str());
     }
     else
     {
-        text.Format(L"%s %d",
-            GregorianMonthName(m_viewMonth).c_str(),
-            m_viewYear);
+        for (int m = 1; m <= 12; m++)
+            m_comboMonth.AddString(GregorianMonthName(m).c_str());
     }
-    m_editJump.SetWindowText(text);
+    m_updatingControls = false;
 }
 
-static int ParseGregMonth(const std::wstring& s)
+void CMainFrame::UpdateMonthYearControls()
 {
-    static const wchar_t* names[12] = {
-        L"january", L"february", L"march", L"april", L"may", L"june",
-        L"july", L"august", L"september", L"october", L"november", L"december"
-    };
-    std::wstring lower = s;
-    for (auto& c : lower) c = (wchar_t)towlower(c);
-    for (int i = 0; i < 12; i++)
+    if (!m_comboMonth.GetSafeHwnd()) return;
+    m_updatingControls = true;
+
+    int month = m_hebrewMonthView ? m_viewHebrewMonth : m_viewMonth;
+    int year  = m_hebrewMonthView ? m_viewHebrewYear  : m_viewYear;
+
+    // Re-populate if the number of months changed (Hebrew leap year toggle)
+    if (m_hebrewMonthView)
     {
-        if (lower == names[i]) return i + 1;
-        if (lower.size() >= 3 && std::wstring(names[i]).substr(0, 3) == lower.substr(0, 3))
-            return i + 1;
+        int expectedMonths = MonthsInHebrewYear(m_viewHebrewYear);
+        if (m_comboMonth.GetCount() != expectedMonths)
+        {
+            m_updatingControls = false;
+            PopulateMonthCombo();
+            m_updatingControls = true;
+        }
     }
-    try { int m = std::stoi(s); if (m >= 1 && m <= 12) return m; } catch (...) {}
-    return 0;
+
+    m_comboMonth.SetCurSel(month - 1);  // 0-based index
+
+    CString yearStr;
+    yearStr.Format(L"%d", year);
+    m_editYear.SetWindowText(yearStr);
+
+    m_updatingControls = false;
 }
 
-static int ParseHebMonth(const std::wstring& s, bool isLeap)
+void CMainFrame::OnMonthComboChange()
 {
-    struct { const wchar_t* name; int m; } tbl[] = {
-        { L"tishrei",     TISHREI  }, { L"tishri",      TISHREI  }, { L"tishrey",     TISHREI  },
-        { L"cheshvan",    CHESHVAN }, { L"heshvan",     CHESHVAN }, { L"marcheshvan", CHESHVAN },
-        { L"kislev",      KISLEV   }, { L"kislef",      KISLEV   },
-        { L"tevet",       TEVET    },
-        { L"shvat",       SHVAT    }, { L"shevat",      SHVAT    }, { L"shvos",       SHVAT    },
-        { L"adar i",      ADAR     }, { L"adar 1",      ADAR     },
-        { L"adar ii",     ADAR_II  }, { L"adar 2",      ADAR_II  },
-        { L"adar",        ADAR     },
-        { L"nissan",      NISSAN   }, { L"nisan",       NISSAN   },
-        { L"iyar",        IYAR     }, { L"iyyar",       IYAR     },
-        { L"sivan",       SIVAN    },
-        { L"tammuz",      TAMMUZ   }, { L"tamuz",       TAMMUZ   },
-        { L"av",          AV       },
-        { L"elul",        ELUL     },
-        { nullptr, 0 }
-    };
-    std::wstring lower = s;
-    for (auto& c : lower) c = (wchar_t)towlower(c);
-    for (int i = 0; tbl[i].name; i++)
-        if (lower == tbl[i].name) return tbl[i].m;
-    return 0;
+    if (m_updatingControls) return;
+    int sel = m_comboMonth.GetCurSel();
+    if (sel == CB_ERR) return;
+
+    int newMonth = sel + 1;  // 1-based
+    if (m_hebrewMonthView)
+    {
+        if (newMonth == m_viewHebrewMonth) return;
+        m_viewHebrewMonth = newMonth;
+    }
+    else
+    {
+        if (newMonth == m_viewMonth) return;
+        m_viewMonth = newMonth;
+    }
+
+    if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
+    if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
+    Invalidate(FALSE);
 }
 
-void CMainFrame::OnJumpGo()
+void CMainFrame::OnYearSpinDelta(NMHDR* pNMHDR, LRESULT* pResult)
 {
-    CString ctext;
-    m_editJump.GetWindowText(ctext);
-    std::wstring s = ctext.GetString();
-
-    auto trimFn = [](std::wstring& str) {
-        size_t f = str.find_first_not_of(L" \t\r\n");
-        if (f == std::wstring::npos) { str.clear(); return; }
-        str = str.substr(f, str.find_last_not_of(L" \t\r\n") - f + 1);
-    };
-    trimFn(s);
-    if (s.empty()) return;
-
-    size_t sp = s.rfind(L' ');
-    if (sp == std::wstring::npos) { MessageBeep(MB_ICONEXCLAMATION); return; }
-
-    int year = 0;
-    try { year = std::stoi(s.substr(sp + 1)); } catch (...) {}
-    if (year <= 0) { MessageBeep(MB_ICONEXCLAMATION); return; }
-
-    std::wstring monthStr = s.substr(0, sp);
-    trimFn(monthStr);
-
-    // Try Gregorian first
-    int gregMonth = ParseGregMonth(monthStr);
-    if (gregMonth > 0 && year >= 1 && year <= 9999)
-    {
-        m_viewYear  = year;
-        m_viewMonth = gregMonth;
-        m_hebrewMonthView = false;
-        if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
-        Invalidate(FALSE);
-        UpdateJumpField();
-        if (m_pCalView) m_pCalView->SetFocus();
-        return;
-    }
-
-    // Try Hebrew
-    bool isLeap  = IsHebrewLeapYear(year);
-    int hebMonth = ParseHebMonth(monthStr, isLeap);
-    if (hebMonth > 0)
-    {
-        if (hebMonth == ADAR_II && !isLeap) { MessageBeep(MB_ICONEXCLAMATION); return; }
-        m_viewHebrewYear  = year;
-        m_viewHebrewMonth = hebMonth;
-        m_hebrewMonthView = true;
-        if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
-        Invalidate(FALSE);
-        UpdateJumpField();
-        if (m_pCalView) m_pCalView->SetFocus();
-        return;
-    }
-
-    MessageBeep(MB_ICONEXCLAMATION);
+    NMUPDOWN* pUD = reinterpret_cast<NMUPDOWN*>(pNMHDR);
+    ChangeYear(pUD->iDelta);          // +1 = up arrow = next year
+    *pResult = 1;                     // prevent spin from auto-updating buddy
 }
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
+    // Enter in year edit: navigate to typed year
     if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN &&
-        m_editJump.GetSafeHwnd() && pMsg->hwnd == m_editJump.GetSafeHwnd())
+        m_editYear.GetSafeHwnd() && pMsg->hwnd == m_editYear.GetSafeHwnd())
     {
-        OnJumpGo();
+        CString s;
+        m_editYear.GetWindowText(s);
+        int year = _wtoi(s);
+        if (year >= 1 && year <= 9999)
+        {
+            int cur = m_hebrewMonthView ? m_viewHebrewYear : m_viewYear;
+            if (year != cur) ChangeYear(year - cur);
+        }
+        UpdateMonthYearControls();
+        if (m_pCalView) m_pCalView->SetFocus();
         return TRUE;
     }
+
+    // Mouse-wheel over month combo: scroll months
+    if (pMsg->message == WM_MOUSEWHEEL && m_comboMonth.GetSafeHwnd())
+    {
+        POINT pt;
+        GetCursorPos(&pt);
+        CRect rc;
+        m_comboMonth.GetWindowRect(&rc);
+        if (rc.PtInRect(CPoint(pt)))
+        {
+            int delta = GET_WHEEL_DELTA_WPARAM(pMsg->wParam);
+            ChangeMonth(delta > 0 ? -1 : 1);
+            return TRUE;
+        }
+
+        // Mouse-wheel over year edit or spin: scroll years
+        CRect rcY, rcS;
+        m_editYear.GetWindowRect(&rcY);
+        m_spinYear.GetWindowRect(&rcS);
+        rcY.UnionRect(rcY, rcS);
+        if (rcY.PtInRect(CPoint(pt)))
+        {
+            int delta = GET_WHEEL_DELTA_WPARAM(pMsg->wParam);
+            ChangeYear(delta > 0 ? 1 : -1);
+            return TRUE;
+        }
+    }
+
     return CFrameWnd::PreTranslateMessage(pMsg);
 }
