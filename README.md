@@ -2,6 +2,8 @@
 
 A Hebrew/Gregorian calendar application for Windows, built in C++ (Win32).
 
+![Main UI](WinLuachScreenShot.png)
+
 ## Features
 - Monthly calendar view with Hebrew and Gregorian dates
 - Color-coded holidays (Yom Tov, Shabbos, Rosh Chodesh, fast days)
