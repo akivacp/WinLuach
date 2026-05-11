@@ -60,7 +60,6 @@ private:
     CButton m_chkMinimizeOnStartup;
     CButton m_chkStartWithWindows;
     CButton m_chkDesktopShortcut;
-    CButton m_chkPrintWeeklyZmanim;
     CButton m_btnTrayTextColor;
     CComboBox m_cmbHaftarah;
     CComboBox m_cmbFontSize;
