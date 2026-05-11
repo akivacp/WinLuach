@@ -39,7 +39,7 @@ struct UserEventInfo
 
 #define SIDEBAR_W       190    // Day details panel width (pixels)
 #define ZMANIM_H        110    // Zmanim panel height (pixels)
-#define HEADER_H         56    // Month/year header height
+#define HEADER_H         84    // Month/year header height
 #define DAY_HDR_H        24    // Sun/Mon/... row height
 
 // =============================================================================
@@ -84,6 +84,8 @@ struct UserEventInfo
 #define ID_TRAY_OPEN        1015
 #define ID_TRAY_ABOUT       1016
 #define ID_TRAY_EXIT        1017
+#define ID_JUMP_GO          1018
+#define IDC_JUMP_EDIT       2001
 #define WM_WINLUACH_TRAY    (WM_APP + 101)
 
 // =============================================================================
@@ -151,6 +153,21 @@ public:
     CFont  m_fontSmall;
     CFont  m_fontHeader;
 
+    // Navigation buttons in the header bar
+    CButton m_btnPrevDecade;
+    CButton m_btnPrevYear;
+    CButton m_btnPrevMonth;
+    CButton m_btnPrevDay;
+    CButton m_btnToday;
+    CButton m_btnNextDay;
+    CButton m_btnNextMonth;
+    CButton m_btnNextYear;
+    CButton m_btnNextDecade;
+
+    // Month quick-jump field and Go button
+    CEdit   m_editJump;
+    CButton m_btnGo;
+
 protected:
     // MFC message handlers
     afx_msg int  OnCreate(LPCREATESTRUCT lpcs);
@@ -174,6 +191,8 @@ protected:
     afx_msg void OnDestroy();
     afx_msg void OnClose();
     afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
+    afx_msg void OnJumpGo();
+    virtual BOOL PreTranslateMessage(MSG* pMsg);
 
     // Recalculates zmanim for the selected date
     void RefreshZmanim();
@@ -201,6 +220,9 @@ protected:
 
     // Draws the Sun/Mon/.../Shabbos column labels
     void DrawDayHeaders(CDC* pDC, const CRect& rc);
+
+    // Syncs the jump-field text to the current view month
+    void UpdateJumpField();
 
     // Child panels
     CCalendarView* m_pCalView = nullptr;

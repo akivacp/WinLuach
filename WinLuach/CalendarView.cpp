@@ -103,7 +103,7 @@ void CCalendarView::OnSize(UINT nType, int cx, int cy)
     if (cx <= 0 || cy <= 0) return;
 
     // Skip the header rows — they are drawn by MainFrame
-    int gridTop = HEADER_H + DAY_HDR_H;
+    int gridTop = 0;
     int gridH = cy - gridTop;
     m_cellH = (gridH > 0) ? gridH / 6 : 80;
 
@@ -142,7 +142,7 @@ void CCalendarView::OnPaint()
 
     if (m_cells.empty()) RebuildCells();
 
-    int gridTop = HEADER_H + DAY_HDR_H;
+    int gridTop = 0;
 
     // Draw each cell
     for (int i = 0; i < 42 && i < (int)m_cells.size(); i++)
@@ -345,7 +345,7 @@ COLORREF CCalendarView::GetCellColor(const CalCellData& cell,
 // Returns the cell index (0-41) for the given point, or -1.
 int CCalendarView::HitTest(CPoint pt) const
 {
-    int gridTop = HEADER_H + DAY_HDR_H;
+    int gridTop = 0;
     if (pt.y < gridTop) return -1;
 
     int row = (pt.y - gridTop) / m_cellH;
@@ -364,7 +364,7 @@ CRect CCalendarView::GetCellRect(int idx) const
 {
     int row = idx / 7;
     int col = idx % 7;
-    int gridTop = HEADER_H + DAY_HDR_H;
+    int gridTop = 0;
 
     return CRect(m_colX[col], gridTop + row * m_cellH,
         m_colX[col + 1], gridTop + (row + 1) * m_cellH);
