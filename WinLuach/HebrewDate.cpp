@@ -18,8 +18,12 @@
 //          Verified: May 9 2026 -> 21 Iyar 5786 (was returning 22 Iyar).
 // v0.1.4 - BUGFIX: HebrewYearType() now checks exact day counts (353/354/355
 //          383/384/385) instead of modulo. Was returning "Unknown" for all years.
+// v0.1.5 - BUGFIX: Epoch corrected from 347997 to 347998.
+//          Verified: May 10 2026 -> 23 Iyar 5786 (matches Kaluach).
+//          Previous value was causing all Hebrew dates to be 1 day too high.
 // =============================================================================
 
+#include "pch.h"
 #include "HebrewDate.h"
 #include <ctime>
 
@@ -29,7 +33,7 @@
 
 // Julian Day Number of the Hebrew calendar epoch (1 Tishrei year 1)
 // Corresponds to Monday, 7 October 3761 BCE (proleptic Gregorian)
-static const long HEBREW_EPOCH_JDN = 347997L;
+static const long HEBREW_EPOCH_JDN = 347998L;
 
 // =============================================================================
 // GREGORIAN HELPERS

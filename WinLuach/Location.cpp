@@ -14,11 +14,10 @@
 //          Singleton LocationDB with add/update/delete/save/load.
 // =============================================================================
 
+#include "pch.h"
 #include "Location.h"
-#include <algorithm>
 #include <fstream>
 #include <sstream>
-#include <Windows.h>
 #include <ShlObj.h>
 
 // =============================================================================

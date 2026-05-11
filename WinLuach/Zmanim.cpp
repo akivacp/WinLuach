@@ -19,11 +19,9 @@
 //          Previous delta-based formula inverted sunrise/sunset results.
 // =============================================================================
 
+#include "pch.h"
 #include "Zmanim.h"
-#define _USE_MATH_DEFINES
 #include <cmath>
-#include <ctime>
-#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

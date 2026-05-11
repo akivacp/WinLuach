@@ -19,6 +19,8 @@
 #include "Zmanim.h"
 #include "Location.h"
 #include "HolidayEngine.h"
+#include "LocationDialog.h"
+#include "Settings.h"
 #include <windows.h>
 #include <string>
 #include <vector>
@@ -110,8 +112,20 @@ private:
     // Called when a toolbar/menu command is triggered.
     void OnCommand(HWND hwnd, WPARAM wParam);
 
+	// Called when the user changes the location in the LocationDialog.
+    AppSettings  m_settings;
+
+	// Called when the user clicks the "Location" button in the toolbar.
+    void OnLocationClick();
+
     // Called when the window is destroyed.
     void OnDestroy(HWND hwnd);
+
+	// Called when the user clicks the "Options" button in the toolbar.
+    void OnOptionsClick();
+
+
+
 
     // -------------------------------------------------------------------------
     // Drawing routines — each draws one region of the window.

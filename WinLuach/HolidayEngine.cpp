@@ -24,8 +24,12 @@
 //          short (Chaser) non-leap years, not all non-long years.
 //          This corrected parasha for Kesidra years like 5786.
 // v0.1.3 - Removed redundant subtitle from Yom Yerushalayim.
+// v0.1.4 - BUGFIX: Israel parasha corrected after Shavuos.
+//          Israel reads 1 parasha ahead of Diaspora starting the
+//          Shabbos after Shavuos (no Yom Tov Sheni = one extra reading).
 // =============================================================================
 
+#include "pch.h"
 #include "HolidayEngine.h"
 #include <sstream>
 #include <cmath>
@@ -734,6 +738,16 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
     long shabbosJDN = NextShabbos(jdn);
     HebrewDate shabbos = JDNToHebrew(shabbosJDN);
 
+    // When Shabbos is Yom Tov, the regular weekly parasha is not read.
+    // Leave the parasha blank so the UI does not show readings like Nasso
+    // on Shabbos Shavuos Day 2 in the Diaspora.
+    std::vector<HolidayInfo> shabbosHolidays = GetHolidays(shabbos, isIsrael);
+    for (const auto& hol : shabbosHolidays)
+    {
+        if (hol.flags & HOLIDAY_YOM_TOV)
+            return info;
+    }
+
     // The annual parasha cycle starts after Simchas Torah (23 Tishrei in Diaspora,
     // 22 Tishrei in Israel) and ends with V'Zos HaBracha on Simchas Torah.
     // We anchor to the Shabbos after Simchas Torah each year.
@@ -758,6 +772,21 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
 
     // How many Shabbosos from cycle start to our target Shabbos?
     long weeksDiff = (shabbosJDN - firstParashaJDN) / 7;
+    // Israel adjustment: after Shavuos, Israel reads 1 parasha ahead
+    // of Diaspora because Shavuos is 1 day in Israel (not 2).
+    // That extra day gives Israel an extra Shabbos parasha reading.
+    // Starting from the Shabbos after Shavuos, weeksDiff-- to shift
+    // Israel's schedule 1 week back relative to Diaspora's.
+    if (isIsrael && weeksDiff > 0)
+    {
+        // Find the Shabbos immediately after Shavuos (6 Sivan)
+        HebrewDate shavuos(cycleYear, SIVAN, 6);
+        long shavuosJDN = HebrewToJDN(shavuos);
+        long firstShabbosAfter = NextShabbos(shavuosJDN + 1);
+
+        if (shabbosJDN >= firstShabbosAfter)
+            weeksDiff--;
+    }
 
     if (weeksDiff < 0)
     {
