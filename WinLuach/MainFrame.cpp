@@ -195,7 +195,8 @@ void CGotoDateDlg::OnPaint()
     int W = rc.Width(), H = rc.Height();
 
     int hdrY  = 32;
-    int cellH = 26;
+    int gridY = hdrY + 20;
+    int cellH = max(18, (H - gridY - 40) / 6);
     int cellW = (W - 8) / 7;
 
     // Day header row
@@ -210,7 +211,6 @@ void CGotoDateDlg::OnPaint()
     }
 
     // Calendar cells
-    int gridY = hdrY + 20;
     GregorianDate first(m_year, m_month, 1);
     int startCol     = (int)GetDayOfWeek(first);
     int daysInMonth  = DaysInGregorianMonth(m_month, m_year);
@@ -241,9 +241,9 @@ void CGotoDateDlg::OnPaint()
 void CGotoDateDlg::OnLButtonDown(UINT, CPoint pt)
 {
     CRect rc; GetClientRect(&rc);
-    int W = rc.Width();
+    int W = rc.Width(), H = rc.Height();
     int hdrY = 32, gridY = hdrY + 20;
-    int cellH = 26, cellW = (W - 8) / 7;
+    int cellH = max(18, (H - gridY - 40) / 6), cellW = (W - 8) / 7;
     if (pt.y < gridY || pt.x < 4 || pt.x > W-4) return;
     int col = (pt.x - 4) / cellW;
     int row = (pt.y - gridY) / cellH;
