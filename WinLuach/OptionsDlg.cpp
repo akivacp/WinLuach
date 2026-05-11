@@ -43,9 +43,160 @@
 #define IDC_OPT_TRAY_WHEN      330
 #define IDC_OPT_CANDLE         331
 #define IDC_OPT_TRAY_COLOR     332
+#define IDC_OPT_MANAGE_CALS    333
+
+// =============================================================================
+// CWebCalDlg — inline multi-calendar manager
+// =============================================================================
+
+class CWebCalDlg : public CDialog
+{
+public:
+    std::vector<WebCalEntry> calendars;
+
+    explicit CWebCalDlg(const std::vector<WebCalEntry>& initial, CWnd* pParent = nullptr)
+        : CDialog(), calendars(initial)
+    {
+        m_pParentWnd = pParent;
+    }
+
+    virtual INT_PTR DoModal() override
+    {
+        struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
+        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        buf.t.cx = 380; buf.t.cy = 260;
+        wcscpy_s(buf.title, L"Manage Calendars");
+        if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Manage Calendars");
+
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+
+        m_listCals.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+            CRect(8, 8, W - 8, H - 80), this, 401);
+        m_listCals.SetFont(pF);
+
+        m_editUrl.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(8, H - 68, W - 8, H - 48), this, 402);
+        m_editUrl.SetFont(pF);
+
+        auto mkBtn = [&](const wchar_t* t, int x, int w, UINT id) {
+            CButton* b = new CButton;
+            b->Create(t, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(x, H - 38, x + w, H - 8), this, id);
+            b->SetFont(pF);
+        };
+        mkBtn(L"Add",    8,   54, 411);
+        mkBtn(L"Remove", 66,  64, 412);
+        mkBtn(L"Toggle", 134, 58, 415);
+        mkBtn(L"Up",     196, 40, 413);
+        mkBtn(L"Down",   240, 48, 414);
+        mkBtn(L"OK",    W - 138, 60, IDOK);
+        mkBtn(L"Cancel",W - 74,  66, IDCANCEL);
+
+        RefreshList();
+        return TRUE;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        UINT id = LOWORD(wParam);
+        if (id == 411) { // Add
+            CString s; m_editUrl.GetWindowText(s); s.Trim();
+            if (!s.IsEmpty()) {
+                calendars.push_back({ (LPCWSTR)s, true });
+                RefreshList();
+                m_listCals.SetCurSel((int)calendars.size() - 1);
+                m_editUrl.SetWindowText(L"");
+            }
+            return TRUE;
+        }
+        if (id == 412) { // Remove
+            int sel = m_listCals.GetCurSel();
+            if (sel != LB_ERR && sel < (int)calendars.size()) {
+                calendars.erase(calendars.begin() + sel);
+                RefreshList();
+                if (sel < (int)calendars.size()) m_listCals.SetCurSel(sel);
+                else if (!calendars.empty()) m_listCals.SetCurSel((int)calendars.size() - 1);
+            }
+            return TRUE;
+        }
+        if (id == 413) { // Up
+            int sel = m_listCals.GetCurSel();
+            if (sel > 0 && sel < (int)calendars.size()) {
+                std::swap(calendars[sel], calendars[sel - 1]);
+                RefreshList(); m_listCals.SetCurSel(sel - 1);
+            }
+            return TRUE;
+        }
+        if (id == 414) { // Down
+            int sel = m_listCals.GetCurSel();
+            if (sel >= 0 && sel + 1 < (int)calendars.size()) {
+                std::swap(calendars[sel], calendars[sel + 1]);
+                RefreshList(); m_listCals.SetCurSel(sel + 1);
+            }
+            return TRUE;
+        }
+        if (HIWORD(wParam) == LBN_SELCHANGE && LOWORD(wParam) == 401) {
+            int sel = m_listCals.GetCurSel();
+            if (sel != LB_ERR && sel < (int)calendars.size())
+                m_editUrl.SetWindowText(calendars[sel].url.c_str());
+            return TRUE;
+        }
+        if (HIWORD(wParam) == LBN_DBLCLK && LOWORD(wParam) == 401) {
+            DoToggle();
+            return TRUE;
+        }
+        if (id == 415) { // Toggle on/off
+            DoToggle();
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    void OnOK() override { CDialog::OnOK(); }
+    DECLARE_MESSAGE_MAP()
+
+private:
+    CListBox m_listCals;
+    CEdit    m_editUrl;
+
+    void DoToggle()
+    {
+        int sel = m_listCals.GetCurSel();
+        if (sel != LB_ERR && sel < (int)calendars.size()) {
+            calendars[sel].enabled = !calendars[sel].enabled;
+            RefreshList();
+            m_listCals.SetCurSel(sel);
+        }
+    }
+
+    void RefreshList()
+    {
+        m_listCals.ResetContent();
+        for (const auto& c : calendars)
+        {
+            std::wstring disp = (c.enabled ? L"[ON]  " : L"[OFF] ") + c.url;
+            m_listCals.AddString(disp.c_str());
+        }
+    }
+};
+
+BEGIN_MESSAGE_MAP(CWebCalDlg, CDialog)
+END_MESSAGE_MAP()
 
 BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_TRAY_COLOR, &COptionsDlg::OnTrayTextColor)
+    ON_BN_CLICKED(IDC_OPT_MANAGE_CALS, &COptionsDlg::OnManageCals)
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -165,15 +316,11 @@ BOOL COptionsDlg::OnInitDialog()
     InitCombo(m_cmbHaftarah, 105, y, 140, IDC_OPT_HAFTARAH,
         { L"Ashkenazi", L"Eidot Mizrach", L"Italian", L"Yemenite" },
         max(0, min(3, m_current.haftarahShita)));
-    MakeCtrl(L"STATIC", L"Font size", 0, 260, y + 3, 60, 18, 341);
-    InitCombo(m_cmbFontSize, 325, y, 80, IDC_OPT_FONT_SIZE,
-        { L"Small", L"Medium", L"Big" }, max(0, min(2, m_current.fontSize)));
-    y += 29;
-
-    MakeCtrl(L"STATIC", L"Language", 0, 18, y + 3, 82, 18, 342);
-    InitCombo(m_cmbLanguage, 105, y, 140, IDC_OPT_LANGUAGE,
-        { L"English", L"Deutsch", L"espanol", L"francais", L"Hebrew" },
-        max(0, min(4, m_current.language)));
+    MakeCtrl(L"STATIC", L"Font size", 0, 255, y + 3, 65, 18, 341);
+    InitCombo(m_cmbFontSize, 325, y, 90, IDC_OPT_FONT_SIZE,
+        { L"Tiny (13)", L"Normal (14)", L"Medium (15)", L"Large (16)",
+          L"Larger (17)", L"Big (18)", L"Biggest (19)" },
+        max(0, min(6, m_current.fontSize)));
     y = 136;
 
     // Month view
@@ -288,11 +435,10 @@ BOOL COptionsDlg::OnInitDialog()
     m_btnTrayTextColor.SetFont(pFont);
     y += 30;
 
-    MakeCtrl(L"STATIC", L"Web calendar URL", 0, 18, y + 4, 100, 18, 370);
-    m_editWebCalendarUrl.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(125, y, W - 18, y + 22), this, 371);
-    m_editWebCalendarUrl.SetFont(pFont);
-    m_editWebCalendarUrl.SetWindowText(m_current.webCalendarUrl.c_str());
+    m_btnManageCals.Create(L"Manage Calendars...",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(18, y, 180, y + 24), this, IDC_OPT_MANAGE_CALS);
+    m_btnManageCals.SetFont(pFont);
     y += 32;
 
     // OK / Cancel buttons
@@ -362,18 +508,14 @@ void COptionsDlg::OnOK()
     m_result.showMishnaYomit = (m_chkMishna.GetCheck() == BST_CHECKED);
     m_result.showTanachYomi = (m_chkTanach.GetCheck() == BST_CHECKED);
     m_result.haftarahShita = m_cmbHaftarah.GetCurSel();
-    m_result.fontSize = m_cmbFontSize.GetCurSel();
-    m_result.language = m_cmbLanguage.GetCurSel();
+    m_result.fontSize = max(0, min(6, m_cmbFontSize.GetCurSel()));
+    m_result.language = 0;
     m_result.minimizeToTray = (m_chkMinimizeToTray.GetCheck() == BST_CHECKED);
     m_result.minimizeTrayWhen = m_cmbTrayWhen.GetCurSel();
     m_result.minimizeOnStartup = (m_chkMinimizeOnStartup.GetCheck() == BST_CHECKED);
     m_result.startWithWindows = (m_chkStartWithWindows.GetCheck() == BST_CHECKED);
     m_result.desktopShortcut = (m_chkDesktopShortcut.GetCheck() == BST_CHECKED);
     m_result.printWeeklyZmanim = (m_chkPrintWeeklyZmanim.GetCheck() == BST_CHECKED);
-    CString url;
-    m_editWebCalendarUrl.GetWindowText(url);
-    m_result.webCalendarUrl = (LPCTSTR)url;
-
     if (m_radMA72.GetCheck() == BST_CHECKED) m_result.zmanimShita = 1;
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;
@@ -390,4 +532,11 @@ void COptionsDlg::OnTrayTextColor()
     CColorDialog dlg((COLORREF)m_result.trayTextColor, CC_FULLOPEN, this);
     if (dlg.DoModal() == IDOK)
         m_result.trayTextColor = (int)dlg.GetColor();
+}
+
+void COptionsDlg::OnManageCals()
+{
+    CWebCalDlg dlg(m_result.webCalendars, this);
+    if (dlg.DoModal() == IDOK)
+        m_result.webCalendars = dlg.calendars;
 }

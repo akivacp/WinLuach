@@ -88,6 +88,11 @@ void CCalendarView::RebuildCells()
         m_cells[i].holidays = GetHolidays(m_cells[i].hebrew,
             m_pFrame->m_isIsrael);
         m_cells[i].omer = GetOmer(m_cells[i].hebrew);
+        m_cells[i].learning = GetDailyLearning(m_cells[i].hebrew, m_cells[i].greg);
+        auto [cs, ms] = m_pFrame->GetCellZmanimLabels(
+            m_cells[i].greg, m_cells[i].hebrew, m_cells[i].holidays);
+        m_cells[i].candleStr = std::move(cs);
+        m_cells[i].motzStr   = std::move(ms);
     }
 }
 
@@ -304,6 +309,40 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
                 rc.right - margin, yOff + 13);
             pDC->SetTextColor(RGB(100, 80, 150));
             pDC->DrawText(omerTxt, rcOmer,
+                DT_LEFT | DT_TOP | DT_SINGLELINE);
+            yOff += 13; lines++;
+        }
+
+        {
+            pDC->SelectObject(&m_pFrame->m_fontSmall);
+            auto tryLearn = [&](bool show, const std::wstring& txt, COLORREF clr) {
+                if (!show || txt.empty() || lines >= maxLines) return;
+                pDC->SetTextColor(clr);
+                CRect rcL(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+                pDC->DrawText(txt.c_str(), -1, rcL,
+                    DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
+                yOff += 13; lines++;
+            };
+            tryLearn(m_pFrame->m_showDafYomi,      cell.learning.dafYomi,      RGB(0,  90, 180));
+            tryLearn(m_pFrame->m_showYerushalmi,   cell.learning.yerushalmi,   RGB(0, 120, 120));
+            tryLearn(m_pFrame->m_showHalachaYomit, cell.learning.halachaYomit, RGB(100, 50,  0));
+            tryLearn(m_pFrame->m_showMishnaYomit,  cell.learning.mishnaYomit,  RGB(0, 100,  0));
+            tryLearn(m_pFrame->m_showTanachYomi,   cell.learning.tanachYomi,   RGB(80,   0, 80));
+        }
+
+        if (!cell.candleStr.empty() && lines < maxLines)
+        {
+            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+            pDC->SetTextColor(RGB(180, 80, 0));
+            pDC->DrawText(cell.candleStr.c_str(), -1, rcZ,
+                DT_LEFT | DT_TOP | DT_SINGLELINE);
+            yOff += 13; lines++;
+        }
+        if (!cell.motzStr.empty() && lines < maxLines)
+        {
+            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+            pDC->SetTextColor(RGB(0, 80, 160));
+            pDC->DrawText(cell.motzStr.c_str(), -1, rcZ,
                 DT_LEFT | DT_TOP | DT_SINGLELINE);
         }
     }

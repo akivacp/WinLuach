@@ -126,7 +126,19 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printWeeklyZmanim\": " << (s.printWeeklyZmanim ? L"true" : L"false") << L",\n";
     f << L"  \"candleLightingMinutes\": " << s.candleLightingMinutes << L",\n";
     f << L"  \"webCalendarUrl\": \"" << JsonEscape(s.webCalendarUrl) << L"\",\n";
+    f << L"  \"webCalCount\": " << s.webCalendars.size() << L",\n";
+    for (int i = 0; i < (int)s.webCalendars.size(); i++)
+    {
+        f << L"  \"webCal" << i << L"_url\": \"" << JsonEscape(s.webCalendars[i].url) << L"\",\n";
+        f << L"  \"webCal" << i << L"_enabled\": " << (s.webCalendars[i].enabled ? L"true" : L"false") << L",\n";
+    }
     f << L"  \"zmanimShita\": " << s.zmanimShita << L",\n";
+    f << L"  \"printLandscape\": "   << (s.printLandscape ? L"true" : L"false") << L",\n";
+    f << L"  \"printRange\": "       << s.printRange       << L",\n";
+    f << L"  \"printMarginTop\": "   << s.printMarginTop   << L",\n";
+    f << L"  \"printMarginBot\": "   << s.printMarginBot   << L",\n";
+    f << L"  \"printMarginLeft\": "  << s.printMarginLeft  << L",\n";
+    f << L"  \"printMarginRight\": " << s.printMarginRight << L",\n";
     f << L"  \"windowX\": " << s.windowX << L",\n";
     f << L"  \"windowY\": " << s.windowY << L",\n";
     f << L"  \"windowW\": " << s.windowW << L",\n";
@@ -184,12 +196,42 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"printWeeklyZmanim\"") != std::wstring::npos) s.printWeeklyZmanim = ParseJsonBool(line);
         else if (line.find(L"\"candleLightingMinutes\"") != std::wstring::npos) s.candleLightingMinutes = (int)ParseJsonNumber(line);
         else if (line.find(L"\"webCalendarUrl\"") != std::wstring::npos) s.webCalendarUrl = ParseJsonString(line);
-        else if (line.find(L"\"zmanimShita\"") != std::wstring::npos) s.zmanimShita = (int)ParseJsonNumber(line);
-        else if (line.find(L"\"windowX\"") != std::wstring::npos) s.windowX = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"webCal") != std::wstring::npos && line.find(L"_url\"") != std::wstring::npos)
+        {
+            size_t p = line.find(L"\"webCal") + 7;
+            size_t q = line.find(L'_', p);
+            if (q != std::wstring::npos) {
+                int idx = std::stoi(line.substr(p, q - p));
+                while ((int)s.webCalendars.size() <= idx) s.webCalendars.push_back({L"", true});
+                s.webCalendars[idx].url = ParseJsonString(line);
+            }
+        }
+        else if (line.find(L"\"webCal") != std::wstring::npos && line.find(L"_enabled\"") != std::wstring::npos)
+        {
+            size_t p = line.find(L"\"webCal") + 7;
+            size_t q = line.find(L'_', p);
+            if (q != std::wstring::npos) {
+                int idx = std::stoi(line.substr(p, q - p));
+                while ((int)s.webCalendars.size() <= idx) s.webCalendars.push_back({L"", true});
+                s.webCalendars[idx].enabled = ParseJsonBool(line);
+            }
+        }
+        else if (line.find(L"\"zmanimShita\"")     != std::wstring::npos) s.zmanimShita     = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"printLandscape\"")  != std::wstring::npos) s.printLandscape  = ParseJsonBool(line);
+        else if (line.find(L"\"printRange\"")      != std::wstring::npos) s.printRange      = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"printMarginTop\"")  != std::wstring::npos) s.printMarginTop  = (float)ParseJsonNumber(line);
+        else if (line.find(L"\"printMarginBot\"")  != std::wstring::npos) s.printMarginBot  = (float)ParseJsonNumber(line);
+        else if (line.find(L"\"printMarginLeft\"") != std::wstring::npos) s.printMarginLeft = (float)ParseJsonNumber(line);
+        else if (line.find(L"\"printMarginRight\"")!= std::wstring::npos) s.printMarginRight= (float)ParseJsonNumber(line);
+        else if (line.find(L"\"windowX\"")         != std::wstring::npos) s.windowX         = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowY\"") != std::wstring::npos) s.windowY = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowH\"") != std::wstring::npos) s.windowH = (int)ParseJsonNumber(line);
     }
+
+    // Migrate legacy single URL to new list
+    if (s.webCalendars.empty() && !s.webCalendarUrl.empty())
+        s.webCalendars.push_back({ s.webCalendarUrl, true });
 
     return true;
 }

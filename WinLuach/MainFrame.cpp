@@ -17,10 +17,12 @@
 #include "ZmanimPanel.h"
 #include "LocationDlg.h"
 #include "OptionsDlg.h"
+#include "CalPrintDlg.h"
 #include "WinLuachApp.h"
 #include "Resource.h"
 #include <urlmon.h>
 #include <fstream>
+#include <thread>
 #pragma comment(lib, "Urlmon.lib")
 
 static std::wstring WebCalTrim(const std::wstring& s)
@@ -85,6 +87,179 @@ static bool ParseIcsDate(const std::wstring& line, GregorianDate& g)
     }
 }
 
+// =============================================================================
+// CGotoDateDlg — compact mini-calendar date picker
+// =============================================================================
+
+class CGotoDateDlg : public CDialog
+{
+public:
+    GregorianDate selectedDate;
+
+    CGotoDateDlg(const GregorianDate& initial, CWnd* pParent = nullptr)
+        : CDialog(), m_year(initial.year), m_month(initial.month), m_day(initial.day)
+    {
+        m_pParentWnd = pParent;
+        selectedDate = initial;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[20]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        b.t.cx = 230; b.t.cy = 240;
+        wcscpy_s(b.title, L"Go to Date");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    afx_msg void OnPaint();
+    afx_msg void OnLButtonDown(UINT nFlags, CPoint pt);
+    DECLARE_MESSAGE_MAP()
+
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Go to Date");
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+
+        auto mkBtn = [&](const wchar_t* t, int x, int y, int w, int h, UINT id) {
+            CButton* b = new CButton;
+            b->Create(t, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(x, y, x+w, y+h), this, id);
+            b->SetFont(pF);
+        };
+        mkBtn(L"<<", 4,    4, 28, 24, 601);
+        mkBtn(L"<",  36,   4, 24, 24, 602);
+        mkBtn(L">",  W-60, 4, 24, 24, 603);
+        mkBtn(L">>", W-32, 4, 28, 24, 604);
+
+        m_lblMonth.Create(L"", WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+            CRect(64, 4, W-64, 28), this, 605);
+        m_lblMonth.SetFont(pF);
+
+        mkBtn(L"Go",     W-128, H-32, 52, 26, IDOK);
+        mkBtn(L"Cancel", W-70,  H-32, 64, 26, IDCANCEL);
+
+        UpdateLabel();
+        return TRUE;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        switch (LOWORD(wParam)) {
+        case 601: NavYear(-1);  return TRUE;
+        case 602: NavMonth(-1); return TRUE;
+        case 603: NavMonth(1);  return TRUE;
+        case 604: NavYear(1);   return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    void OnOK() override
+    {
+        if (m_day < 1) {
+            MessageBox(L"Click a day to select it.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+            return;
+        }
+        selectedDate = GregorianDate(m_year, m_month, m_day);
+        CDialog::OnOK();
+    }
+
+private:
+    int     m_year, m_month, m_day;
+    CStatic m_lblMonth;
+
+    void NavMonth(int delta) {
+        m_month += delta;
+        while (m_month < 1)  { m_month += 12; m_year--; }
+        while (m_month > 12) { m_month -= 12; m_year++; }
+        m_day = 0; UpdateLabel(); Invalidate(FALSE);
+    }
+    void NavYear(int delta) { m_year += delta; m_day = 0; UpdateLabel(); Invalidate(FALSE); }
+    void UpdateLabel() {
+        if (!m_lblMonth.GetSafeHwnd()) return;
+        CString s; s.Format(L"%s %d", GregorianMonthName(m_month).c_str(), m_year);
+        m_lblMonth.SetWindowText(s);
+    }
+};
+
+void CGotoDateDlg::OnPaint()
+{
+    CPaintDC dc(this);
+    CRect rc; GetClientRect(&rc);
+    int W = rc.Width(), H = rc.Height();
+
+    int hdrY  = 32;
+    int cellH = 26;
+    int cellW = (W - 8) / 7;
+
+    // Day header row
+    dc.FillSolidRect(CRect(4, hdrY, W-4, hdrY+20), RGB(70, 100, 160));
+    dc.SetBkMode(TRANSPARENT);
+    dc.SetTextColor(RGB(255, 255, 255));
+    dc.SelectObject(CFont::FromHandle((HFONT)GetStockObject(DEFAULT_GUI_FONT)));
+    static const wchar_t* hdrs[] = { L"Su",L"Mo",L"Tu",L"We",L"Th",L"Fr",L"Sa" };
+    for (int i = 0; i < 7; i++) {
+        CRect c(4 + i*cellW, hdrY, 4 + (i+1)*cellW, hdrY+20);
+        dc.DrawText(hdrs[i], -1, &c, DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+
+    // Calendar cells
+    int gridY = hdrY + 20;
+    GregorianDate first(m_year, m_month, 1);
+    int startCol     = (int)GetDayOfWeek(first);
+    int daysInMonth  = DaysInGregorianMonth(m_month, m_year);
+    GregorianDate today = GetTodayGregorian();
+
+    for (int day = 1; day <= daysInMonth; day++) {
+        int idx = startCol + day - 1;
+        int col = idx % 7, row = idx / 7;
+        CRect cell(4 + col*cellW, gridY + row*cellH,
+                   4 + (col+1)*cellW, gridY + (row+1)*cellH);
+
+        COLORREF bg = RGB(255,255,255);
+        if (day == m_day)
+            bg = RGB(55, 90, 200);
+        else if (m_year == today.year && m_month == today.month && day == today.day)
+            bg = RGB(255, 255, 140);
+        else if (col == 6)
+            bg = RGB(228, 244, 228);
+
+        dc.FillSolidRect(&cell, bg);
+        dc.DrawEdge(&cell, EDGE_SUNKEN, BF_RECT);
+        dc.SetTextColor(day == m_day ? RGB(255,255,255) : RGB(0,0,0));
+        wchar_t s[4]; swprintf_s(s, L"%d", day);
+        dc.DrawText(s, -1, &cell, DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+}
+
+void CGotoDateDlg::OnLButtonDown(UINT, CPoint pt)
+{
+    CRect rc; GetClientRect(&rc);
+    int W = rc.Width();
+    int hdrY = 32, gridY = hdrY + 20;
+    int cellH = 26, cellW = (W - 8) / 7;
+    if (pt.y < gridY || pt.x < 4 || pt.x > W-4) return;
+    int col = (pt.x - 4) / cellW;
+    int row = (pt.y - gridY) / cellH;
+    if (col < 0 || col > 6) return;
+    int startCol = (int)GetDayOfWeek(GregorianDate(m_year, m_month, 1));
+    int day = row * 7 + col - startCol + 1;
+    if (day >= 1 && day <= DaysInGregorianMonth(m_month, m_year)) {
+        m_day = day; Invalidate(FALSE);
+    }
+}
+
+BEGIN_MESSAGE_MAP(CGotoDateDlg, CDialog)
+    ON_WM_PAINT()
+    ON_WM_LBUTTONDOWN()
+END_MESSAGE_MAP()
+
 BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_CREATE()
     ON_WM_SIZE()
@@ -111,6 +286,16 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_TRAY_EXIT, &CMainFrame::OnTrayExit)
     ON_CBN_SELCHANGE(IDC_MONTH_COMBO, &CMainFrame::OnMonthComboChange)
     ON_NOTIFY(UDN_DELTAPOS, IDC_YEAR_SPIN, &CMainFrame::OnYearSpinDelta)
+    ON_COMMAND(ID_CAL_PRINT,    &CMainFrame::OnCalPrint)
+    ON_COMMAND(ID_CAL_PREVIEW,  &CMainFrame::OnCalPreview)
+    ON_MESSAGE(WM_WEBCAL_DONE,  &CMainFrame::OnWebCalDone)
+    ON_WM_MOUSEWHEEL()
+    ON_COMMAND(ID_FILE_BACKUP,      &CMainFrame::OnFileBackup)
+    ON_COMMAND(ID_FILE_RESTORE,     &CMainFrame::OnFileRestore)
+    ON_COMMAND(ID_VIEW_ZOOM_IN,     &CMainFrame::OnViewZoomIn)
+    ON_COMMAND(ID_VIEW_ZOOM_OUT,    &CMainFrame::OnViewZoomOut)
+    ON_COMMAND(ID_VIEW_ZOOM_RESET,  &CMainFrame::OnViewZoomReset)
+    ON_COMMAND(ID_CAL_GOTO,         &CMainFrame::OnCalGoTo)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -149,28 +334,42 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     CMenu fileMenu;
     fileMenu.CreatePopupMenu();
-    fileMenu.AppendMenu(MF_STRING, ID_APP_EXIT, L"E&xit");
+    fileMenu.AppendMenu(MF_STRING, ID_CAL_PRINT,    L"&Print...\tCtrl+P");
+    fileMenu.AppendMenu(MF_STRING, ID_CAL_PREVIEW,  L"Print Pre&view...");
+    fileMenu.AppendMenu(MF_SEPARATOR);
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_BACKUP,  L"&Backup Settings...");
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_RESTORE, L"&Restore Settings...");
+    fileMenu.AppendMenu(MF_SEPARATOR);
+    fileMenu.AppendMenu(MF_STRING, ID_APP_EXIT,     L"E&xit");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)fileMenu.Detach(), L"&File");
+
+    CMenu calMenu;
+    calMenu.CreatePopupMenu();
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVDAY,    L"Previous &Day\tLeft");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTDAY,    L"Next D&ay\tRight");
+    calMenu.AppendMenu(MF_SEPARATOR);
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_TODAY,      L"&Today\tHome");
+    calMenu.AppendMenu(MF_STRING, ID_CAL_GOTO,        L"&Go to Date...\tCtrl+G");
+    calMenu.AppendMenu(MF_SEPARATOR);
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVMONTH,  L"&Previous Month\tPage Up");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTMONTH,  L"&Next Month\tPage Down");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVYEAR,   L"Previous &Year\tCtrl+Left");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTYEAR,   L"Next Y&ear\tCtrl+Right");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVDECADE, L"Previous De&cade\tCtrl+Alt+Left");
+    calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTDECADE, L"Next Deca&de\tCtrl+Alt+Right");
+    menu.AppendMenu(MF_POPUP, (UINT_PTR)calMenu.Detach(), L"&Calendar");
 
     CMenu viewMenu;
     viewMenu.CreatePopupMenu();
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_PREVDAY, L"Previous &Day");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTDAY, L"Next D&ay");
-    viewMenu.AppendMenu(MF_SEPARATOR);
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_TODAY, L"&Today\tHome");
-    viewMenu.AppendMenu(MF_SEPARATOR);
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_PREVMONTH, L"&Previous Month\tPage Up");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTMONTH, L"&Next Month\tPage Down");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_PREVYEAR, L"Previous &Year");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTYEAR, L"Next Y&ear");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_PREVDECADE, L"Previous De&cade");
-    viewMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTDECADE, L"Next Deca&de");
+    viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_IN,    L"Zoom &In\tCtrl++");
+    viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_OUT,   L"Zoom &Out\tCtrl+-");
+    viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_RESET, L"Reset Text &Size\tCtrl+0");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)viewMenu.Detach(), L"&View");
 
     CMenu optMenu;
     optMenu.CreatePopupMenu();
     optMenu.AppendMenu(MF_STRING, ID_OPTIONS_LOCATION, L"&Location...");
-    optMenu.AppendMenu(MF_STRING, ID_OPTIONS_PREFS, L"&Preferences...");
+    optMenu.AppendMenu(MF_STRING, ID_OPTIONS_PREFS,    L"&Preferences...\tCtrl+,");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)optMenu.Detach(), L"&Options");
 
     CMenu helpMenu;
@@ -181,21 +380,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     SetMenu(&menu);
     menu.Detach();
 
-    // Fonts
-    m_fontNormal.CreateFont(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-    m_fontBold.CreateFont(15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-    m_fontSmall.CreateFont(12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-    m_fontHeader.CreateFont(20, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-
-    // Load settings
+    // Load settings (calls RecreateFonts internally)
     AppSettings& s = theApp.m_settings;
     ApplySettings(s);
 
@@ -238,12 +423,15 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     m_btnNextYear  .Create(L"Year >",  btnStyle, r, this, ID_VIEW_NEXTYEAR);
     m_btnNextDecade.Create(L"Dec >>",  btnStyle, r, this, ID_VIEW_NEXTDECADE);
 
-    CFont* pSF = &m_fontSmall;
-    m_btnPrevDecade.SetFont(pSF);  m_btnPrevYear.SetFont(pSF);
-    m_btnPrevMonth .SetFont(pSF);  m_btnPrevDay .SetFont(pSF);
-    m_btnToday     .SetFont(pSF);
-    m_btnNextDay   .SetFont(pSF);  m_btnNextMonth.SetFont(pSF);
-    m_btnNextYear  .SetFont(pSF);  m_btnNextDecade.SetFont(pSF);
+    m_btnPrint.Create(L"Print", btnStyle, r, this, ID_CAL_PRINT);
+
+    CFont* pNF = &m_fontNormal;
+    m_btnPrevDecade.SetFont(pNF);  m_btnPrevYear.SetFont(pNF);
+    m_btnPrevMonth .SetFont(pNF);  m_btnPrevDay .SetFont(pNF);
+    m_btnToday     .SetFont(pNF);
+    m_btnNextDay   .SetFont(pNF);  m_btnNextMonth.SetFont(pNF);
+    m_btnNextYear  .SetFont(pNF);  m_btnNextDecade.SetFont(pNF);
+    m_btnPrint     .SetFont(pNF);
 
     // Month combo + year edit + year spin
     m_comboMonth.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWN | CBS_AUTOHSCROLL,
@@ -408,6 +596,10 @@ void CMainFrame::LayoutPanels(int cx, int cy)
         place(m_btnNextMonth);
         place(m_btnNextYear);
         place(m_btnNextDecade);
+
+        // Print button anchored to the right edge
+        if (m_btnPrint.GetSafeHwnd())
+            m_btnPrint.MoveWindow(cx - 8 - BTN_W, btnY, BTN_W, BTN_H);
     }
 
     // ── Month combo + year edit + spin (date display row, y=38..84) ─────────
@@ -688,37 +880,54 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_minimizeToTray = s.minimizeToTray;
     m_minimizeTrayWhen = s.minimizeTrayWhen;
     m_hebrewMonthView = s.defaultHebrewMonth;
+    RecreateFonts();
+    // Reassign fonts to header controls — their HFONT handle becomes stale after RecreateFonts.
+    if (m_comboMonth.GetSafeHwnd())    m_comboMonth.SetFont(&m_fontNormal);
+    if (m_editYear.GetSafeHwnd())      m_editYear.SetFont(&m_fontNormal);
+    auto setNavFont = [this](CButton& b) { if (b.GetSafeHwnd()) b.SetFont(&m_fontNormal); };
+    setNavFont(m_btnPrevDecade); setNavFont(m_btnPrevYear);  setNavFont(m_btnPrevMonth);
+    setNavFont(m_btnPrevDay);    setNavFont(m_btnToday);     setNavFont(m_btnNextDay);
+    setNavFont(m_btnNextMonth);  setNavFont(m_btnNextYear);  setNavFont(m_btnNextDecade);
+    setNavFont(m_btnPrint);
+    if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
+    if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
+    if (m_pZmanim)  m_pZmanim->Invalidate(FALSE);
 }
 
-void CMainFrame::RefreshWebCalendarEvents()
+void CMainFrame::RecreateFonts()
 {
-    m_webEvents.clear();
-    if (theApp.m_settings.webCalendarUrl.empty())
-        return;
+    int sz = theApp.m_settings.fontSize;   // 0-6
+    int hNorm  = 13 + sz;                  // 13-19pt (default sz=1 → 14pt)
+    int hBold  = hNorm + 1;
+    int hSmall = hNorm;                    // buttons same size as normal text
+    int hHdr   = hNorm + 6;
+    auto make = [](CFont& f, int h, int weight) {
+        if (f.GetSafeHandle()) f.DeleteObject();
+        f.CreateFont(h, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    };
+    make(m_fontNormal, hNorm,  FW_NORMAL);
+    make(m_fontBold,   hBold,  FW_BOLD);
+    make(m_fontSmall,  hSmall, FW_NORMAL);
+    make(m_fontHeader, hHdr,   FW_BOLD);
+}
 
-    std::wstring path = GetSettingsFilePath();
-    size_t slash = path.find_last_of(L"\\/");
-    std::wstring dir = (slash == std::wstring::npos) ? L"." : path.substr(0, slash);
-    std::wstring icsPath = dir + L"\\webcalendar.ics";
-
-    HRESULT hr = URLDownloadToFileW(nullptr,
-        theApp.m_settings.webCalendarUrl.c_str(),
-        icsPath.c_str(),
-        0,
-        nullptr);
-    if (FAILED(hr))
-        return;
+// Parses an ICS file from disk and returns the event list.
+static std::vector<UserEventInfo> ParseIcsFromPath(const std::wstring& icsPath)
+{
+    std::vector<UserEventInfo> events;
 
     std::ifstream f(icsPath, std::ios::binary);
-    if (!f.is_open())
-        return;
+    if (!f.is_open()) return events;
 
     std::string bytes((std::istreambuf_iterator<char>(f)),
-        std::istreambuf_iterator<char>());
+                       std::istreambuf_iterator<char>());
     std::wstring text = DecodeUtf8(bytes);
     if (!text.empty() && text[0] == 0xFEFF)
         text.erase(text.begin());
 
+    // Unfold continuation lines (RFC 5545 §3.1)
     std::wstringstream raw(text);
     std::vector<std::wstring> lines;
     std::wstring rawLine;
@@ -748,26 +957,94 @@ void CMainFrame::RefreshWebCalendarEvents()
             inEvent = true;
             eventDate = GregorianDate();
             summary.clear();
-            continue;
         }
-        if (line == L"END:VEVENT")
+        else if (line == L"END:VEVENT")
         {
             if (inEvent && eventDate.year > 0 && !summary.empty())
-                m_webEvents.push_back({ eventDate, summary });
+                events.push_back({ eventDate, summary });
             inEvent = false;
-            continue;
         }
-        if (!inEvent) continue;
-
-        if (line.rfind(L"DTSTART", 0) == 0)
-            ParseIcsDate(line, eventDate);
-        else if (line.rfind(L"SUMMARY", 0) == 0)
+        else if (inEvent)
         {
-            size_t colon = line.find(L':');
-            if (colon != std::wstring::npos)
-                summary = UnescapeIcsText(WebCalTrim(line.substr(colon + 1)));
+            if (line.rfind(L"DTSTART", 0) == 0)
+                ParseIcsDate(line, eventDate);
+            else if (line.rfind(L"SUMMARY", 0) == 0)
+            {
+                size_t colon = line.find(L':');
+                if (colon != std::wstring::npos)
+                    summary = UnescapeIcsText(WebCalTrim(line.substr(colon + 1)));
+            }
         }
     }
+    return events;
+}
+
+void CMainFrame::RefreshWebCalendarEvents()
+{
+    m_webEvents.clear();
+
+    const auto& cals = theApp.m_settings.webCalendars;
+    if (cals.empty()) return;
+
+    std::wstring sp = GetSettingsFilePath();
+    size_t sl = sp.find_last_of(L"\\/");
+    std::wstring dir = (sl == std::wstring::npos) ? L"." : sp.substr(0, sl);
+
+    // Collect enabled URLs with their cache paths
+    struct CalJob { std::wstring url; std::wstring path; };
+    std::vector<CalJob> jobs;
+    for (int i = 0; i < (int)cals.size(); i++)
+    {
+        if (!cals[i].enabled || cals[i].url.empty()) continue;
+        std::wstring url = cals[i].url;
+        if (url.rfind(L"webcals://", 0) == 0)      url.replace(0, 10, L"https://");
+        else if (url.rfind(L"webcal://", 0) == 0)  url.replace(0, 9,  L"https://");
+        std::wstring path = dir + L"\\webcalendar" + std::to_wstring(i) + L".ics";
+        jobs.push_back({ url, path });
+    }
+    if (jobs.empty()) return;
+
+    // Keep m_icsPath pointing to first cache file (used in OnWebCalDone)
+    m_icsPath = jobs[0].path;
+
+    // Load any already-cached files immediately
+    for (const auto& j : jobs)
+    {
+        auto ev = ParseIcsFromPath(j.path);
+        m_webEvents.insert(m_webEvents.end(), ev.begin(), ev.end());
+    }
+    if (!m_webEvents.empty())
+    {
+        if (m_pCalView)  m_pCalView->Invalidate(FALSE);
+        if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+    }
+
+    // Download fresh copies in background; post WM_WEBCAL_DONE when all done
+    HWND hWnd = GetSafeHwnd();
+    std::thread([jobs, hWnd]() {
+        for (const auto& j : jobs)
+            URLDownloadToFileW(nullptr, j.url.c_str(), j.path.c_str(), 0, nullptr);
+        ::PostMessage(hWnd, WM_WEBCAL_DONE, 0, 0);
+    }).detach();
+}
+
+LRESULT CMainFrame::OnWebCalDone(WPARAM, LPARAM)
+{
+    m_webEvents.clear();
+    const auto& cals = theApp.m_settings.webCalendars;
+    std::wstring sp = GetSettingsFilePath();
+    size_t sl = sp.find_last_of(L"\\/");
+    std::wstring dir = (sl == std::wstring::npos) ? L"." : sp.substr(0, sl);
+    for (int i = 0; i < (int)cals.size(); i++)
+    {
+        if (!cals[i].enabled) continue;
+        std::wstring path = dir + L"\\webcalendar" + std::to_wstring(i) + L".ics";
+        auto ev = ParseIcsFromPath(path);
+        m_webEvents.insert(m_webEvents.end(), ev.begin(), ev.end());
+    }
+    if (m_pCalView)  m_pCalView->Invalidate(FALSE);
+    if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+    return 0;
 }
 
 std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& g) const
@@ -784,6 +1061,86 @@ std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& 
             events.push_back(event.title);
     }
     return events;
+}
+
+std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
+    const GregorianDate& g, const HebrewDate& h,
+    const std::vector<HolidayInfo>& hols) const
+{
+    std::wstring candleStr, motzStr;
+
+    bool isDSTLocal = IsDST(g, m_location);
+    ZmanimResult z  = CalculateZmanim(g, m_location, isDSTLocal);
+    z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
+
+    DayOfWeek dow     = GetDayOfWeek(g);
+    bool isFriday     = (dow == FRIDAY);
+    bool isShabbat    = (dow == SHABBAT);
+
+    auto hasFlag = [&](int flag) -> bool {
+        for (const auto& ho : hols)
+            if (ho.flags & flag) return true;
+        return false;
+    };
+    bool hasYomTov = hasFlag(HOLIDAY_YOM_TOV);
+    bool hasErev   = hasFlag(HOLIDAY_EREV);
+
+    // Peek at next day to detect multi-day YT
+    long      jdn     = GregorianToJDN(g);
+    HebrewDate hNext  = JDNToHebrew(jdn + 1);
+    auto holsNext     = GetHolidays(hNext, m_isIsrael);
+    bool nextDayIsYT  = false;
+    for (const auto& ho : holsNext)
+        if (ho.flags & HOLIDAY_YOM_TOV) { nextDayIsYT = true; break; }
+
+    // Erev Yom Kippur (9 Tishrei) has no HOLIDAY_EREV in the engine — check explicitly
+    bool isErevYomKippur = (h.month == TISHREI && h.day == 9);
+
+    // --- Candle string (orange) ---
+    if (isFriday && z.candleLighting.IsValid())
+    {
+        candleStr = L"Cand " + FormatTime(z.candleLighting, m_use24hr);
+    }
+    else if (!isFriday && !isShabbat
+             && (hasErev || isErevYomKippur) && z.candleLighting.IsValid())
+    {
+        // Erev YT / Erev Yom Kippur on a weekday
+        candleStr = L"Cand " + FormatTime(z.candleLighting, m_use24hr);
+    }
+    else if (!isFriday && !isShabbat && hasYomTov && !m_isIsrael && nextDayIsYT
+             && z.tzeit_GRA.IsValid())
+    {
+        // 1st day YT diaspora — light candles at tzeis for 2nd day
+        candleStr = L"Cand " + FormatTime(z.tzeit_GRA, m_use24hr);
+    }
+
+    // --- Motz / Chatz string (blue) ---
+    if (isShabbat && z.tzeitShabbat.IsValid())
+    {
+        motzStr = L"Motz " + FormatTime(z.tzeitShabbat, m_use24hr);
+    }
+    else if (!isShabbat && !isFriday && hasYomTov && !nextDayIsYT && z.tzeit_GRA.IsValid())
+    {
+        // Last day of YT
+        motzStr = L"Motz " + FormatTime(z.tzeit_GRA, m_use24hr);
+    }
+
+    // Chatzot / chatzot layla — fill motzStr slot if still empty
+    if (motzStr.empty())
+    {
+        if (h.month == IYAR && h.day == 18 && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Lag BaOmer
+        else if (h.month == AV && h.day == 9 && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Tisha B'Av
+        else if (h.month == NISSAN && h.day == 14 && !m_isIsrael
+                 && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Erev Pesach diaspora
+        else if (h.month == NISSAN && h.day == 15 && !m_isIsrael
+                 && z.chatzotLayla.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzotLayla, m_use24hr);  // Pesach night 1 diaspora
+    }
+
+    return { candleStr, motzStr };
 }
 
 void CMainFrame::SyncViewToSelected()
@@ -1046,8 +1403,12 @@ void CMainFrame::OnOptionsLocation()
         s.elevation = m_location.elevation;
         s.gmtOffset = m_location.gmtOffset;
         s.usesDST = m_location.usesDST;
+        if (dlg.GetSelectedIsCustom())
+            s.isIsrael = dlg.GetSelectedIsIsrael();
         SaveSettings(s);
+        m_isIsrael = s.isIsrael;
         RefreshZmanim();
+        if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
         if (m_pZmanim)  m_pZmanim->Invalidate(FALSE);
         if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
     }
@@ -1082,7 +1443,7 @@ void CMainFrame::OnHelpAbout()
 {
     MessageBoxW(
         L"2026 WinLuach - Hebrew Calendar\n\n"
-        L"Version 0.5.3\n\n"
+        L"Version 0.6.0\n\n"
         L"A modern Hebrew/Gregorian calendar\n"
         L"with halachic times (zmanim).\n\n"
         L"Built with C++ and MFC.",
@@ -1175,6 +1536,69 @@ void CMainFrame::OnYearSpinDelta(NMHDR* pNMHDR, LRESULT* pResult)
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
+    // Ctrl+P — print
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == 'P' &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000))
+    {
+        OnCalPrint();
+        return TRUE;
+    }
+
+    // Ctrl+G — go to date
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == 'G' &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000))
+    {
+        OnCalGoTo();
+        return TRUE;
+    }
+
+    // Ctrl+, — open preferences
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_OEM_COMMA &&
+        (GetKeyState(VK_CONTROL) & 0x8000))
+    {
+        OnOptionsPrefs();
+        return TRUE;
+    }
+
+    // Ctrl+Alt+Left — previous decade
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_LEFT &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_MENU) & 0x8000))
+    {
+        ChangeYear(-10);
+        return TRUE;
+    }
+    // Ctrl+Alt+Right — next decade
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RIGHT &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_MENU) & 0x8000))
+    {
+        ChangeYear(10);
+        return TRUE;
+    }
+
+    // Ctrl + Plus/= — larger font
+    if (pMsg->message == WM_KEYDOWN &&
+        (pMsg->wParam == VK_OEM_PLUS || pMsg->wParam == (WPARAM)'+') &&
+        (GetKeyState(VK_CONTROL) & 0x8000))
+    {
+        OnViewZoomIn();
+        return TRUE;
+    }
+    // Ctrl + Minus — smaller font
+    if (pMsg->message == WM_KEYDOWN &&
+        (pMsg->wParam == VK_OEM_MINUS || pMsg->wParam == (WPARAM)'-') &&
+        (GetKeyState(VK_CONTROL) & 0x8000))
+    {
+        OnViewZoomOut();
+        return TRUE;
+    }
+    // Ctrl + 0 — reset font to default (Normal = index 3)
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == '0' &&
+        (GetKeyState(VK_CONTROL) & 0x8000))
+    {
+        OnViewZoomReset();
+        return TRUE;
+    }
+
     // Enter in year edit: navigate to typed year
     if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN &&
         m_editYear.GetSafeHwnd() && pMsg->hwnd == m_editYear.GetSafeHwnd())
@@ -1220,4 +1644,117 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
     }
 
     return CFrameWnd::PreTranslateMessage(pMsg);
+}
+
+// =============================================================================
+// PRINT
+// =============================================================================
+
+void CMainFrame::OnCalPrint()
+{
+    CCalPrintDlg dlg(this, this);
+    if (dlg.DoModal() == IDOK)
+        DoPrint(dlg.GetOptions(), this);
+}
+
+void CMainFrame::OnCalPreview()
+{
+    CalPrintOptions opts;
+    const auto& ps = theApp.m_settings;
+    opts.landscape = ps.printLandscape;
+    opts.range     = (CalPrintOptions::Range)ps.printRange;
+    opts.mTop      = ps.printMarginTop;
+    opts.mBot      = ps.printMarginBot;
+    opts.mLeft     = ps.printMarginLeft;
+    opts.mRight    = ps.printMarginRight;
+    CCalPreviewDlg dlg(opts, this, this);
+    dlg.DoModal();
+}
+
+BOOL CMainFrame::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
+{
+    if (GetKeyState(VK_CONTROL) & 0x8000)
+    {
+        if (zDelta > 0) OnViewZoomIn(); else OnViewZoomOut();
+        return TRUE;
+    }
+    return CFrameWnd::OnMouseWheel(nFlags, zDelta, pt);
+}
+
+void CMainFrame::OnFileBackup()
+{
+    wchar_t file[MAX_PATH] = L"WinLuach_settings_backup.json";
+    OPENFILENAMEW ofn = { sizeof(ofn) };
+    ofn.hwndOwner = GetSafeHwnd();
+    ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"json";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return;
+
+    std::wstring src = GetSettingsFilePath();
+    if (CopyFileW(src.c_str(), file, FALSE))
+        MessageBox(L"Settings backed up successfully.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+    else
+        MessageBox(L"Backup failed.", L"WinLuach", MB_OK | MB_ICONERROR);
+}
+
+void CMainFrame::OnViewZoomIn()
+{
+    if (theApp.m_settings.fontSize < 6) {
+        theApp.m_settings.fontSize++;
+        ApplySettings(theApp.m_settings);
+        SaveSettings(theApp.m_settings);
+    }
+}
+
+void CMainFrame::OnViewZoomOut()
+{
+    if (theApp.m_settings.fontSize > 0) {
+        theApp.m_settings.fontSize--;
+        ApplySettings(theApp.m_settings);
+        SaveSettings(theApp.m_settings);
+    }
+}
+
+void CMainFrame::OnViewZoomReset()
+{
+    theApp.m_settings.fontSize = 1;   // Default (index 1 → 14pt)
+    ApplySettings(theApp.m_settings);
+    SaveSettings(theApp.m_settings);
+}
+
+void CMainFrame::OnCalGoTo()
+{
+    CGotoDateDlg dlg(m_selectedDate, this);
+    if (dlg.DoModal() == IDOK)
+        SelectDate(dlg.selectedDate);
+}
+
+void CMainFrame::OnFileRestore()
+{
+    if (MessageBox(L"Restore settings from a backup file? Current settings will be overwritten.",
+        L"WinLuach", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+
+    wchar_t file[MAX_PATH] = {};
+    OPENFILENAMEW ofn = { sizeof(ofn) };
+    ofn.hwndOwner = GetSafeHwnd();
+    ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn)) return;
+
+    std::wstring dst = GetSettingsFilePath();
+    if (CopyFileW(file, dst.c_str(), FALSE))
+    {
+        LoadSettings(theApp.m_settings);
+        ApplySettings(theApp.m_settings);
+        PopulateMonthCombo();
+        UpdateMonthYearControls();
+        MessageBox(L"Settings restored. Restart recommended.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+    }
+    else
+        MessageBox(L"Restore failed.", L"WinLuach", MB_OK | MB_ICONERROR);
 }

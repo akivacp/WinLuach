@@ -29,6 +29,7 @@ protected:
     virtual BOOL OnInitDialog() override;
     virtual void OnOK() override;
     afx_msg void OnTrayTextColor();
+    afx_msg void OnManageCals();
 
     DECLARE_MESSAGE_MAP()
 
@@ -63,8 +64,7 @@ private:
     CButton m_btnTrayTextColor;
     CComboBox m_cmbHaftarah;
     CComboBox m_cmbFontSize;
-    CComboBox m_cmbLanguage;
     CComboBox m_cmbTrayWhen;
     CComboBox m_cmbCandleMinutes;
-    CEdit m_editWebCalendarUrl;
+    CButton m_btnManageCals;
 };

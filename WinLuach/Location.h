@@ -42,15 +42,16 @@ struct LocationEntry
     Location     loc;          // Core location data (lat/lon/tz/dst)
     std::wstring country;      // Country name e.g. L"United States"
     std::wstring region;       // State/province e.g. L"New York"
-    bool         isCustom;     // True if user-defined, false if built-in
+    bool         isCustom  = false;  // True if user-defined, false if built-in
+    bool         isIsrael  = false;  // hint: this location uses Israel schedule
 
-    LocationEntry() : isCustom(false) {}
+    LocationEntry() : isCustom(false), isIsrael(false) {}
 
     LocationEntry(const Location& l,
         const std::wstring& country_,
         const std::wstring& region_,
         bool                custom = false)
-        : loc(l), country(country_), region(region_), isCustom(custom) {
+        : loc(l), country(country_), region(region_), isCustom(custom), isIsrael(false) {
     }
 };
 

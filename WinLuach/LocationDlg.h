@@ -21,6 +21,8 @@ public:
 
     // Returns the location selected by the user (valid after DoModal()==IDOK)
     Location GetSelectedLocation() const { return m_result; }
+    bool GetSelectedIsIsrael() const { return m_selectedIsIsrael; }
+    bool GetSelectedIsCustom() const { return m_isCustomSelected; }
 
     // Creates the dialog using an in-memory template (no .rc file needed)
     virtual INT_PTR DoModal() override;
@@ -33,18 +35,19 @@ protected:
     afx_msg void OnListSelChange();
     afx_msg void OnListDblClk();
     afx_msg void OnBtnDelete();
+    afx_msg void OnBtnCustom();
+    afx_msg void OnBtnEdit();
 
     DECLARE_MESSAGE_MAP()
 
 private:
-    // Rebuilds the list box with cities matching the filter.
     void PopulateList(const CString& filter);
-
-    // Returns the LocationEntry for the currently selected list item.
     const LocationEntry* GetSelectedEntry() const;
 
     Location  m_current;
     Location  m_result;
+    bool      m_selectedIsIsrael = false;
+    bool      m_isCustomSelected = false;
 
     std::vector<int> m_filteredIndices;
 
@@ -52,4 +55,6 @@ private:
     CListBox  m_listCities;
     CStatic   m_lblCoords;
     CButton   m_btnDelete;
+    CButton   m_btnCustom;
+    CButton   m_btnEdit;
 };

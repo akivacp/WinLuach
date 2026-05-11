@@ -131,6 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CalPrintDlg.h" />
     <ClInclude Include="CalendarView.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="HebrewDate.h" />
@@ -148,6 +149,7 @@
     <ClInclude Include="ZmanimPanel.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CalPrintDlg.cpp" />
     <ClCompile Include="CalendarView.cpp" />
     <ClCompile Include="HebrewDate.cpp" />
     <ClCompile Include="HolidayEngine.cpp" />
