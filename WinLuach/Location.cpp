@@ -396,7 +396,8 @@ bool LocationDB::SaveCustomLocations(const std::wstring& filePath) const
         f << L"    \"lon\": " << e.loc.longitude << L",\n";
         f << L"    \"elev\": " << e.loc.elevation << L",\n";
         f << L"    \"gmt\": " << e.loc.gmtOffset << L",\n";
-        f << L"    \"dst\": " << (e.loc.usesDST ? L"true" : L"false") << L"\n";
+        f << L"    \"dst\": " << (e.loc.usesDST ? L"true" : L"false") << L",\n";
+        f << L"    \"israel\": " << (e.isIsrael ? L"true" : L"false") << L"\n";
         f << L"  }";
     }
 
@@ -474,6 +475,7 @@ bool LocationDB::LoadCustomLocations(const std::wstring& filePath)
             else if (line.find(L"\"elev\"") != std::wstring::npos) current.loc.elevation = ParseJsonNumber(line);
             else if (line.find(L"\"gmt\"") != std::wstring::npos) current.loc.gmtOffset = (int)ParseJsonNumber(line);
             else if (line.find(L"\"dst\"") != std::wstring::npos) current.loc.usesDST = ParseJsonBool(line);
+            else if (line.find(L"\"israel\"") != std::wstring::npos) current.isIsrael = ParseJsonBool(line);
         }
     }
 

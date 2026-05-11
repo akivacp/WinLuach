@@ -16,6 +16,12 @@
 #pragma once
 #include "Location.h"
 #include <string>
+#include <vector>
+
+struct WebCalEntry {
+    std::wstring url;
+    bool         enabled = true;
+};
 
 // =============================================================================
 // APP SETTINGS STRUCT
@@ -60,7 +66,16 @@ struct AppSettings
     // --- Print / location defaults ---
     bool         printWeeklyZmanim = true;
     int          candleLightingMinutes = 18;
-    std::wstring webCalendarUrl;  // ICS/web calendar URL, future sync source
+    std::wstring webCalendarUrl;              // legacy single URL (kept for migration)
+    std::vector<WebCalEntry> webCalendars;    // multi-calendar list
+
+    // --- Print options (persisted across sessions) ---
+    bool         printLandscape    = true;
+    int          printRange        = 0;     // 0=month, 1=year, 2=next12
+    float        printMarginTop    = 0.75f;
+    float        printMarginBot    = 0.75f;
+    float        printMarginLeft   = 0.50f;
+    float        printMarginRight  = 0.50f;
 
     // --- Zmanim shita ---
     // Which opinion to use for alot/tzeit in the main display

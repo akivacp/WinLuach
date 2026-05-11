@@ -30,7 +30,10 @@ struct CalCellData
     HebrewDate               hebrew;
     std::vector<HolidayInfo> holidays;
     OmerInfo                 omer;
+    DailyLearning            learning;
     bool                     isCurrentMonth = false;
+    std::wstring             candleStr;
+    std::wstring             motzStr;
 };
 
 // =============================================================================

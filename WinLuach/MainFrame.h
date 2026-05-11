@@ -84,10 +84,19 @@ struct UserEventInfo
 #define ID_TRAY_OPEN        1015
 #define ID_TRAY_ABOUT       1016
 #define ID_TRAY_EXIT        1017
+#define ID_CAL_PRINT        1018
+#define ID_CAL_PREVIEW      1019
+#define ID_FILE_BACKUP      1020
+#define ID_FILE_RESTORE     1021
+#define ID_VIEW_ZOOM_IN     1022
+#define ID_VIEW_ZOOM_OUT    1023
+#define ID_VIEW_ZOOM_RESET  1024
+#define ID_CAL_GOTO         1025
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
 #define WM_WINLUACH_TRAY    (WM_APP + 101)
+#define WM_WEBCAL_DONE      (WM_APP + 102)
 
 // =============================================================================
 // CMainFrame
@@ -121,6 +130,11 @@ public:
     void OnPickOptions();
 
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
+
+    // Returns {candleStr, motzStr} zmanim labels for a calendar cell.
+    std::pair<std::wstring, std::wstring> GetCellZmanimLabels(
+        const GregorianDate& g, const HebrewDate& h,
+        const std::vector<HolidayInfo>& hols) const;
 
     // Current view state (public so child panels can read it)
     int           m_viewYear = 2026;
@@ -164,6 +178,7 @@ public:
     CButton m_btnNextMonth;
     CButton m_btnNextYear;
     CButton m_btnNextDecade;
+    CButton m_btnPrint;
 
     // Month/year picker: combo + year edit + spin
     CComboBox          m_comboMonth;
@@ -196,6 +211,16 @@ protected:
     afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
     afx_msg void OnMonthComboChange();
     afx_msg void OnYearSpinDelta(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnCalPrint();
+    afx_msg void OnCalPreview();
+    afx_msg void OnFileBackup();
+    afx_msg void OnFileRestore();
+    afx_msg void OnViewZoomIn();
+    afx_msg void OnViewZoomOut();
+    afx_msg void OnViewZoomReset();
+    afx_msg void OnCalGoTo();
+    afx_msg LRESULT OnWebCalDone(WPARAM, LPARAM);
+    afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     virtual BOOL PreTranslateMessage(MSG* pMsg);
 
     // Recalculates zmanim for the selected date
@@ -225,6 +250,9 @@ protected:
     // Draws the Sun/Mon/.../Shabbos column labels
     void DrawDayHeaders(CDC* pDC, const CRect& rc);
 
+    // Recreates all four fonts from the current fontSize setting
+    void RecreateFonts();
+
     // Repopulates the month combo for the current calendar mode
     void PopulateMonthCombo();
     // Syncs the month combo and year edit to the current view
@@ -238,6 +266,7 @@ protected:
     bool m_isInTray = false;
     HICON m_hTrayDateIcon = nullptr;
     std::vector<UserEventInfo> m_webEvents;
+    std::wstring               m_icsPath;
 
     DECLARE_MESSAGE_MAP()
 };
