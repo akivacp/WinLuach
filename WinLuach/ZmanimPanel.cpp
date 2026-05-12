@@ -64,21 +64,42 @@ void CZmanimPanel::OnPaint()
     CRect rcHdr(8, 3, cx, 20);
     memDC.DrawText(hdr, rcHdr, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
+    // Select time variants based on shita settings
+    const ZmanimResult& z = m_pFrame->m_zmanim;
+    int alotSh  = m_pFrame->m_alotShita;
+    int tzeitSh = m_pFrame->m_tzeitShita;
+    int zmanSh  = m_pFrame->m_zmanimShita;
+
+    TimeOfDay alotTime  = (alotSh == 1) ? z.alot_MA72  : (alotSh == 2) ? z.alot_MA90  : z.alot_GRA;
+    TimeOfDay tzeitTime = (tzeitSh == 1) ? z.tzeit_MA72 : (tzeitSh == 2) ? z.tzeit_MA90
+                        : (tzeitSh == 3) ? z.tzeit_MA72P : (tzeitSh == 4) ? z.tzeit_MA90P : z.tzeit_GRA;
+    TimeOfDay sofShemaTime    = (zmanSh == 1) ? z.sofShema_MA72    : (zmanSh == 2) ? z.sofShema_MA90    : z.sofShema_GRA;
+    TimeOfDay sofTefillaTime  = (zmanSh == 1) ? z.sofTefilla_MA72  : (zmanSh == 2) ? z.sofTefilla_MA90  : z.sofTefilla_GRA;
+    TimeOfDay minchaGTime     = (zmanSh == 1) ? z.minchaGedola_MA72: (zmanSh == 2) ? z.minchaGedola_MA90: z.minchaGedola_GRA;
+    TimeOfDay minchaKTime     = (zmanSh == 1) ? z.minchaKetana_MA72: (zmanSh == 2) ? z.minchaKetana_MA90: z.minchaKetana_GRA;
+    TimeOfDay plagTime        = (zmanSh == 1) ? z.plagMincha_MA72  : (zmanSh == 2) ? z.plagMincha_MA90  : z.plagMincha_GRA;
+    double    shaahMin        = (zmanSh == 1) ? z.shaahZmanit_MA72 : (zmanSh == 2) ? z.shaahZmanit_MA90 : z.shaahZmanit_GRA;
+
+    static const wchar_t* kAlotLabels[]  = { L"Alos Hashachar (16.1°)", L"Alos Hashachar (72m)", L"Alos Hashachar (90m)" };
+    static const wchar_t* kTzeitLabels[] = { L"Tzeis (8.5°)", L"Tzeis (72m)", L"Tzeis (90m)", L"Tzeis (72m prop)", L"Tzeis (90m prop)" };
+    static const wchar_t* kShemaLabels[] = { L"Sof Shema (GRA)", L"Sof Shema (MA72)", L"Sof Shema (MA90)" };
+    static const wchar_t* kMinchaGLabels[] = { L"Mincha Gedola", L"Mincha Gedola", L"Mincha Gedola" };
+
     // 12 zmanim entries
     struct ZmanEntry { const wchar_t* label; TimeOfDay time; };
     ZmanEntry entries[] = {
-        { L"Alos Hashachar",  m_pFrame->m_zmanim.alot_GRA          },
-        { L"Misheyakir",      m_pFrame->m_zmanim.misheyakir_10     },
-        { L"Hanetz",          m_pFrame->m_zmanim.hanetz             },
-        { L"Sof Shema (GRA)", m_pFrame->m_zmanim.sofShema_GRA      },
-        { L"Sof Tefilla",     m_pFrame->m_zmanim.sofTefilla_GRA    },
-        { L"Chatzos",         m_pFrame->m_zmanim.chatzot            },
-        { L"Mincha Gedola",   m_pFrame->m_zmanim.minchaGedola_GRA  },
-        { L"Mincha Ketana",   m_pFrame->m_zmanim.minchaKetana_GRA  },
-        { L"Plag HaMincha",   m_pFrame->m_zmanim.plagMincha_GRA    },
-        { L"Shkiah",          m_pFrame->m_zmanim.shkia              },
-        { L"Tzeis (GRA)",     m_pFrame->m_zmanim.tzeit_GRA          },
-        { L"Candle Lighting", m_pFrame->m_zmanim.candleLighting     },
+        { kAlotLabels[alotSh],          alotTime        },
+        { L"Misheyakir",                z.misheyakir_10 },
+        { L"Hanetz",                    z.hanetz        },
+        { kShemaLabels[zmanSh],         sofShemaTime    },
+        { L"Sof Tefilla",               sofTefillaTime  },
+        { L"Chatzos",                   z.chatzot       },
+        { kMinchaGLabels[zmanSh],       minchaGTime     },
+        { L"Mincha Ketana",             minchaKTime     },
+        { L"Plag HaMincha",             plagTime        },
+        { L"Shkiah",                    z.shkia         },
+        { kTzeitLabels[tzeitSh],        tzeitTime       },
+        { L"Candle Lighting",           z.candleLighting},
     };
 
     int numEntries = sizeof(entries) / sizeof(entries[0]);
@@ -124,6 +145,19 @@ void CZmanimPanel::OnPaint()
             m_pFrame->m_use24hr);
         CRect rcTime(x + labelW, y, x + labelW + timeW, y + rowH);
         memDC.DrawText(timeStr.c_str(), -1, rcTime,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    // Sha'a Zmanit — shown on a separate bottom line spanning all columns
+    double sz = shaahMin;
+    if (sz > 0.0) {
+        int szMin = (int)round(sz);
+        CString szStr;
+        szStr.Format(L"Sha'a Zmanit:   %d:%02d  (%d min)", szMin/60, szMin%60, szMin);
+        int y = startY + rows * rowH + 2;
+        memDC.SelectObject(&m_pFrame->m_fontSmall);
+        memDC.SetTextColor(RGB(50, 100, 50));
+        memDC.DrawText(szStr, CRect(padding, y, cx - padding, y + rowH),
             DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 

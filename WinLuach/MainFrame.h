@@ -101,6 +101,7 @@ struct UserEventInfo
 #define ID_SIDEBAR_TOGGLE   1031
 #define ID_PRINT_DAY_VIEW   1034
 #define ID_HEB_CIVIL_TOGGLE 1035
+#define ID_FILE_PRINT_EVENTS 1036
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -170,6 +171,9 @@ public:
     bool          m_isDST = false;
     bool          m_use24hr = false;
     bool          m_isIsrael = false;
+    int           m_alotShita  = 0;   // 0=16.1deg, 1=MA72, 2=MA90
+    int           m_tzeitShita = 0;   // 0=8.5deg, 1=MA72, 2=MA90, 3=MA72P, 4=MA90P
+    int           m_zmanimShita = 0;  // 0=GRA, 1=MA72, 2=MA90 (shema/tefilla/mincha)
     bool          m_hebrewMonthView = false;
     bool          m_showParshios = true;
     bool          m_showMoadim = true;
@@ -259,6 +263,7 @@ protected:
     afx_msg void OnCalPrintZmanim();
     afx_msg void OnSidebarToggle();
     afx_msg void OnHebCivilToggle();
+    afx_msg void OnFilePrintEvents();
     afx_msg LRESULT OnWebCalDone(WPARAM, LPARAM);
     afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     virtual BOOL PreTranslateMessage(MSG* pMsg);

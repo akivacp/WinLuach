@@ -218,7 +218,8 @@ public:
     double  resultLon = 0.0;
     std::wstring resultName;
 
-    explicit CGeoDlg(CWnd* pParent = nullptr) : CDialog()
+    explicit CGeoDlg(const std::wstring& initialQuery = L"", CWnd* pParent = nullptr)
+        : CDialog(), m_initialQuery(initialQuery)
     {
         m_pParentWnd = pParent;
     }
@@ -251,6 +252,8 @@ protected:
         m_editAddr.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
             CRect(115, 8, W - 80, 30), this, 501);
         m_editAddr.SetFont(pF);
+        if (!m_initialQuery.empty())
+            m_editAddr.SetWindowText(m_initialQuery.c_str());
 
         CButton* btnSearch = new CButton;
         btnSearch->Create(L"Search", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -321,6 +324,7 @@ private:
     CEdit    m_editAddr;
     CListBox m_listResults;
     std::vector<GeoResult> m_results;
+    std::wstring m_initialQuery;
 
     void DoSearch()
     {
@@ -496,7 +500,8 @@ protected:
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
     {
         if (LOWORD(wParam) == 308) { // Lookup Address
-            CGeoDlg geo(this);
+            CString sName; m_eName.GetWindowText(sName); sName.Trim();
+            CGeoDlg geo(std::wstring((LPCWSTR)sName), this);
             if (geo.DoModal() == IDOK) {
                 wchar_t buf[64];
                 swprintf_s(buf, L"%.6f", geo.resultLat);

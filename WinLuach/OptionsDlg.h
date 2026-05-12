@@ -70,4 +70,6 @@ private:
     CButton   m_btnPreviewNotify;
     CComboBox m_cmbNotifyPersonal;
     CComboBox m_cmbNotifyWebCal;
+    CComboBox m_cmbAlotShita;
+    CComboBox m_cmbTzeitShita;
 };
