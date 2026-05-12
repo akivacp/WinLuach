@@ -169,9 +169,43 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"colorMotzText\": " << s.colorMotzText << L",\n";
     f << L"  \"notifyPersonalEvents\": " << s.notifyPersonalEvents << L",\n";
     f << L"  \"notifyWebCalEvents\": "   << s.notifyWebCalEvents   << L",\n";
+    f << L"  \"notifyZmanimStyle\": " << s.notifyZmanimStyle << L",\n";
+    f << L"  \"notifyZmanimMask\": " << s.notifyZmanimMask << L",\n";
+    f << L"  \"notifyMoadimStyle\": " << s.notifyMoadimStyle << L",\n";
+    f << L"  \"notifyMoadimOffsets\": \"" << JsonEscape(s.notifyMoadimOffsets) << L"\",\n";
+    f << L"  \"notifyParshaStyle\": " << s.notifyParshaStyle << L",\n";
+    f << L"  \"notifyParshaName\": \"" << JsonEscape(s.notifyParshaName) << L"\",\n";
+    f << L"  \"notifyParshaOffsets\": \"" << JsonEscape(s.notifyParshaOffsets) << L"\",\n";
+    f << L"  \"notifyPersonalOffsets\": \"" << JsonEscape(s.notifyPersonalOffsets) << L"\",\n";
+    f << L"  \"advancedReminderCount\": " << s.advancedReminders.size() << L",\n";
+    for (int i = 0; i < (int)s.advancedReminders.size(); ++i)
+    {
+        const auto& r = s.advancedReminders[i];
+        f << L"  \"advancedReminder" << i << L"_enabled\": " << (r.enabled ? L"true" : L"false") << L",\n";
+        f << L"  \"advancedReminder" << i << L"_style\": " << r.style << L",\n";
+        f << L"  \"advancedReminder" << i << L"_kind\": \"" << JsonEscape(r.kind) << L"\",\n";
+        f << L"  \"advancedReminder" << i << L"_target\": \"" << JsonEscape(r.target) << L"\",\n";
+        f << L"  \"advancedReminder" << i << L"_offsets\": \"" << JsonEscape(r.offsets) << L"\",\n";
+    }
     f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
     f << L"  \"zmanimHeight\": "     << s.zmanimHeight                              << L",\n";
     f << L"  \"sidebarCollapsed\": " << (s.sidebarCollapsed ? L"true" : L"false")   << L",\n";
+    f << L"  \"countdownTitleFontFace\": \"" << JsonEscape(s.countdownTitleFontFace) << L"\",\n";
+    f << L"  \"countdownTitleFontSize\": " << s.countdownTitleFontSize << L",\n";
+    f << L"  \"countdownTitleTextColor\": " << s.countdownTitleTextColor << L",\n";
+    f << L"  \"countdownTitleBackColor\": " << s.countdownTitleBackColor << L",\n";
+    f << L"  \"countdownClockFontFace\": \"" << JsonEscape(s.countdownClockFontFace) << L"\",\n";
+    f << L"  \"countdownClockFontSize\": " << s.countdownClockFontSize << L",\n";
+    f << L"  \"countdownClockTextColor\": " << s.countdownClockTextColor << L",\n";
+    f << L"  \"countdownClockBackColor\": " << s.countdownClockBackColor << L",\n";
+    f << L"  \"countdownCurrentFontFace\": \"" << JsonEscape(s.countdownCurrentFontFace) << L"\",\n";
+    f << L"  \"countdownCurrentFontSize\": " << s.countdownCurrentFontSize << L",\n";
+    f << L"  \"countdownCurrentTextColor\": " << s.countdownCurrentTextColor << L",\n";
+    f << L"  \"countdownCurrentBackColor\": " << s.countdownCurrentBackColor << L",\n";
+    f << L"  \"countdownLiveFontFace\": \"" << JsonEscape(s.countdownLiveFontFace) << L"\",\n";
+    f << L"  \"countdownLiveFontSize\": " << s.countdownLiveFontSize << L",\n";
+    f << L"  \"countdownLiveTextColor\": " << s.countdownLiveTextColor << L",\n";
+    f << L"  \"countdownLiveBackColor\": " << s.countdownLiveBackColor << L",\n";
     f << L"  \"windowX\": " << s.windowX << L",\n";
     f << L"  \"windowY\": " << s.windowY << L",\n";
     f << L"  \"windowW\": " << s.windowW << L",\n";
@@ -255,6 +289,36 @@ bool LoadSettings(AppSettings& s)
         }
         else if (line.find(L"\"notifyPersonalEvents\"") != std::wstring::npos) s.notifyPersonalEvents = (int)ParseJsonNumber(line);
         else if (line.find(L"\"notifyWebCalEvents\"")   != std::wstring::npos) s.notifyWebCalEvents   = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyZmanimStyle\"")    != std::wstring::npos) s.notifyZmanimStyle    = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyZmanimMask\"")     != std::wstring::npos) s.notifyZmanimMask     = (uint32_t)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyMoadimStyle\"")    != std::wstring::npos) s.notifyMoadimStyle    = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyMoadimOffsets\"")  != std::wstring::npos) s.notifyMoadimOffsets  = ParseJsonString(line);
+        else if (line.find(L"\"notifyParshaStyle\"")    != std::wstring::npos) s.notifyParshaStyle    = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyParshaName\"")     != std::wstring::npos) s.notifyParshaName     = ParseJsonString(line);
+        else if (line.find(L"\"notifyParshaOffsets\"")  != std::wstring::npos) s.notifyParshaOffsets  = ParseJsonString(line);
+        else if (line.find(L"\"notifyPersonalOffsets\"")!= std::wstring::npos) s.notifyPersonalOffsets= ParseJsonString(line);
+        else if (line.find(L"\"advancedReminderCount\"") != std::wstring::npos) s.advancedReminders.resize((int)ParseJsonNumber(line));
+        else if (line.find(L"\"advancedReminder") != std::wstring::npos)
+        {
+            size_t p = line.find(L"\"advancedReminder") + 17;
+            size_t q = line.find(L'_', p);
+            if (q != std::wstring::npos)
+            {
+                int idx = 0;
+                try { idx = std::stoi(line.substr(p, q - p)); } catch (...) { idx = -1; }
+                if (idx >= 0)
+                {
+                    while ((int)s.advancedReminders.size() <= idx) s.advancedReminders.push_back(ReminderRule{});
+                    std::wstring field = line.substr(q + 1);
+                    field = field.substr(0, field.find(L'"'));
+                    if (field == L"enabled") s.advancedReminders[idx].enabled = ParseJsonBool(line);
+                    else if (field == L"style") s.advancedReminders[idx].style = (int)ParseJsonNumber(line);
+                    else if (field == L"kind") s.advancedReminders[idx].kind = ParseJsonString(line);
+                    else if (field == L"target") s.advancedReminders[idx].target = ParseJsonString(line);
+                    else if (field == L"offsets") s.advancedReminders[idx].offsets = ParseJsonString(line);
+                }
+            }
+        }
         else if (line.find(L"\"zmanimShita\"")     != std::wstring::npos) s.zmanimShita     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"alotShita\"")       != std::wstring::npos) s.alotShita       = (int)ParseJsonNumber(line);
         else if (line.find(L"\"tzeitShita\"")      != std::wstring::npos) s.tzeitShita      = (int)ParseJsonNumber(line);
@@ -292,6 +356,22 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"sidebarWidth\"")     != std::wstring::npos) s.sidebarWidth     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"zmanimHeight\"")     != std::wstring::npos) s.zmanimHeight     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"sidebarCollapsed\"") != std::wstring::npos) s.sidebarCollapsed = ParseJsonBool(line);
+        else if (line.find(L"\"countdownTitleFontFace\"") != std::wstring::npos) s.countdownTitleFontFace = ParseJsonString(line);
+        else if (line.find(L"\"countdownTitleFontSize\"") != std::wstring::npos) s.countdownTitleFontSize = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownTitleTextColor\"") != std::wstring::npos) s.countdownTitleTextColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownTitleBackColor\"") != std::wstring::npos) s.countdownTitleBackColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownClockFontFace\"") != std::wstring::npos) s.countdownClockFontFace = ParseJsonString(line);
+        else if (line.find(L"\"countdownClockFontSize\"") != std::wstring::npos) s.countdownClockFontSize = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownClockTextColor\"") != std::wstring::npos) s.countdownClockTextColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownClockBackColor\"") != std::wstring::npos) s.countdownClockBackColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownCurrentFontFace\"") != std::wstring::npos) s.countdownCurrentFontFace = ParseJsonString(line);
+        else if (line.find(L"\"countdownCurrentFontSize\"") != std::wstring::npos) s.countdownCurrentFontSize = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownCurrentTextColor\"") != std::wstring::npos) s.countdownCurrentTextColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownCurrentBackColor\"") != std::wstring::npos) s.countdownCurrentBackColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownLiveFontFace\"") != std::wstring::npos) s.countdownLiveFontFace = ParseJsonString(line);
+        else if (line.find(L"\"countdownLiveFontSize\"") != std::wstring::npos) s.countdownLiveFontSize = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownLiveTextColor\"") != std::wstring::npos) s.countdownLiveTextColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"countdownLiveBackColor\"") != std::wstring::npos) s.countdownLiveBackColor = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowX\"")         != std::wstring::npos) s.windowX         = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowY\"") != std::wstring::npos) s.windowY = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
@@ -339,6 +419,8 @@ static void WriteEvent(std::wofstream& f, const UserEventEntry& e, int i)
     f << L"  \"ev" << i << L"_afterSunset\": "   << (e.afterSunset ? L"true" : L"false") << L",\n";
     f << L"  \"ev" << i << L"_gregYear\": "      << e.gregYear                           << L",\n";
     f << L"  \"ev" << i << L"_hebYear\": "       << e.hebYear                            << L",\n";
+    f << L"  \"ev" << i << L"_notify\": "        << (e.notify ? L"true" : L"false")       << L",\n";
+    f << L"  \"ev" << i << L"_alarmOffsets\": \"" << JsonEscape(e.alarmOffsets)           << L"\",\n";
 }
 
 bool SaveEvents(const std::vector<UserEventEntry>& events)
@@ -393,6 +475,8 @@ static void ParseEventsFromStream(std::wifstream& f, std::vector<UserEventEntry>
         else if (field == L"afterSunset") events[idx].afterSunset = ParseJsonBool(line);
         else if (field == L"gregYear")    events[idx].gregYear    = (int)ParseJsonNumber(line);
         else if (field == L"hebYear")     events[idx].hebYear     = (int)ParseJsonNumber(line);
+        else if (field == L"notify")      events[idx].notify      = ParseJsonBool(line);
+        else if (field == L"alarmOffsets") events[idx].alarmOffsets = ParseJsonString(line);
     }
 }
 

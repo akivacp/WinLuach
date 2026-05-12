@@ -20,10 +20,12 @@
 #include "CalPrintDlg.h"
 #include "WinLuachApp.h"
 #include "Resource.h"
+#include "Version.h"
 #include <urlmon.h>
 #include <fstream>
 #include <thread>
 #include <commctrl.h>
+#include <cmath>
 #pragma comment(lib, "Urlmon.lib")
 #pragma comment(lib, "comctl32.lib")
 
@@ -233,6 +235,383 @@ protected:
 
 BEGIN_MESSAGE_MAP(CHelpContentsDlg, CDialog)
     ON_WM_SIZE()
+END_MESSAGE_MAP()
+
+static CTime DateTimeForZman(const GregorianDate& g, const TimeOfDay& t)
+{
+    return CTime(g.year, g.month, g.day, max(0, t.hour), max(0, t.minute), max(0, t.second));
+}
+
+static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int weight)
+{
+    font.DeleteObject();
+    font.CreatePointFont(max(60, pointSize * 10), face.empty() ? L"Segoe UI" : face.c_str());
+    LOGFONT lf = {};
+    if (font.GetLogFont(&lf))
+    {
+        font.DeleteObject();
+        lf.lfWeight = weight;
+        wcscpy_s(lf.lfFaceName, face.empty() ? L"Segoe UI" : face.c_str());
+        HDC screen = ::GetDC(nullptr);
+        int dpiY = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
+        if (screen) ::ReleaseDC(nullptr, screen);
+        lf.lfHeight = -MulDiv(max(6, pointSize), dpiY, 72);
+        font.CreateFontIndirect(&lf);
+    }
+}
+
+class CCountdownOptionsDlg : public CDialog
+{
+public:
+    CCountdownOptionsDlg(CMainFrame* frame, CWnd* parent = nullptr)
+        : CDialog(), m_pFrame(frame), m_settings(theApp.m_settings)
+    {
+        m_pParentWnd = parent;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.cx = 410; b.t.cy = 330;
+        wcscpy_s(b.title, L"Countdown Options");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Countdown Clock Options");
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width();
+
+        auto mkStatic = [&](const wchar_t* text, int x, int y, int w, int h) {
+            CStatic* s = new CStatic;
+            s->Create(text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+                CRect(x, y, x + w, y + h), this, 5100 + m_nextId++);
+            s->SetFont(pF);
+        };
+        auto mkEdit = [&](CEdit& e, const std::wstring& val, int x, int y, int w, UINT id) {
+            e.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+                CRect(x, y, x + w, y + 22), this, id);
+            e.SetFont(pF);
+            e.SetWindowText(val.c_str());
+        };
+        auto mkSize = [&](CEdit& e, int val, int x, int y, int w, UINT id) {
+            CString s; s.Format(L"%d", val);
+            mkEdit(e, (LPCWSTR)s, x, y, w, id);
+        };
+        auto mkBtn = [&](CButton& b, const wchar_t* text, int x, int y, int w, UINT id) {
+            b.Create(text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(x, y, x + w, y + 24), this, id);
+            b.SetFont(pF);
+        };
+
+        int y = 14;
+        mkStatic(L"Area", 10, y, 90, 20);
+        mkStatic(L"Font", 105, y, 95, 20);
+        mkStatic(L"Size", 205, y, 45, 20);
+        mkStatic(L"Text", 252, y, 48, 20);
+        mkStatic(L"Back", 306, y, 48, 20);
+        y += 24;
+
+        CreateRow(L"Next zman", m_editTitleFace, m_editTitleSize, m_btnTitleColor, m_btnTitleBack,
+            m_settings.countdownTitleFontFace, m_settings.countdownTitleFontSize, y, pF);
+        y += 34;
+        CreateRow(L"Countdown", m_editClockFace, m_editClockSize, m_btnClockColor, m_btnClockBack,
+            m_settings.countdownClockFontFace, m_settings.countdownClockFontSize, y, pF);
+        y += 34;
+        CreateRow(L"Current time", m_editCurrentFace, m_editCurrentSize, m_btnCurrentColor, m_btnCurrentBack,
+            m_settings.countdownCurrentFontFace, m_settings.countdownCurrentFontSize, y, pF);
+        y += 34;
+        CreateRow(L"Live clock", m_editLiveFace, m_editLiveSize, m_btnLiveColor, m_btnLiveBack,
+            m_settings.countdownLiveFontFace, m_settings.countdownLiveFontSize, y, pF);
+        y += 42;
+
+        mkStatic(L"Use the color buttons to choose text and background colors.", 10, y, W - 20, 20);
+
+        mkBtn(m_btnOK, L"OK", W - 238, rc.Height() - 34, 64, IDOK);
+        mkBtn(m_btnApply, L"Apply", W - 166, rc.Height() - 34, 70, 5201);
+        mkBtn(m_btnCancel, L"Cancel", W - 88, rc.Height() - 34, 78, IDCANCEL);
+        return TRUE;
+    }
+
+    void CreateRow(const wchar_t* label, CEdit& face, CEdit& size,
+                   CButton& colorBtn, CButton& backBtn,
+                   const std::wstring& faceVal, int sizeVal, int y, CFont* pF)
+    {
+        CStatic* s = new CStatic;
+        s->Create(label, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            CRect(10, y, 100, y + 22), this, 5300 + m_nextId++);
+        s->SetFont(pF);
+        face.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(105, y, 196, y + 22), this, 5400 + m_nextId++);
+        face.SetFont(pF);
+        face.SetWindowText(faceVal.c_str());
+        CString sz; sz.Format(L"%d", sizeVal);
+        size.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER | ES_CENTER,
+            CRect(205, y, 246, y + 22), this, 5500 + m_nextId++);
+        size.SetFont(pF);
+        size.SetWindowText(sz);
+        colorBtn.Create(L"Color", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(252, y, 302, y + 24), this, 5600 + m_nextId++);
+        colorBtn.SetFont(pF);
+        backBtn.Create(L"Back", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(306, y, 356, y + 24), this, 5700 + m_nextId++);
+        backBtn.SetFont(pF);
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        HWND h = (HWND)lParam;
+        if (HIWORD(wParam) == BN_CLICKED && h)
+        {
+            if (h == m_btnTitleColor.GetSafeHwnd()) return Pick(m_settings.countdownTitleTextColor);
+            if (h == m_btnTitleBack.GetSafeHwnd()) return Pick(m_settings.countdownTitleBackColor);
+            if (h == m_btnClockColor.GetSafeHwnd()) return Pick(m_settings.countdownClockTextColor);
+            if (h == m_btnClockBack.GetSafeHwnd()) return Pick(m_settings.countdownClockBackColor);
+            if (h == m_btnCurrentColor.GetSafeHwnd()) return Pick(m_settings.countdownCurrentTextColor);
+            if (h == m_btnCurrentBack.GetSafeHwnd()) return Pick(m_settings.countdownCurrentBackColor);
+            if (h == m_btnLiveColor.GetSafeHwnd()) return Pick(m_settings.countdownLiveTextColor);
+            if (h == m_btnLiveBack.GetSafeHwnd()) return Pick(m_settings.countdownLiveBackColor);
+        }
+        if (LOWORD(wParam) == 5201)
+        {
+            Apply();
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    void OnOK() override
+    {
+        Apply();
+        CDialog::OnOK();
+    }
+
+    BOOL Pick(int& target)
+    {
+        CColorDialog dlg((COLORREF)target, CC_FULLOPEN, this);
+        if (dlg.DoModal() == IDOK)
+            target = (int)dlg.GetColor();
+        return TRUE;
+    }
+
+    void Read()
+    {
+        auto readFace = [](CEdit& e, std::wstring& dest) { CString s; e.GetWindowText(s); dest = (LPCWSTR)s; };
+        auto readSize = [](CEdit& e, int& dest) { CString s; e.GetWindowText(s); dest = max(6, min(80, _wtoi(s))); };
+        readFace(m_editTitleFace, m_settings.countdownTitleFontFace);
+        readSize(m_editTitleSize, m_settings.countdownTitleFontSize);
+        readFace(m_editClockFace, m_settings.countdownClockFontFace);
+        readSize(m_editClockSize, m_settings.countdownClockFontSize);
+        readFace(m_editCurrentFace, m_settings.countdownCurrentFontFace);
+        readSize(m_editCurrentSize, m_settings.countdownCurrentFontSize);
+        readFace(m_editLiveFace, m_settings.countdownLiveFontFace);
+        readSize(m_editLiveSize, m_settings.countdownLiveFontSize);
+    }
+
+    void Apply()
+    {
+        Read();
+        if (m_pFrame)
+            m_pFrame->ApplyAndSaveSettings(m_settings);
+    }
+
+private:
+    CMainFrame* m_pFrame = nullptr;
+    AppSettings m_settings;
+    int m_nextId = 0;
+    CEdit m_editTitleFace, m_editTitleSize;
+    CEdit m_editClockFace, m_editClockSize;
+    CEdit m_editCurrentFace, m_editCurrentSize;
+    CEdit m_editLiveFace, m_editLiveSize;
+    CButton m_btnTitleColor, m_btnTitleBack;
+    CButton m_btnClockColor, m_btnClockBack;
+    CButton m_btnCurrentColor, m_btnCurrentBack;
+    CButton m_btnLiveColor, m_btnLiveBack;
+    CButton m_btnOK, m_btnApply, m_btnCancel;
+};
+
+class CCountdownClockWnd : public CFrameWnd
+{
+public:
+    explicit CCountdownClockWnd(CMainFrame* frame) : m_pFrame(frame) {}
+
+    BOOL CreateClock()
+    {
+        LPCTSTR cls = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW,
+            ::LoadCursor(nullptr, IDC_ARROW), (HBRUSH)(COLOR_WINDOW + 1),
+            ::LoadIcon(nullptr, IDI_APPLICATION));
+        return CFrameWnd::Create(cls, L"WinLuach Countdown Clock",
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
+            CRect(180, 180, 560, 370), m_pFrame);
+    }
+
+protected:
+    afx_msg int OnCreate(LPCREATESTRUCT lp)
+    {
+        if (CFrameWnd::OnCreate(lp) == -1) return -1;
+        CMenu menu, opt;
+        menu.CreateMenu();
+        opt.CreatePopupMenu();
+        opt.AppendMenu(MF_STRING, 6101, L"&Options...");
+        menu.AppendMenu(MF_POPUP, (UINT_PTR)opt.Detach(), L"&Clock");
+        SetMenu(&menu);
+        menu.Detach();
+        SetTimer(1, 1000, nullptr);
+        return 0;
+    }
+
+    afx_msg void OnDestroy()
+    {
+        KillTimer(1);
+        if (m_pFrame && m_pFrame->m_pCountdownClock == this)
+            m_pFrame->m_pCountdownClock = nullptr;
+        CFrameWnd::OnDestroy();
+    }
+
+    afx_msg void OnTimer(UINT_PTR id)
+    {
+        if (id == 1) Invalidate(FALSE);
+        else CFrameWnd::OnTimer(id);
+    }
+
+    afx_msg void OnSize(UINT nType, int cx, int cy)
+    {
+        CFrameWnd::OnSize(nType, cx, cy);
+        if (cx > 0 && cy > 0)
+            Invalidate(FALSE);
+    }
+
+    afx_msg void OnClockOptions()
+    {
+        CCountdownOptionsDlg dlg(m_pFrame, this);
+        dlg.DoModal();
+    }
+
+    struct UpcomingZman
+    {
+        std::wstring label;
+        CTime time;
+        bool valid = false;
+    };
+
+    UpcomingZman GetUpcoming() const
+    {
+        UpcomingZman best;
+        if (!m_pFrame) return best;
+
+        CTime now = CTime::GetCurrentTime();
+        SYSTEMTIME st = {};
+        GetLocalTime(&st);
+        GregorianDate today(st.wYear, st.wMonth, st.wDay);
+        for (int d = 0; d < 2; ++d)
+        {
+            GregorianDate g = JDNToGregorian(GregorianToJDN(today) + d);
+            bool isDst = IsDST(g, m_pFrame->m_location);
+            ZmanimResult z = CalculateZmanim(g, m_pFrame->m_location, isDst);
+            z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
+            struct Item { const wchar_t* label; TimeOfDay time; };
+            Item items[] = {
+                { L"Alos Hashachar", z.alot_GRA },
+                { L"Misheyakir", z.misheyakir_10 },
+                { L"Hanetz", z.hanetz },
+                { L"Sof Shema", z.sofShema_GRA },
+                { L"Sof Tefilla", z.sofTefilla_GRA },
+                { L"Chatzos", z.chatzot },
+                { L"Mincha Gedola", z.minchaGedola_GRA },
+                { L"Mincha Ketana", z.minchaKetana_GRA },
+                { L"Plag HaMincha", z.plagMincha_GRA },
+                { L"Shkiah", z.shkia },
+                { L"Tzeis", z.tzeit_GRA },
+                { L"Candle Lighting", z.candleLighting },
+            };
+            for (const auto& item : items)
+            {
+                if (!item.time.IsValid()) continue;
+                CTime t = DateTimeForZman(g, item.time);
+                if (t <= now) continue;
+                if (!best.valid || t < best.time)
+                    best = { item.label, t, true };
+            }
+        }
+        return best;
+    }
+
+    afx_msg void OnPaint()
+    {
+        CPaintDC dc(this);
+        CRect rc; GetClientRect(&rc);
+        const AppSettings& s = theApp.m_settings;
+        dc.FillSolidRect(rc, (COLORREF)s.countdownClockBackColor);
+
+        UpcomingZman next = GetUpcoming();
+        CTime now = CTime::GetCurrentTime();
+        CString title = next.valid ? (L"Next: " + next.label).c_str() : L"No upcoming zman";
+        CString countdown = L"--:--:--";
+        if (next.valid)
+        {
+            CTimeSpan span = next.time - now;
+            countdown.Format(L"%02I64d:%02d:%02d",
+                span.GetTotalHours(), span.GetMinutes(), span.GetSeconds());
+        }
+        CString current;
+        current.Format(L"Current time: %s", now.Format(L"%I:%M:%S %p").GetString());
+        CString live;
+        live.Format(L"Live clock: %s", now.Format(L"%A, %B %d, %Y").GetString());
+
+        double scale = min(max(0.55, rc.Width() / 380.0), max(0.55, rc.Height() / 190.0));
+        CFont fTitle, fClock, fCurrent, fLive;
+        MakeFont(fTitle, s.countdownTitleFontFace, (int)round(s.countdownTitleFontSize * scale), FW_BOLD);
+        MakeFont(fClock, s.countdownClockFontFace, (int)round(s.countdownClockFontSize * scale), FW_BOLD);
+        MakeFont(fCurrent, s.countdownCurrentFontFace, (int)round(s.countdownCurrentFontSize * scale), FW_NORMAL);
+        MakeFont(fLive, s.countdownLiveFontFace, (int)round(s.countdownLiveFontSize * scale), FW_NORMAL);
+        dc.SetBkMode(OPAQUE);
+
+        auto draw = [&](const CString& text, CFont& font, COLORREF textColor, COLORREF bg, const CRect& area, UINT flags) {
+            dc.FillSolidRect(area, bg);
+            dc.SelectObject(&font);
+            dc.SetTextColor(textColor);
+            dc.SetBkColor(bg);
+            CRect drawRc = area;
+            drawRc.DeflateRect(8, 2);
+            dc.DrawText(text, drawRc, flags);
+        };
+
+        int h = rc.Height();
+        draw(title, fTitle, (COLORREF)s.countdownTitleTextColor, (COLORREF)s.countdownTitleBackColor,
+            CRect(0, 0, rc.Width(), h * 25 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        draw(countdown, fClock, (COLORREF)s.countdownClockTextColor, (COLORREF)s.countdownClockBackColor,
+            CRect(0, h * 25 / 100, rc.Width(), h * 62 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        draw(current, fCurrent, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor,
+            CRect(0, h * 62 / 100, rc.Width(), h * 80 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        draw(live, fLive, (COLORREF)s.countdownLiveTextColor, (COLORREF)s.countdownLiveBackColor,
+            CRect(0, h * 80 / 100, rc.Width(), h), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    void PostNcDestroy() override
+    {
+        delete this;
+    }
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    CMainFrame* m_pFrame = nullptr;
+};
+
+BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
+    ON_WM_CREATE()
+    ON_WM_DESTROY()
+    ON_WM_TIMER()
+    ON_WM_SIZE()
+    ON_WM_PAINT()
+    ON_COMMAND(6101, &CCountdownClockWnd::OnClockOptions)
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -518,7 +897,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
-        b.t.cx = 380; b.t.cy = 260;
+        b.t.cx = 380; b.t.cy = 305;
         wcscpy_s(b.title, L"Event");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -649,6 +1028,20 @@ protected:
             CRect(10, y, W-10, y+20), this, 710);
         m_chkSunset.SetFont(pF);
         m_chkSunset.SetCheck(entry.afterSunset ? BST_CHECKED : BST_UNCHECKED);
+        y += 26;
+
+        m_chkNotify.Create(L"Notify for this personal event",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(10, y, W-10, y+20), this, 713);
+        m_chkNotify.SetFont(pF);
+        m_chkNotify.SetCheck(entry.notify ? BST_CHECKED : BST_UNCHECKED);
+        y += 24;
+
+        mkLbl(L"Alarms:", 20, y, 56, 20);
+        m_editAlarms.Create(WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER|ES_AUTOHSCROLL,
+            CRect(78, y, W-10, y+22), this, 714);
+        m_editAlarms.SetFont(pF);
+        m_editAlarms.SetWindowText(entry.alarmOffsets.c_str());
 
         mkBtn(L"OK",     W-138, H-32, 60, 26, IDOK,     BS_DEFPUSHBUTTON);
         mkBtn(L"Cancel", W-70,  H-32, 60, 26, IDCANCEL);
@@ -695,6 +1088,10 @@ protected:
         }
 
         entry.afterSunset = (m_chkSunset.GetCheck() == BST_CHECKED);
+        entry.notify = (m_chkNotify.GetCheck() == BST_CHECKED);
+        CString alarms;
+        m_editAlarms.GetWindowText(alarms);
+        entry.alarmOffsets = (LPCWSTR)alarms;
         CDialog::OnOK();
     }
 
@@ -761,6 +1158,8 @@ private:
     CSpinButtonCtrl  m_spinHebDay;
     CEdit            m_editHebYear;
     CButton          m_chkSunset;
+    CButton          m_chkNotify;
+    CEdit            m_editAlarms;
 };
 BEGIN_MESSAGE_MAP(CEventEditDlg, CDialog) END_MESSAGE_MAP()
 
@@ -1056,6 +1455,10 @@ private:
                 swprintf_s(buf, L" %d %s", e.hebDay, kH[e.hebMonth-1]);
             s += buf;
             if (e.afterSunset) s += L" (eve)";
+        }
+        if (e.notify)
+        {
+            s += e.alarmOffsets.empty() ? L"  | alarms on" : L"  | alarms: " + e.alarmOffsets;
         }
         return s;
     }
@@ -1894,6 +2297,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_VIEW_ZOOM_IN,     &CMainFrame::OnViewZoomIn)
     ON_COMMAND(ID_VIEW_ZOOM_OUT,    &CMainFrame::OnViewZoomOut)
     ON_COMMAND(ID_VIEW_ZOOM_RESET,  &CMainFrame::OnViewZoomReset)
+    ON_COMMAND(ID_VIEW_COUNTDOWN,   &CMainFrame::OnViewCountdownClock)
     ON_COMMAND(ID_CAL_GOTO,          &CMainFrame::OnCalGoTo)
     ON_COMMAND(ID_CAL_EVENTS,        &CMainFrame::OnCalEvents)
     ON_COMMAND(ID_FILE_EXPORT_EVT,   &CMainFrame::OnFileExportEvents)
@@ -1980,6 +2384,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_IN,    L"Zoom &In\tCtrl++");
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_OUT,   L"Zoom &Out\tCtrl+-");
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_RESET, L"Reset Text &Size\tCtrl+0");
+    viewMenu.AppendMenu(MF_SEPARATOR);
+    viewMenu.AppendMenu(MF_STRING, ID_VIEW_COUNTDOWN,  L"&Countdown Clock...");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)viewMenu.Detach(), L"&View");
 
     CMenu optMenu;
@@ -1990,8 +2396,6 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     CMenu helpMenu;
     helpMenu.CreatePopupMenu();
-    helpMenu.AppendMenu(MF_STRING, ID_HELP_CONTENTS, L"&Contents...");
-    helpMenu.AppendMenu(MF_SEPARATOR);
     helpMenu.AppendMenu(MF_STRING, ID_HELP_ABOUT, L"&About WinLuach...");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)helpMenu.Detach(), L"&Help");
 
@@ -2112,6 +2516,10 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 void CMainFrame::OnDestroy()
 {
     KillTimer(1);
+    if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
+        m_pOptionsDlg->DestroyWindow();
+    if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
+        m_pCountdownClock->DestroyWindow();
     RemoveTrayIcon();
     WINDOWPLACEMENT wp = {};
     wp.length = sizeof(wp);
@@ -2156,6 +2564,7 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         {
             UpdateTrayIcon();
         }
+        CheckZmanNotifications();
         return;
     }
     CFrameWnd::OnTimer(nIDEvent);
@@ -3203,6 +3612,80 @@ void CMainFrame::ShowEventNotification(const std::wstring& title,
     }
 }
 
+void CMainFrame::CheckZmanNotifications()
+{
+    const AppSettings& s = theApp.m_settings;
+    if (s.notifyZmanimStyle <= 0 || s.notifyZmanimMask == 0)
+        return;
+
+    SYSTEMTIME st = {};
+    GetLocalTime(&st);
+    GregorianDate today(st.wYear, st.wMonth, st.wDay);
+    bool isDst = IsDST(today, m_location);
+    ZmanimResult z = CalculateZmanim(today, m_location, isDst);
+    z.candleLighting = AddMinutes(z.shkia, -s.candleLightingMinutes);
+    HebrewDate h = GregorianToHebrew(today);
+    auto hols = GetHolidays(h, m_isIsrael);
+
+    struct NotifyZman { int bit; const wchar_t* label; TimeOfDay time; };
+    std::vector<NotifyZman> items = {
+        { 0, L"Alos Hashachar", z.alot_GRA },
+        { 1, L"Misheyakir", z.misheyakir_10 },
+        { 2, L"Hanetz", z.hanetz },
+        { 3, L"Sof Zman Shema", z.sofShema_GRA },
+        { 4, L"Sof Zman Tefilla", z.sofTefilla_GRA },
+        { 5, L"Chatzos", z.chatzot },
+        { 6, L"Mincha Gedola", z.minchaGedola_GRA },
+        { 7, L"Mincha Ketana", z.minchaKetana_GRA },
+        { 8, L"Plag HaMincha", z.plagMincha_GRA },
+        { 9, L"Shkiah", z.shkia },
+        { 10, L"Tzeis", z.tzeit_GRA },
+        { 11, L"Candle Lighting", z.candleLighting },
+    };
+
+    DayOfWeek dow = GetDayOfWeek(today);
+    bool isFast = false;
+    for (const auto& ho : hols)
+        if (ho.flags & HOLIDAY_FAST) { isFast = true; break; }
+    if (isFast)
+        items.push_back({ 12, L"Fast ends", z.tzeit_GRA });
+
+    bool isErevTishaBav = (h.month == AV && h.day == 8);
+    if (isErevTishaBav && dow != SHABBAT && dow != FRIDAY)
+        items.push_back({ 12, L"Fast begins", z.shkia });
+
+    bool isErevPesach = (h.month == NISSAN && h.day == 14);
+    if (isErevPesach && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0)
+    {
+        items.push_back({ 13, L"Latest time to eat chametz", AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA)) });
+        items.push_back({ 14, L"Latest time to burn chametz", AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA)) });
+    }
+
+    for (const auto& item : items)
+    {
+        if (!(s.notifyZmanimMask & (1u << item.bit)) || !item.time.IsValid())
+            continue;
+        if (item.time.hour != st.wHour || item.time.minute != st.wMinute)
+            continue;
+
+        wchar_t key[80];
+        swprintf_s(key, L"%04d%02d%02d-%d-%02d%02d", today.year, today.month, today.day,
+            item.bit, item.time.hour, item.time.minute);
+        std::wstring k = key;
+        if (std::find(m_sentZmanNotificationKeys.begin(), m_sentZmanNotificationKeys.end(), k) !=
+            m_sentZmanNotificationKeys.end())
+            continue;
+        m_sentZmanNotificationKeys.push_back(k);
+
+        std::wstring body = std::wstring(item.label) + L": " + FormatTime(item.time, m_use24hr);
+        ShowEventNotification(L"WinLuach Zman", body, s.notifyZmanimStyle);
+    }
+
+    if (m_sentZmanNotificationKeys.size() > 256)
+        m_sentZmanNotificationKeys.erase(m_sentZmanNotificationKeys.begin(),
+            m_sentZmanNotificationKeys.begin() + (m_sentZmanNotificationKeys.size() - 128));
+}
+
 void CMainFrame::CheckTodayEvents()
 {
     GregorianDate today  = GetTodayGregorian();
@@ -3214,6 +3697,7 @@ void CMainFrame::CheckTodayEvents()
         static const wchar_t* kP[] = { L"Birthday: ", L"Anniversary: ", L"Yahrzeit: ", L"" };
         std::wstring body;
         for (const auto& ev : theApp.m_settings.userEvents) {
+            if (!ev.notify) continue;
             const wchar_t* pre = (ev.type >= 0 && ev.type <= 3) ? kP[ev.type] : L"";
             if (ev.gregMonth == today.month && ev.gregDay == today.day)
                 body += std::wstring(pre) + ev.name + L"\n";
@@ -3595,34 +4079,58 @@ void CMainFrame::OnOptionsLocation()
 
 void CMainFrame::OnOptionsPrefs()
 {
-    COptionsDlg dlg(theApp.m_settings, this);
-    if (dlg.DoModal() == IDOK)
+    if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
     {
-        theApp.m_settings = dlg.GetSettings();
-        ApplySettings(theApp.m_settings);
-        SaveSettings(theApp.m_settings);
-        PopulateMonthCombo();
-        UpdateMonthYearControls();
-        if (m_minimizeToTray || m_showTrayIcon)
-            AddTrayIcon();
-        else
-            RemoveTrayIcon();
-        RefreshWebCalendarEvents();
-        if (m_pCalView)
-        {
-            m_pCalView->RebuildCells();
-            m_pCalView->Invalidate(FALSE);
-        }
-        if (m_pZmanim)   m_pZmanim->Invalidate(FALSE);
-        if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+        m_pOptionsDlg->ShowWindow(SW_SHOWNORMAL);
+        m_pOptionsDlg->SetForegroundWindow();
+        return;
     }
+
+    COptionsDlg* dlg = new COptionsDlg(theApp.m_settings, this);
+    if (!dlg->CreateModeless(this))
+    {
+        delete dlg;
+        MessageBox(L"Could not open Preferences.", L"WinLuach", MB_OK | MB_ICONERROR);
+        return;
+    }
+    m_pOptionsDlg = dlg;
+    dlg->ShowWindow(SW_SHOW);
+}
+
+void CMainFrame::ApplyAndSaveSettings(const AppSettings& s)
+{
+    theApp.m_settings = s;
+    ApplySettings(theApp.m_settings);
+    SaveSettings(theApp.m_settings);
+    PopulateMonthCombo();
+    UpdateMonthYearControls();
+    if (m_minimizeToTray || m_showTrayIcon)
+        AddTrayIcon();
+    else
+        RemoveTrayIcon();
+    RefreshWebCalendarEvents();
+    if (m_pCalView)
+    {
+        m_pCalView->RebuildCells();
+        m_pCalView->Invalidate(FALSE);
+    }
+    if (m_pZmanim)   m_pZmanim->Invalidate(FALSE);
+    if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+    if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
+        m_pCountdownClock->Invalidate(FALSE);
+}
+
+void CMainFrame::OnOptionsDialogClosed(COptionsDlg* dlg)
+{
+    if (m_pOptionsDlg == dlg)
+        m_pOptionsDlg = nullptr;
 }
 
 void CMainFrame::OnHelpAbout()
 {
     MessageBoxW(
         L"2026 WinLuach - Hebrew Calendar\n\n"
-        L"Version 0.7.0\n\n"
+        L"Version " WINLUACH_VERSION_TEXT L"\n\n"
         L"A modern Hebrew/Gregorian calendar\n"
         L"with halachic times (zmanim).\n\n"
         L"Built with C++ and MFC.",
@@ -3956,6 +4464,26 @@ void CMainFrame::OnViewZoomReset()
     theApp.m_settings.fontSize = 1;   // Default (index 1 → 14pt)
     ApplySettings(theApp.m_settings);
     SaveSettings(theApp.m_settings);
+}
+
+void CMainFrame::OnViewCountdownClock()
+{
+    if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
+    {
+        m_pCountdownClock->ShowWindow(SW_SHOWNORMAL);
+        m_pCountdownClock->SetForegroundWindow();
+        return;
+    }
+
+    m_pCountdownClock = new CCountdownClockWnd(this);
+    if (!m_pCountdownClock->CreateClock())
+    {
+        delete m_pCountdownClock;
+        m_pCountdownClock = nullptr;
+        MessageBox(L"Could not open the countdown clock.", L"WinLuach", MB_OK | MB_ICONERROR);
+        return;
+    }
+    m_pCountdownClock->ShowWindow(SW_SHOW);
 }
 
 void CMainFrame::OnCalGoTo()
