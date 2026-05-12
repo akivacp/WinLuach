@@ -38,13 +38,18 @@ public:
 
     // Creates the dialog using an in-memory template (no .rc file needed)
     virtual INT_PTR DoModal() override;
+    BOOL CreateModeless(CWnd* pParent);
 
 protected:
     virtual BOOL OnInitDialog() override;
     virtual void OnOK() override;
+    virtual void OnCancel() override;
+    virtual void PostNcDestroy() override;
+    afx_msg void OnApply();
     afx_msg void OnTrayTextColor();
     afx_msg void OnManageCals();
     afx_msg void OnPreviewNotification();
+    afx_msg void OnAdvancedReminders();
     afx_msg void OnTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
@@ -105,9 +110,13 @@ private:
     std::vector<CWnd*> m_pageInterface;
     std::vector<CWnd*> m_pageColors;
     std::vector<CWnd*> m_pageZmanim;
+    std::vector<CWnd*> m_pageNotifications;
     CButton m_btnOK;
     CButton m_btnCancel;
+    CButton m_btnApply;
 
+    void ReadControlsIntoResult();
+    bool ApplyToParent();
     void ShowOptionsPage(int page);
     void UpdateColorButtons();
     bool ChooseCalendarColor(UINT id);
@@ -137,4 +146,20 @@ private:
     bool      m_updatingColorUi = false;
     int       m_lastAlotMode = 0;
     int       m_lastTzeitMode = 0;
+
+    CComboBox m_cmbNotifyZmanim;
+    CButton   m_chkNotifyZmanim[15];
+    CComboBox m_cmbNotifyMoadim;
+    CEdit     m_editNotifyMoadimOffsets;
+    CComboBox m_cmbNotifyParsha;
+    CComboBox m_cmbNotifyParshaStyle;
+    CEdit     m_editNotifyParshaOffsets;
+    CEdit     m_editNotifyPersonalOffsets;
+    CButton   m_btnAdvancedReminders;
+    void UpdateNotificationControls();
+    void SetDirty(bool dirty);
+
+    bool      m_modeless = false;
+    bool      m_initialized = false;
+    bool      m_dirty = false;
 };

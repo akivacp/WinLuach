@@ -43,6 +43,18 @@ struct UserEventEntry
     // Optional: lock to a specific year (0 = recurring every year)
     int  gregYear    = 0;
     int  hebYear     = 0;
+
+    bool         notify = true;
+    std::wstring alarmOffsets; // e.g. "15 minutes; 1 day; 1 week"
+};
+
+struct ReminderRule
+{
+    bool enabled = true;
+    int style = 1; // 0=off, 1=toast, 2=popup, 3=both
+    std::wstring kind;    // Zman, Parsha, Holiday, Personal Event
+    std::wstring target;  // e.g. Shkiah, Emor, Pesach
+    std::wstring offsets; // e.g. "15 minutes; 1 day"
 };
 
 // =============================================================================
@@ -92,6 +104,15 @@ struct AppSettings
     // --- Notifications (0=off, 1=toast, 2=popup, 3=both) ---
     int  notifyPersonalEvents = 1;   // birthdays / anniversaries / yahrzeits
     int  notifyWebCalEvents   = 0;   // web calendar events
+    int  notifyZmanimStyle    = 0;   // zmanim notifications
+    uint32_t notifyZmanimMask = 0;   // selectable zmanim checkboxes
+    int  notifyMoadimStyle    = 0;   // moadim reminder notifications
+    std::wstring notifyMoadimOffsets; // e.g. "1 day; 1 week"
+    int  notifyParshaStyle    = 0;
+    std::wstring notifyParshaName;    // e.g. "Emor"
+    std::wstring notifyParshaOffsets; // e.g. "1 week"
+    std::wstring notifyPersonalOffsets; // global offsets for personal events
+    std::vector<ReminderRule> advancedReminders;
 
     // --- Print / location defaults ---
     bool         printWeeklyZmanim = true;
@@ -148,6 +169,24 @@ struct AppSettings
     int          sidebarWidth     = 190;   // persisted splitter position
     int          zmanimHeight     = 110;   // persisted zmanim panel height
     bool         sidebarCollapsed = false;
+
+    // --- Countdown clock ---
+    std::wstring countdownTitleFontFace = L"Segoe UI";
+    int          countdownTitleFontSize = 14;
+    int          countdownTitleTextColor = 0x00323232;
+    int          countdownTitleBackColor = 0x00FFFFFF;
+    std::wstring countdownClockFontFace = L"Segoe UI";
+    int          countdownClockFontSize = 28;
+    int          countdownClockTextColor = 0x000000FF;
+    int          countdownClockBackColor = 0x00FFFFFF;
+    std::wstring countdownCurrentFontFace = L"Segoe UI";
+    int          countdownCurrentFontSize = 13;
+    int          countdownCurrentTextColor = 0x00323232;
+    int          countdownCurrentBackColor = 0x00FFFFFF;
+    std::wstring countdownLiveFontFace = L"Segoe UI";
+    int          countdownLiveFontSize = 12;
+    int          countdownLiveTextColor = 0x00505050;
+    int          countdownLiveBackColor = 0x00FFFFFF;
 
     // --- Window ---
     int          windowX = -1;   // -1 = use default
