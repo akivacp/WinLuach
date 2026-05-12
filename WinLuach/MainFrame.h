@@ -26,6 +26,7 @@
 class CCalendarView;
 class CSidebarPanel;
 class CZmanimPanel;
+class CSplitterBar;
 
 struct UserEventInfo
 {
@@ -92,6 +93,14 @@ struct UserEventInfo
 #define ID_VIEW_ZOOM_OUT    1023
 #define ID_VIEW_ZOOM_RESET  1024
 #define ID_CAL_GOTO         1025
+#define ID_CAL_EVENTS       1026
+#define ID_FILE_EXPORT_EVT  1027
+#define ID_FILE_IMPORT_EVT  1028
+#define ID_CAL_PRINT_MONTH  1029
+#define ID_CAL_PRINT_ZMANIM 1030
+#define ID_SIDEBAR_TOGGLE   1031
+#define ID_PRINT_DAY_VIEW   1034
+#define ID_HEB_CIVIL_TOGGLE 1035
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -134,6 +143,15 @@ public:
     // Opens the day detail popup for the given date
     void OpenDayViewForDate(const GregorianDate& g);
 
+    // Opens CEventEditDlg pre-filled with the given date (for right-click "Add Event")
+    void AddEventForDate(const GregorianDate& g);
+
+    // Shows a toast balloon and/or popup for events today (called on startup)
+    void CheckTodayEvents();
+
+    // Shows a notification with the given style (1=toast, 2=popup, 3=both)
+    void ShowEventNotification(const std::wstring& title, const std::wstring& body, int style);
+
     // Returns {candleStr, motzStr} zmanim labels for a calendar cell.
     std::pair<std::wstring, std::wstring> GetCellZmanimLabels(
         const GregorianDate& g, const HebrewDate& h,
@@ -160,6 +178,7 @@ public:
     bool          m_showHalachaYomit = true;
     bool          m_showMishnaYomit = true;
     bool          m_showTanachYomi = true;
+    bool          m_showTrayIcon   = false;
     bool          m_minimizeToTray = false;
     int           m_minimizeTrayWhen = 0;
     ZmanimResult  m_zmanim;
@@ -170,6 +189,16 @@ public:
     CFont  m_fontBold;
     CFont  m_fontSmall;
     CFont  m_fontHeader;
+
+    // Splitter / layout state (public so CSplitterBar can access them)
+    int            m_sidebarW         = SIDEBAR_W;
+    int            m_zmanimH          = ZMANIM_H;
+    bool           m_sidebarCollapsed = false;
+    int            m_lastSidebarW     = SIDEBAR_W;
+
+    void ResizeSidebar(int w);
+    void ResizeZmanim(int h);
+    void UpdateSidebarToggleButton();
 
     // Navigation buttons in the header bar
     CButton m_btnPrevDecade;
@@ -183,10 +212,11 @@ public:
     CButton m_btnNextDecade;
     CButton m_btnPrint;
 
-    // Month/year picker: combo + year edit + spin
+    // Month/year picker: combo + year edit + spin + Heb/Civil toggle
     CComboBox          m_comboMonth;
     CEdit              m_editYear;
     CSpinButtonCtrl    m_spinYear;
+    CButton            m_btnHebCivil;
     bool               m_updatingControls = false;
 
 protected:
@@ -222,6 +252,13 @@ protected:
     afx_msg void OnViewZoomOut();
     afx_msg void OnViewZoomReset();
     afx_msg void OnCalGoTo();
+    afx_msg void OnCalEvents();
+    afx_msg void OnFileExportEvents();
+    afx_msg void OnFileImportEvents();
+    afx_msg void OnCalPrintMonth();
+    afx_msg void OnCalPrintZmanim();
+    afx_msg void OnSidebarToggle();
+    afx_msg void OnHebCivilToggle();
     afx_msg LRESULT OnWebCalDone(WPARAM, LPARAM);
     afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     virtual BOOL PreTranslateMessage(MSG* pMsg);
@@ -264,7 +301,13 @@ protected:
     // Child panels
     CCalendarView* m_pCalView = nullptr;
     CSidebarPanel* m_pSidebar = nullptr;
-    CZmanimPanel* m_pZmanim = nullptr;
+    CZmanimPanel*  m_pZmanim  = nullptr;
+
+    // Splitter bars + toggle button
+    CSplitterBar*  m_pSplitSidebar = nullptr;
+    CSplitterBar*  m_pSplitZmanim  = nullptr;
+    CButton        m_btnSidebarToggle;
+
     NOTIFYICONDATA m_trayIcon = {};
     bool m_isInTray = false;
     HICON m_hTrayDateIcon = nullptr;

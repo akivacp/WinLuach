@@ -23,6 +23,28 @@ struct WebCalEntry {
     bool         enabled = true;
 };
 
+// ── Personal recurring event (birthday / anniversary / yahrzeit / custom) ────
+struct UserEventEntry
+{
+    std::wstring name;
+    int  type        = 0;   // 0=Birthday, 1=Anniversary, 2=Yahrzeit, 3=Custom
+
+    // Gregorian recurrence (0 = disabled)
+    int  gregMonth   = 0;
+    int  gregDay     = 1;
+
+    // Hebrew recurrence (0 = disabled; use NISAN/IYAR/... constants)
+    int  hebMonth    = 0;
+    int  hebDay      = 1;
+
+    // For yahrzeit: display on the evening BEFORE the Hebrew date
+    bool afterSunset = false;
+
+    // Optional: lock to a specific year (0 = recurring every year)
+    int  gregYear    = 0;
+    int  hebYear     = 0;
+};
+
 // =============================================================================
 // APP SETTINGS STRUCT
 // Holds all user-configurable preferences.
@@ -56,12 +78,20 @@ struct AppSettings
     int          language = 0;        // 0=English, future use
 
     // --- Interface ---
+    bool         showTrayIcon   = false;   // always show tray icon
     bool         minimizeToTray = false;
     int          minimizeTrayWhen = 0; // 0=minimized, 1=closed, 2=minimized or closed
     int          trayTextColor = 0x00FFFF; // COLORREF-style RGB, default yellow
     bool         minimizeOnStartup = false;
     bool         startWithWindows = false;
     bool         desktopShortcut = false;
+
+    // --- Personal events ---
+    std::vector<UserEventEntry> userEvents;
+
+    // --- Notifications (0=off, 1=toast, 2=popup, 3=both) ---
+    int  notifyPersonalEvents = 1;   // birthdays / anniversaries / yahrzeits
+    int  notifyWebCalEvents   = 0;   // web calendar events
 
     // --- Print / location defaults ---
     bool         printWeeklyZmanim = true;
@@ -76,11 +106,17 @@ struct AppSettings
     float        printMarginBot    = 0.75f;
     float        printMarginLeft   = 0.50f;
     float        printMarginRight  = 0.50f;
+    uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
 
     // --- Zmanim shita ---
     // Which opinion to use for alot/tzeit in the main display
     // 0=GRA, 1=MA72, 2=MA90
     int          zmanimShita = 0;
+
+    // --- Layout (splitters) ---
+    int          sidebarWidth     = 190;   // persisted splitter position
+    int          zmanimHeight     = 110;   // persisted zmanim panel height
+    bool         sidebarCollapsed = false;
 
     // --- Window ---
     int          windowX = -1;   // -1 = use default
@@ -109,3 +145,18 @@ bool SaveSettings(const AppSettings& s);
 // Loads settings from disk. Returns true on success.
 // If the file doesn't exist, fills s with defaults and returns false.
 bool LoadSettings(AppSettings& s);
+
+// Returns the path to the events file: %APPDATA%\WinLuach\events.json
+std::wstring GetEventsFilePath();
+
+// Saves user events to events.json. Returns true on success.
+bool SaveEvents(const std::vector<UserEventEntry>& events);
+
+// Loads user events from events.json. Returns true on success.
+bool LoadEvents(std::vector<UserEventEntry>& events);
+
+// Exports user events to an arbitrary path chosen by the caller.
+bool ExportEvents(const std::vector<UserEventEntry>& events, const std::wstring& path);
+
+// Imports user events from a file. Appends to existing list. Returns count added.
+int  ImportEvents(std::vector<UserEventEntry>& events, const std::wstring& path);
