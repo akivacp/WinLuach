@@ -15,6 +15,7 @@
 #include "OptionsDlg.h"
 #include "MainFrame.h"
 #include <cmath>
+#include <fstream>
 
 #define IDC_OPT_RAD_AMPM       301
 #define IDC_OPT_RAD_24HR       302
@@ -67,6 +68,16 @@
 #define IDC_OPT_COLOR_PICKER    353
 #define IDC_OPT_COLOR_PREVIEW   354
 #define IDC_OPT_COLOR_SAMPLE    355
+#define IDC_OPT_APPLY           356
+#define IDC_OPT_NOTIFY_ZMAN_STYLE 357
+#define IDC_OPT_NOTIFY_MOADIM_STYLE 358
+#define IDC_OPT_NOTIFY_MOADIM_OFFSETS 359
+#define IDC_OPT_NOTIFY_PARSHA_NAME 360
+#define IDC_OPT_NOTIFY_PARSHA_STYLE 361
+#define IDC_OPT_NOTIFY_PARSHA_OFFSETS 362
+#define IDC_OPT_NOTIFY_PERSONAL_OFFSETS 363
+#define IDC_OPT_ADV_REMINDERS 364
+#define IDC_OPT_NOTIFY_ZMAN_FIRST 380
 
 enum ColorPreviewKind
 {
@@ -435,10 +446,338 @@ private:
 BEGIN_MESSAGE_MAP(CWebCalDlg, CDialog)
 END_MESSAGE_MAP()
 
+static std::wstring ReminderEscape(const std::wstring& s)
+{
+    std::wstring out;
+    for (wchar_t ch : s)
+    {
+        if (ch == L'\\' || ch == L'|') out += L'\\';
+        out += ch;
+    }
+    return out;
+}
+
+static std::vector<std::wstring> ReminderSplit(const std::wstring& line)
+{
+    std::vector<std::wstring> parts;
+    std::wstring cur;
+    bool esc = false;
+    for (wchar_t ch : line)
+    {
+        if (esc) { cur += ch; esc = false; continue; }
+        if (ch == L'\\') { esc = true; continue; }
+        if (ch == L'|') { parts.push_back(cur); cur.clear(); continue; }
+        cur += ch;
+    }
+    parts.push_back(cur);
+    return parts;
+}
+
+class CReminderEditDlg : public CDialog
+{
+public:
+    ReminderRule rule;
+
+    CReminderEditDlg(const ReminderRule* existing, CWnd* parent = nullptr) : CDialog()
+    {
+        if (existing) rule = *existing;
+        if (rule.kind.empty()) rule.kind = L"Zman";
+        if (rule.target.empty()) rule.target = L"Shkiah";
+        if (rule.offsets.empty()) rule.offsets = L"15 minutes";
+        m_pParentWnd = parent;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.cx = 330; b.t.cy = 190;
+        wcscpy_s(b.title, L"Reminder");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+        auto label = [&](const wchar_t* text, int x, int y, int w) {
+            CStatic* s = new CStatic;
+            s->Create(text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+                CRect(x, y, x + w, y + 22), this, 6200 + m_nextId++);
+            s->SetFont(pF);
+        };
+        label(L"Type:", 10, 12, 70);
+        m_kind.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(82, 12, W - 10, 150), this, 6101);
+        m_kind.SetFont(pF);
+        for (const wchar_t* k : { L"Zman", L"Parsha", L"Holiday", L"Personal Event" })
+            m_kind.AddString(k);
+        m_kind.SetCurSel(0);
+        for (int i = 0; i < m_kind.GetCount(); ++i) {
+            CString v; m_kind.GetLBText(i, v);
+            if (std::wstring((LPCWSTR)v) == rule.kind) { m_kind.SetCurSel(i); break; }
+        }
+
+        label(L"Target:", 10, 44, 70);
+        m_target.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN | CBS_AUTOHSCROLL | WS_VSCROLL,
+            CRect(82, 44, W - 10, 220), this, 6102);
+        m_target.SetFont(pF);
+        FillTargets();
+        m_target.SetWindowText(rule.target.c_str());
+
+        label(L"Before:", 10, 76, 70);
+        m_offsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(82, 76, W - 10, 98), this, 6103);
+        m_offsets.SetFont(pF);
+        m_offsets.SetWindowText(rule.offsets.c_str());
+
+        label(L"Notify:", 10, 108, 70);
+        m_style.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(82, 108, 210, 230), this, 6104);
+        m_style.SetFont(pF);
+        for (const wchar_t* s : { L"Off", L"Toast", L"Popup", L"Toast + Popup" })
+            m_style.AddString(s);
+        m_style.SetCurSel(max(0, min(3, rule.style)));
+        m_enabled.Create(L"Enabled", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(220, 108, W - 10, 130), this, 6105);
+        m_enabled.SetFont(pF);
+        m_enabled.SetCheck(rule.enabled ? BST_CHECKED : BST_UNCHECKED);
+
+        CButton* ok = new CButton;
+        ok->Create(L"OK", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(W - 146, H - 34, W - 78, H - 8), this, IDOK);
+        ok->SetFont(pF);
+        CButton* cancel = new CButton;
+        cancel->Create(L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - 72, H - 34, W - 8, H - 8), this, IDCANCEL);
+        cancel->SetFont(pF);
+        return TRUE;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        if (LOWORD(wParam) == 6101 && HIWORD(wParam) == CBN_SELCHANGE)
+        {
+            FillTargets();
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    void OnOK() override
+    {
+        CString text;
+        m_kind.GetWindowText(text); rule.kind = (LPCWSTR)text;
+        m_target.GetWindowText(text); rule.target = (LPCWSTR)text;
+        m_offsets.GetWindowText(text); rule.offsets = (LPCWSTR)text;
+        rule.style = max(0, m_style.GetCurSel());
+        rule.enabled = (m_enabled.GetCheck() == BST_CHECKED);
+        if (rule.target.empty() || rule.offsets.empty()) {
+            MessageBox(L"Please enter a target and reminder time.", L"WinLuach", MB_OK | MB_ICONWARNING);
+            return;
+        }
+        CDialog::OnOK();
+    }
+
+private:
+    void FillTargets()
+    {
+        CString kind; if (m_kind.GetSafeHwnd()) m_kind.GetWindowText(kind);
+        CString cur; if (m_target.GetSafeHwnd()) m_target.GetWindowText(cur);
+        if (!m_target.GetSafeHwnd()) return;
+        m_target.ResetContent();
+
+        auto addMany = [&](std::initializer_list<const wchar_t*> values) {
+            for (const wchar_t* v : values) m_target.AddString(v);
+        };
+        if (kind == L"Parsha")
+            addMany({ L"Bereshis", L"Noach", L"Lech Lecha", L"Vayera", L"Chayei Sarah", L"Toldos",
+                L"Vayetzei", L"Vayishlach", L"Vayeshev", L"Miketz", L"Vayigash", L"Vayechi",
+                L"Shemos", L"Vaera", L"Bo", L"Beshalach", L"Yisro", L"Mishpatim", L"Terumah",
+                L"Tetzaveh", L"Ki Sisa", L"Vayakhel", L"Pekudei", L"Vayikra", L"Tzav", L"Shemini",
+                L"Tazria", L"Metzora", L"Acharei Mos", L"Kedoshim", L"Emor", L"Behar", L"Bechukosai",
+                L"Bamidbar", L"Naso", L"Behaaloscha", L"Shelach", L"Korach", L"Chukas", L"Balak",
+                L"Pinchas", L"Matos", L"Masei", L"Devarim", L"Vaeschanan", L"Eikev", L"Reeh",
+                L"Shoftim", L"Ki Seitzei", L"Ki Savo", L"Nitzavim", L"Vayelech", L"Haazinu" });
+        else if (kind == L"Holiday")
+            addMany({ L"Rosh Hashana", L"Yom Kippur", L"Sukkos", L"Shemini Atzeres", L"Chanukah",
+                L"Tu BiShvat", L"Purim", L"Pesach", L"Lag BaOmer", L"Shavuos", L"Tisha B'Av" });
+        else if (kind == L"Personal Event")
+            addMany({ L"Any personal event", L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" });
+        else
+            addMany({ L"Alos", L"Misheyakir", L"Hanetz", L"Sof Shema", L"Sof Tefilla", L"Chatzos",
+                L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah", L"Tzeis", L"Candle Lighting",
+                L"Fast start/end", L"Eat chametz", L"Burn chametz" });
+        if (!cur.IsEmpty()) m_target.SetWindowText(cur);
+    }
+
+    int m_nextId = 0;
+    CComboBox m_kind, m_target, m_style;
+    CEdit m_offsets;
+    CButton m_enabled;
+};
+
+class CAdvancedRemindersDlg : public CDialog
+{
+public:
+    explicit CAdvancedRemindersDlg(std::vector<ReminderRule>& reminders, CWnd* parent = nullptr)
+        : CDialog(), m_reminders(reminders)
+    {
+        m_pParentWnd = parent;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.cx = 430; b.t.cy = 260;
+        wcscpy_s(b.title, L"Advanced Reminders");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+        m_list.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY,
+            CRect(10, 10, W - 104, H - 10), this, 6300);
+        m_list.SetFont(pF);
+        auto btn = [&](const wchar_t* t, int y, UINT id) {
+            CButton* b = new CButton;
+            b->Create(t, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(W - 92, y, W - 8, y + 25), this, id);
+            b->SetFont(pF);
+        };
+        btn(L"Add", 10, 6301);
+        btn(L"Edit", 40, 6302);
+        btn(L"Delete", 70, 6303);
+        btn(L"Import", 110, 6304);
+        btn(L"Export", 140, 6305);
+        btn(L"Close", H - 35, IDOK);
+        Refresh();
+        return TRUE;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        switch (LOWORD(wParam))
+        {
+        case 6301: Add(); return TRUE;
+        case 6302: Edit(); return TRUE;
+        case 6303: Delete(); return TRUE;
+        case 6304: Import(); return TRUE;
+        case 6305: Export(); return TRUE;
+        case 6300:
+            if (HIWORD(wParam) == LBN_DBLCLK) { Edit(); return TRUE; }
+            break;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+private:
+    std::wstring Summary(const ReminderRule& r) const
+    {
+        std::wstring s = r.enabled ? L"[on] " : L"[off] ";
+        s += r.kind + L": " + r.target + L"  before " + r.offsets;
+        return s;
+    }
+
+    void Refresh()
+    {
+        m_list.ResetContent();
+        for (const auto& r : m_reminders)
+            m_list.AddString(Summary(r).c_str());
+    }
+
+    void Add()
+    {
+        CReminderEditDlg dlg(nullptr, this);
+        if (dlg.DoModal() == IDOK) { m_reminders.push_back(dlg.rule); Refresh(); }
+    }
+
+    void Edit()
+    {
+        int sel = m_list.GetCurSel();
+        if (sel < 0 || sel >= (int)m_reminders.size()) return;
+        CReminderEditDlg dlg(&m_reminders[sel], this);
+        if (dlg.DoModal() == IDOK) { m_reminders[sel] = dlg.rule; Refresh(); m_list.SetCurSel(sel); }
+    }
+
+    void Delete()
+    {
+        int sel = m_list.GetCurSel();
+        if (sel < 0 || sel >= (int)m_reminders.size()) return;
+        m_reminders.erase(m_reminders.begin() + sel);
+        Refresh();
+    }
+
+    void Export()
+    {
+        wchar_t path[MAX_PATH] = L"WinLuach reminders.txt";
+        OPENFILENAMEW ofn = { sizeof(ofn) };
+        ofn.hwndOwner = GetSafeHwnd();
+        ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+        ofn.lpstrFile = path;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrDefExt = L"txt";
+        ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+        if (!GetSaveFileNameW(&ofn)) return;
+        std::wofstream f(path);
+        if (!f.is_open()) return;
+        for (const auto& r : m_reminders)
+            f << (r.enabled ? 1 : 0) << L"|" << r.style << L"|"
+              << ReminderEscape(r.kind) << L"|" << ReminderEscape(r.target) << L"|"
+              << ReminderEscape(r.offsets) << L"\n";
+    }
+
+    void Import()
+    {
+        wchar_t path[MAX_PATH] = {};
+        OPENFILENAMEW ofn = { sizeof(ofn) };
+        ofn.hwndOwner = GetSafeHwnd();
+        ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+        ofn.lpstrFile = path;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+        if (!GetOpenFileNameW(&ofn)) return;
+        std::wifstream f(path);
+        if (!f.is_open()) return;
+        std::wstring line;
+        while (std::getline(f, line))
+        {
+            auto p = ReminderSplit(line);
+            if (p.size() < 5) continue;
+            ReminderRule r;
+            r.enabled = (p[0] == L"1");
+            r.style = _wtoi(p[1].c_str());
+            r.kind = p[2];
+            r.target = p[3];
+            r.offsets = p[4];
+            m_reminders.push_back(r);
+        }
+        Refresh();
+    }
+
+    std::vector<ReminderRule>& m_reminders;
+    CListBox m_list;
+};
+
 BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_TRAY_COLOR,      &COptionsDlg::OnTrayTextColor)
     ON_BN_CLICKED(IDC_OPT_MANAGE_CALS,     &COptionsDlg::OnManageCals)
     ON_BN_CLICKED(IDC_OPT_PREVIEW_NOTIFY,  &COptionsDlg::OnPreviewNotification)
+    ON_BN_CLICKED(IDC_OPT_ADV_REMINDERS,   &COptionsDlg::OnAdvancedReminders)
+    ON_BN_CLICKED(IDC_OPT_APPLY,           &COptionsDlg::OnApply)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,  &COptionsDlg::OnTabChanged)
     ON_WM_SIZE()
 END_MESSAGE_MAP()
@@ -451,6 +790,18 @@ COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
     : CDialog(), m_current(current), m_result(current)
 {
     m_pParentWnd = pParent;
+}
+
+static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
+{
+    t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+    t.dwExtendedStyle = 0;
+    t.cdit = 0;
+    t.x = 0;
+    t.y = 0;
+    t.cx = 442;
+    t.cy = 260;
+    wcscpy_s(title, 32, L"Options and Preferences");
 }
 
 // =============================================================================
@@ -466,20 +817,28 @@ INT_PTR COptionsDlg::DoModal()
         wchar_t title[32];
     } buf = {};
 
-    buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
-        DS_CENTER;
-    buf.t.dwExtendedStyle = 0;
-    buf.t.cdit = 0;
-    buf.t.x = 0;
-    buf.t.y = 0;
-    buf.t.cx = 442;
-    buf.t.cy = 396;
-    wcscpy_s(buf.title, L"Options and Preferences");
+    m_modeless = false;
+    FillOptionsTemplate(buf.t, buf.title);
 
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd))
         return -1;
 
     return CDialog::DoModal();
+}
+
+BOOL COptionsDlg::CreateModeless(CWnd* pParent)
+{
+    struct DlgTmpl {
+        DLGTEMPLATE t;
+        WORD menu;
+        WORD cls;
+        wchar_t title[32];
+    } buf = {};
+
+    m_modeless = true;
+    m_pParentWnd = pParent;
+    FillOptionsTemplate(buf.t, buf.title);
+    return CreateIndirect((DLGTEMPLATE*)&buf, pParent);
 }
 
 
@@ -506,6 +865,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_pageInterface.clear();
     m_pageColors.clear();
     m_pageZmanim.clear();
+    m_pageNotifications.clear();
 
     m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
         CRect(6, 6, W - 6, H - 48), this, IDC_OPT_TAB);
@@ -517,6 +877,7 @@ BOOL COptionsDlg::OnInitDialog()
     ti.pszText = const_cast<LPWSTR>(L"Interface"); m_tab.InsertItem(2, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Colors");    m_tab.InsertItem(3, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Zmanim");    m_tab.InsertItem(4, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(5, &ti);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
         page.push_back(wnd);
@@ -620,20 +981,6 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(135, y, 220, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
     m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(238, y, 395, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
-    y = 188;
-
-    mkGroup(m_pageInterface, L"Notifications", 14, y, W - 28, 82); y += 22;
-    mkStatic(m_pageInterface, L"Personal events:", 28, y, 120, 22);
-    initCombo(m_pageInterface, m_cmbNotifyPersonal, 150, y - 1, 125, IDC_OPT_NOTIFY_PERSONAL,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyPersonalEvents)));
-    m_btnPreviewNotify.Create(L"Test Notification", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(300, y, 420, y + 24), this, IDC_OPT_PREVIEW_NOTIFY); track(m_pageInterface, &m_btnPreviewNotify); y += 28;
-    mkStatic(m_pageInterface, L"Web calendar events:", 28, y, 140, 22);
-    initCombo(m_pageInterface, m_cmbNotifyWebCal, 170, y - 1, 125, IDC_OPT_NOTIFY_WEBCAL,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyWebCalEvents)));
-
     // Colors tab
     mkGroup(m_pageColors, L"Calendar Cell and Text Colors", 14, 38, W - 28, 304);
     mkStatic(m_pageColors, L"Text", 28, 63, 55, 20);
@@ -717,11 +1064,106 @@ BOOL COptionsDlg::OnInitDialog()
     m_radTzeitZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         CRect(230, y + 22, W - 28, y + 42), this, IDC_OPT_TZEIT_ZMANIS); track(m_pageZmanim, &m_radTzeitZmanis);
 
+    // Notifications tab
+    y = 38;
+    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 84); y += 22;
+    mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
+    initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyPersonalEvents)));
+    m_btnPreviewNotify.Create(L"Test", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(288, y, 340, y + 24), this, IDC_OPT_PREVIEW_NOTIFY); track(m_pageNotifications, &m_btnPreviewNotify); y += 28;
+    mkStatic(m_pageNotifications, L"Web calendars:", 28, y, 112, 22);
+    initCombo(m_pageNotifications, m_cmbNotifyWebCal, 145, y - 1, 126, IDC_OPT_NOTIFY_WEBCAL,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyWebCalEvents)));
+    y += 36;
+
+    mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 142); y += 22;
+    mkStatic(m_pageNotifications, L"Zmanim:", 28, y, 70, 22);
+    initCombo(m_pageNotifications, m_cmbNotifyZmanim, 100, y - 1, 126, IDC_OPT_NOTIFY_ZMAN_STYLE,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyZmanimStyle)));
+    y += 28;
+    static const wchar_t* kZmanNotifyLabels[] = {
+        L"Alos", L"Misheyakir", L"Hanetz", L"Sof Shema", L"Sof Tefilla",
+        L"Chatzos", L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah",
+        L"Tzeis", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz"
+    };
+    for (int i = 0; i < 15; ++i)
+    {
+        int col = i / 8;
+        int row = i % 8;
+        int x0 = 28 + col * 190;
+        int yy = y + row * 20;
+        m_chkNotifyZmanim[i].Create(kZmanNotifyLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(x0, yy, x0 + 170, yy + 18), this, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
+        track(m_pageNotifications, &m_chkNotifyZmanim[i]);
+        m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+    }
+    y += 164;
+
+    mkGroup(m_pageNotifications, L"Advance Reminders", 14, y, W - 28, 112); y += 22;
+    mkStatic(m_pageNotifications, L"Moadim:", 28, y, 70, 22);
+    initCombo(m_pageNotifications, m_cmbNotifyMoadim, 100, y - 1, 126, IDC_OPT_NOTIFY_MOADIM_STYLE,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyMoadimStyle)));
+    mkStatic(m_pageNotifications, L"before:", 238, y, 50, 22);
+    m_editNotifyMoadimOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+        CRect(290, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyMoadimOffsets);
+    m_editNotifyMoadimOffsets.SetWindowText(m_current.notifyMoadimOffsets.c_str());
+    y += 28;
+    mkStatic(m_pageNotifications, L"Parsha:", 28, y, 70, 22);
+    initCombo(m_pageNotifications, m_cmbNotifyParsha, 100, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_NAME,
+        { L"Any", L"Bereshis", L"Noach", L"Lech Lecha", L"Vayera", L"Chayei Sarah",
+          L"Toldos", L"Vayetzei", L"Vayishlach", L"Vayeshev", L"Miketz", L"Vayigash",
+          L"Vayechi", L"Shemos", L"Vaera", L"Bo", L"Beshalach", L"Yisro", L"Mishpatim",
+          L"Terumah", L"Tetzaveh", L"Ki Sisa", L"Vayakhel", L"Pekudei", L"Vayikra",
+          L"Tzav", L"Shemini", L"Tazria", L"Metzora", L"Acharei Mos", L"Kedoshim",
+          L"Emor", L"Behar", L"Bechukosai", L"Bamidbar", L"Naso", L"Behaaloscha",
+          L"Shelach", L"Korach", L"Chukas", L"Balak", L"Pinchas", L"Matos", L"Masei",
+          L"Devarim", L"Vaeschanan", L"Eikev", L"Reeh", L"Shoftim", L"Ki Seitzei",
+          L"Ki Savo", L"Nitzavim", L"Vayelech", L"Haazinu", L"Vezos Haberacha" },
+        0);
+    int parSel = 0;
+    for (int i = 0; i < m_cmbNotifyParsha.GetCount(); ++i)
+    {
+        CString val; m_cmbNotifyParsha.GetLBText(i, val);
+        if (std::wstring((LPCWSTR)val) == m_current.notifyParshaName) { parSel = i; break; }
+    }
+    m_cmbNotifyParsha.SetCurSel(parSel);
+    initCombo(m_pageNotifications, m_cmbNotifyParshaStyle, 238, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_STYLE,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyParshaStyle)));
+    y += 28;
+    mkStatic(m_pageNotifications, L"Parsha before:", 28, y, 100, 22);
+    m_editNotifyParshaOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+        CRect(130, y, 230, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyParshaOffsets);
+    m_editNotifyParshaOffsets.SetWindowText(m_current.notifyParshaOffsets.c_str());
+    mkStatic(m_pageNotifications, L"Personal before:", 238, y, 110, 22);
+    m_editNotifyPersonalOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+        CRect(348, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyPersonalOffsets);
+    m_editNotifyPersonalOffsets.SetWindowText(m_current.notifyPersonalOffsets.c_str());
+    y += 32;
+    m_btnAdvancedReminders.Create(L"Manage Advanced Reminders...",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(28, y, 240, y + 26), this, IDC_OPT_ADV_REMINDERS);
+    track(m_pageNotifications, &m_btnAdvancedReminders);
+
     // OK / Cancel buttons
     m_btnOK.Create(L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        CRect(W - 148, H - 38, W - 80, H - 12), this, IDOK);
+        CRect(W - 224, H - 38, W - 156, H - 12), this, IDOK);
     m_btnOK.SetFont(pFont);
+
+    m_btnApply.Create(L"Apply",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        CRect(W - 148, H - 38, W - 80, H - 12), this, IDC_OPT_APPLY);
+    m_btnApply.SetFont(pFont);
 
     m_btnCancel.Create(L"Cancel",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
@@ -801,7 +1243,10 @@ BOOL COptionsDlg::OnInitDialog()
     m_cmbTzeitShita.SetCurSel(tzeitPreset);
 
     UpdateColorButtons();
+    UpdateNotificationControls();
     ShowOptionsPage(0);
+    m_initialized = true;
+    SetDirty(false);
 
     return TRUE;
 }
@@ -824,6 +1269,7 @@ void COptionsDlg::ShowOptionsPage(int page)
     showPage(m_pageInterface, 2);
     showPage(m_pageColors, 3);
     showPage(m_pageZmanim, 4);
+    showPage(m_pageNotifications, 5);
 }
 
 void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
@@ -838,9 +1284,18 @@ void COptionsDlg::OnSize(UINT nType, int cx, int cy)
     if (m_tab.GetSafeHwnd())
         m_tab.MoveWindow(6, 6, max(120, cx - 12), max(120, cy - 54));
     if (m_btnOK.GetSafeHwnd())
-        m_btnOK.MoveWindow(max(10, cx - 148), max(10, cy - 38), 68, 26);
+        m_btnOK.MoveWindow(max(10, cx - 224), max(10, cy - 38), 68, 26);
+    if (m_btnApply.GetSafeHwnd())
+        m_btnApply.MoveWindow(max(82, cx - 148), max(10, cy - 38), 68, 26);
     if (m_btnCancel.GetSafeHwnd())
         m_btnCancel.MoveWindow(max(82, cx - 72), max(10, cy - 38), 64, 26);
+}
+
+void COptionsDlg::SetDirty(bool dirty)
+{
+    m_dirty = dirty;
+    if (m_btnApply.GetSafeHwnd())
+        m_btnApply.EnableWindow(m_dirty ? TRUE : FALSE);
 }
 
 void COptionsDlg::UpdateColorButtons()
@@ -1071,16 +1526,21 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (id == IDC_OPT_COLOR_RESTORE)
     {
         RestoreDefaultCalendarColors();
+        SetDirty(true);
         return TRUE;
     }
     if (id == IDC_OPT_COLOR_PICKER)
     {
         if (ChooseCalendarColor(id))
+        {
+            SetDirty(true);
             return TRUE;
+        }
     }
     if (id == IDC_OPT_COLOR_ITEM && code == CBN_SELCHANGE)
     {
         UpdateColorEditorFromSelection();
+        SetDirty(true);
         return TRUE;
     }
     if (id == IDC_OPT_COLOR_PREVIEW && code == CBN_SELCHANGE)
@@ -1091,28 +1551,48 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (id == IDC_OPT_COLOR_HEX && code == EN_CHANGE)
     {
         ApplyColorHexFromEditor();
+        SetDirty(true);
         return TRUE;
     }
     if (id == IDC_OPT_ALOT_SHITA && code == CBN_SELCHANGE)
     {
         ApplyAlotPreset();
+        SetDirty(true);
         return TRUE;
     }
     if (id == IDC_OPT_TZEIT_SHITA && code == CBN_SELCHANGE)
     {
         ApplyTzeitPreset();
+        SetDirty(true);
         return TRUE;
     }
-    if (id == IDC_OPT_ALOT_DEG)    { ConvertAlotMode(0); return TRUE; }
-    if (id == IDC_OPT_ALOT_MIN)    { ConvertAlotMode(1); return TRUE; }
-    if (id == IDC_OPT_ALOT_ZMANIS) { ConvertAlotMode(2); return TRUE; }
-    if (id == IDC_OPT_TZEIT_DEG)    { ConvertTzeitMode(0); return TRUE; }
-    if (id == IDC_OPT_TZEIT_MIN)    { ConvertTzeitMode(1); return TRUE; }
-    if (id == IDC_OPT_TZEIT_ZMANIS) { ConvertTzeitMode(2); return TRUE; }
+    if (id == IDC_OPT_NOTIFY_ZMAN_STYLE && code == CBN_SELCHANGE)
+    {
+        UpdateNotificationControls();
+        SetDirty(true);
+        return TRUE;
+    }
+    if (id == IDC_OPT_ALOT_DEG)    { ConvertAlotMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_ALOT_MIN)    { ConvertAlotMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_ALOT_ZMANIS) { ConvertAlotMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_DEG)    { ConvertTzeitMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_MIN)    { ConvertTzeitMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_ZMANIS) { ConvertTzeitMode(2); SetDirty(true); return TRUE; }
+    if (m_initialized && !m_updatingColorUi &&
+        (code == BN_CLICKED || code == CBN_SELCHANGE || code == EN_CHANGE))
+        SetDirty(true);
     return CDialog::OnCommand(wParam, lParam);
 }
 
-void COptionsDlg::OnOK()
+void COptionsDlg::UpdateNotificationControls()
+{
+    bool enableZmanim = m_cmbNotifyZmanim.GetSafeHwnd() && m_cmbNotifyZmanim.GetCurSel() > 0;
+    for (auto& chk : m_chkNotifyZmanim)
+        if (chk.GetSafeHwnd())
+            chk.EnableWindow(enableZmanim ? TRUE : FALSE);
+}
+
+void COptionsDlg::ReadControlsIntoResult()
 {
     m_result.use24Hour = (m_rad24hr.GetCheck() == BST_CHECKED);
     m_result.defaultHebrewMonth = (m_radHebrewMonth.GetCheck() == BST_CHECKED);
@@ -1164,22 +1644,111 @@ void COptionsDlg::OnOK()
 
     m_result.notifyPersonalEvents = max(0, m_cmbNotifyPersonal.GetCurSel());
     m_result.notifyWebCalEvents   = max(0, m_cmbNotifyWebCal.GetCurSel());
+    m_result.notifyZmanimStyle = max(0, m_cmbNotifyZmanim.GetCurSel());
+    m_result.notifyZmanimMask = 0;
+    for (int i = 0; i < 15; ++i)
+        if (m_chkNotifyZmanim[i].GetSafeHwnd() &&
+            m_chkNotifyZmanim[i].GetCheck() == BST_CHECKED)
+            m_result.notifyZmanimMask |= (1u << i);
+    m_result.notifyMoadimStyle = max(0, m_cmbNotifyMoadim.GetCurSel());
+    CString txt;
+    m_editNotifyMoadimOffsets.GetWindowText(txt);
+    m_result.notifyMoadimOffsets = (LPCWSTR)txt;
+    m_result.notifyParshaStyle = max(0, m_cmbNotifyParshaStyle.GetCurSel());
+    int parSel = m_cmbNotifyParsha.GetCurSel();
+    if (parSel > 0)
+    {
+        CString parsha;
+        m_cmbNotifyParsha.GetLBText(parSel, parsha);
+        m_result.notifyParshaName = (LPCWSTR)parsha;
+    }
+    else
+    {
+        m_result.notifyParshaName.clear();
+    }
+    m_editNotifyParshaOffsets.GetWindowText(txt);
+    m_result.notifyParshaOffsets = (LPCWSTR)txt;
+    m_editNotifyPersonalOffsets.GetWindowText(txt);
+    m_result.notifyPersonalOffsets = (LPCWSTR)txt;
+}
 
-    CDialog::OnOK();
+bool COptionsDlg::ApplyToParent()
+{
+    ReadControlsIntoResult();
+    CMainFrame* frame = (CMainFrame*)AfxGetMainWnd();
+    if (!frame)
+        return false;
+    frame->ApplyAndSaveSettings(m_result);
+    m_current = m_result;
+    SetDirty(false);
+    return true;
+}
+
+void COptionsDlg::OnApply()
+{
+    ApplyToParent();
+}
+
+void COptionsDlg::OnOK()
+{
+    if (m_modeless)
+    {
+        ApplyToParent();
+        DestroyWindow();
+    }
+    else
+    {
+        ReadControlsIntoResult();
+        CDialog::OnOK();
+    }
+}
+
+void COptionsDlg::OnCancel()
+{
+    if (m_modeless)
+        DestroyWindow();
+    else
+        CDialog::OnCancel();
+}
+
+void COptionsDlg::PostNcDestroy()
+{
+    if (m_modeless)
+    {
+        CMainFrame* frame = (CMainFrame*)AfxGetMainWnd();
+        if (frame)
+            frame->OnOptionsDialogClosed(this);
+        delete this;
+        return;
+    }
+    CDialog::PostNcDestroy();
 }
 
 void COptionsDlg::OnTrayTextColor()
 {
     CColorDialog dlg((COLORREF)m_result.trayTextColor, CC_FULLOPEN, this);
     if (dlg.DoModal() == IDOK)
+    {
         m_result.trayTextColor = (int)dlg.GetColor();
+        SetDirty(true);
+    }
 }
 
 void COptionsDlg::OnManageCals()
 {
     CWebCalDlg dlg(m_result.webCalendars, this);
     if (dlg.DoModal() == IDOK)
+    {
         m_result.webCalendars = dlg.calendars;
+        SetDirty(true);
+    }
+}
+
+void COptionsDlg::OnAdvancedReminders()
+{
+    CAdvancedRemindersDlg dlg(m_result.advancedReminders, this);
+    dlg.DoModal();
+    SetDirty(true);
 }
 
 void COptionsDlg::OnPreviewNotification()

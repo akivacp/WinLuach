@@ -1675,6 +1675,142 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
     return true;
 }
 
+class CMultiDayPageSetupDlg : public CDialog
+{
+public:
+    SimplePageOpts opts;
+    bool showFooter = true;
+
+    CMultiDayPageSetupDlg(const std::vector<GregorianDate>& pages,
+                          CMainFrame* frame,
+                          CWnd* parent = nullptr)
+        : CDialog(), m_pages(pages), m_pFrame(frame)
+    {
+        m_pParentWnd = parent;
+        opts.landscape = false;
+        opts.mTop = opts.mBot = opts.mLeft = opts.mRight = 0.50f;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.cx = 310; b.t.cy = 190;
+        wcscpy_s(b.title, L"Page Setup");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Selected Days Page Setup");
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+
+        auto mkStatic = [&](const wchar_t* txt, int x, int y, int w, int h) {
+            CStatic* s = new CStatic;
+            s->Create(txt, WS_CHILD|WS_VISIBLE|SS_LEFT, CRect(x, y, x+w, y+h), this);
+            s->SetFont(pF);
+        };
+        auto mkRadio = [&](CButton& b, const wchar_t* txt, UINT id, int x, int y, int w, bool first, bool checked) {
+            DWORD style = WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTORADIOBUTTON;
+            if (first) style |= WS_GROUP;
+            b.Create(txt, style, CRect(x, y, x+w, y+18), this, id);
+            b.SetFont(pF);
+            b.SetCheck(checked ? BST_CHECKED : BST_UNCHECKED);
+        };
+        auto mkEdit = [&](CEdit& e, UINT id, float v, int x, int y, int w) {
+            CString s; s.Format(L"%.2f", v);
+            e.Create(WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_CENTER,
+                CRect(x, y, x+w, y+20), this, id);
+            e.SetFont(pF);
+            e.SetWindowText(s);
+        };
+        int y = 10;
+        mkStatic(L"Orientation", 8, y, 120, 16); y += 20;
+        mkRadio(m_radPortrait, L"Portrait", 1001, 20, y, 100, true, true);
+        mkRadio(m_radLandscape, L"Landscape", 1002, 140, y, 120, false, false);
+        y += 28;
+        mkStatic(L"Margins (inches)", 8, y, 160, 16); y += 20;
+        mkStatic(L"Top:", 8, y + 2, 34, 16); mkEdit(m_top, 1003, opts.mTop, 46, y, 50);
+        mkStatic(L"Bottom:", 115, y + 2, 52, 16); mkEdit(m_bot, 1004, opts.mBot, 168, y, 50);
+        y += 26;
+        mkStatic(L"Left:", 8, y + 2, 34, 16); mkEdit(m_left, 1005, opts.mLeft, 46, y, 50);
+        mkStatic(L"Right:", 115, y + 2, 52, 16); mkEdit(m_right, 1006, opts.mRight, 168, y, 50);
+        y += 30;
+        m_footer.Create(L"Show footer", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(8, y, 160, y+20), this, 1007);
+        m_footer.SetFont(pF);
+        m_footer.SetCheck(BST_CHECKED);
+
+        CButton* preview = new CButton;
+        preview->Create(L"Preview", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+            CRect(8, H - 34, 86, H - 8), this, 1008);
+        preview->SetFont(pF);
+        CButton* ok = new CButton;
+        ok->Create(L"Print...", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON,
+            CRect(W - 166, H - 34, W - 88, H - 8), this, IDOK);
+        ok->SetFont(pF);
+        CButton* cancel = new CButton;
+        cancel->Create(L"Cancel", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+            CRect(W - 82, H - 34, W - 8, H - 8), this, IDCANCEL);
+        cancel->SetFont(pF);
+        return TRUE;
+    }
+
+    BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        if (LOWORD(wParam) == 1008)
+        {
+            ReadControls();
+            if (!m_pages.empty())
+            {
+                GregorianDate first = m_pages.front();
+                CSimplePreviewDlg prev(
+                    [=](CDC* pDC, const CRect& rc, bool sf) {
+                        DrawDayPage(pDC, rc, first, m_pFrame, sf);
+                    },
+                    L"WinLuach Selected Day Details",
+                    !opts.landscape, showFooter, this);
+                prev.DoModal();
+            }
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    void OnOK() override
+    {
+        ReadControls();
+        CDialog::OnOK();
+    }
+
+private:
+    void ReadControls()
+    {
+        opts.landscape = (m_radLandscape.GetCheck() == BST_CHECKED);
+        auto getF = [](CEdit& e, float def) {
+            CString s; e.GetWindowText(s);
+            float v = (float)_wtof(s);
+            return (v >= 0.0f && v < 5.0f) ? v : def;
+        };
+        opts.mTop = getF(m_top, 0.5f);
+        opts.mBot = getF(m_bot, 0.5f);
+        opts.mLeft = getF(m_left, 0.5f);
+        opts.mRight = getF(m_right, 0.5f);
+        showFooter = (m_footer.GetCheck() == BST_CHECKED);
+    }
+
+    std::vector<GregorianDate> m_pages;
+    CMainFrame* m_pFrame = nullptr;
+    CButton m_radPortrait, m_radLandscape, m_footer;
+    CEdit m_top, m_bot, m_left, m_right;
+};
+
 bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
 {
     if (dates.empty())
@@ -1688,6 +1824,10 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
         return a.year == b.year && a.month == b.month && a.day == b.day;
     }), pages.end());
 
+    CMultiDayPageSetupDlg setup(pages, pFrame, pFrame);
+    if (setup.DoModal() != IDOK)
+        return false;
+
     CPrintDialog pd(FALSE);
     pd.m_pd.Flags |= PD_RETURNDC | PD_NOPAGENUMS | PD_NOCURRENTPAGE;
 
@@ -1700,7 +1840,7 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
             ZeroMemory(dm, sizeof(DEVMODE));
             dm->dmSize = sizeof(DEVMODE);
             dm->dmFields = DM_ORIENTATION;
-            dm->dmOrientation = DMORIENT_PORTRAIT;
+            dm->dmOrientation = setup.opts.landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
             GlobalUnlock(hDM);
         }
         pd.m_pd.hDevMode = hDM;
@@ -1722,7 +1862,11 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     dc.Attach(hDC);
     int pageW = dc.GetDeviceCaps(HORZRES);
     int pageH = dc.GetDeviceCaps(VERTRES);
-    CRect rcPage(0, 0, pageW, pageH);
+    int dpiX = dc.GetDeviceCaps(LOGPIXELSX);
+    int dpiY = dc.GetDeviceCaps(LOGPIXELSY);
+    CRect rcPage((int)(setup.opts.mLeft * dpiX), (int)(setup.opts.mTop * dpiY),
+        pageW - (int)(setup.opts.mRight * dpiX), pageH - (int)(setup.opts.mBot * dpiY));
+    if (rcPage.IsRectEmpty()) rcPage = CRect(0, 0, pageW, pageH);
 
     DOCINFO di = { sizeof(DOCINFO) };
     di.lpszDocName = L"WinLuach Selected Day Details";
@@ -1730,7 +1874,7 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     for (const auto& g : pages)
     {
         dc.StartPage();
-        DrawDayPage(&dc, rcPage, g, pFrame, true);
+        DrawDayPage(&dc, rcPage, g, pFrame, setup.showFooter);
         dc.EndPage();
     }
     dc.EndDoc();

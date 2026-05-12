@@ -25,6 +25,8 @@ static long CalendarDateKey(const GregorianDate& g)
 BEGIN_MESSAGE_MAP(CCalendarView, CWnd)
     ON_WM_PAINT()
     ON_WM_LBUTTONDOWN()
+    ON_WM_MOUSEMOVE()
+    ON_WM_LBUTTONUP()
     ON_WM_LBUTTONDBLCLK()
     ON_WM_RBUTTONDOWN()
     ON_WM_KEYDOWN()
@@ -528,6 +530,11 @@ void CCalendarView::OnLButtonDown(UINT nFlags, CPoint pt)
         {
             ClearMultiSelection();
             m_anchorIndex = idx;
+            m_dragSelecting = true;
+            m_dragMoved = false;
+            m_dragStartIndex = idx;
+            m_lastDragIndex = idx;
+            SetCapture();
         }
 
         m_pFrame->SelectDate(m_cells[idx].greg);
@@ -536,12 +543,49 @@ void CCalendarView::OnLButtonDown(UINT nFlags, CPoint pt)
     CWnd::OnLButtonDown(nFlags, pt);
 }
 
+void CCalendarView::OnMouseMove(UINT nFlags, CPoint pt)
+{
+    if (m_dragSelecting && (nFlags & MK_LBUTTON))
+    {
+        int idx = HitTest(pt);
+        if (idx >= 0 && idx < (int)m_cells.size() && idx != m_lastDragIndex)
+        {
+            m_lastDragIndex = idx;
+            if (idx != m_dragStartIndex)
+                m_dragMoved = true;
+            SelectRangeToCell(idx);
+            m_pFrame->SelectDate(m_cells[idx].greg);
+            Invalidate(FALSE);
+        }
+    }
+    CWnd::OnMouseMove(nFlags, pt);
+}
+
+void CCalendarView::OnLButtonUp(UINT nFlags, CPoint pt)
+{
+    if (m_dragSelecting)
+    {
+        if (GetCapture() == this)
+            ReleaseCapture();
+        if (!m_dragMoved)
+            ClearMultiSelection();
+        m_dragSelecting = false;
+        m_dragStartIndex = -1;
+        m_lastDragIndex = -1;
+        Invalidate(FALSE);
+    }
+    CWnd::OnLButtonUp(nFlags, pt);
+}
+
 // Double-click — select the day and open the detailed day view popup.
 void CCalendarView::OnLButtonDblClk(UINT nFlags, CPoint pt)
 {
     int idx = HitTest(pt);
     if (idx >= 0 && idx < (int)m_cells.size())
     {
+        if (m_dragSelecting && GetCapture() == this)
+            ReleaseCapture();
+        m_dragSelecting = false;
         SetFocus();
         ClearMultiSelection();
         m_anchorIndex = idx;
