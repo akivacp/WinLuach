@@ -103,9 +103,13 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->DrawText(kDays[c], -1, rDN, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
+    // === Footer height (computed early so cells don't overlap it) ===========
+    int fFoot = -(H * 16 / 1000); if (fFoot > -4) fFoot = -4;
+    int footH = opts.showFooter ? (-fFoot + 4) : 0;
+
     // === Calendar cells =====================================================
     int gridTop  = dayHdrY + dayHdrH;
-    int availH   = H - (gridTop - y0);
+    int availH   = H - (gridTop - y0) - footH;
     int gridH    = opts.includeZmanim ? (availH * 56 / 100) : availH;
     int cellH    = gridH / 6;
 
@@ -441,17 +445,18 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         }
     }
 
-    // Footer
-    int fFoot = -(H * 16 / 1000); if (fFoot > -4) fFoot = -4;
-    CFont fontFoot;
-    fontFoot.CreateFont(fFoot,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-    pDC->SelectObject(&fontFoot);
-    pDC->SetTextColor(RGB(140,140,140));
-    pDC->SetBkMode(TRANSPARENT);
-    int footH = -fFoot + 2;
-    pDC->FillSolidRect(CRect(x0, y0+H-footH, x0+W, y0+H), RGB(245, 245, 245));
-    pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
-        CRect(x0, y0+H-footH, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    // Footer (footH and fFoot already computed above)
+    if (opts.showFooter)
+    {
+        CFont fontFoot;
+        fontFoot.CreateFont(fFoot,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+        pDC->SelectObject(&fontFoot);
+        pDC->SetTextColor(RGB(140,140,140));
+        pDC->SetBkMode(TRANSPARENT);
+        pDC->FillSolidRect(CRect(x0, y0+H-footH, x0+W, y0+H), RGB(245, 245, 245));
+        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+            CRect(x0, y0+H-footH, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    }
 }
 
 // =============================================================================
@@ -942,6 +947,48 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         drawRow(L"Sha'a Zmanit:", (LPCWSTR)ss, RGB(20,60,20));
     }
 
+    // Special Times section
+    {
+        DayOfWeek sdow = GetDayOfWeek(g);
+        bool isShabDP  = (sdow == SHABBAT);
+        bool isFriDP   = (sdow == FRIDAY);
+        bool hasFastDP = false;
+        for (const auto& ho : hols) if (ho.flags & HOLIDAY_FAST) { hasFastDP = true; break; }
+        bool isErevYKDP     = (h.month == TISHREI && h.day == 9);
+        bool isTishaBavDP   = (h.month == AV      && h.day == 9);
+        bool isErevTBDP     = (h.month == AV      && h.day == 8);
+        bool isErevPesachDP = (h.month == NISSAN  && h.day == 14);
+
+        struct SpecTime { const wchar_t* label; TimeOfDay time; };
+        SpecTime stimes[8]; int nst = 0;
+
+        if (isShabDP && z.tzeitShabbat.IsValid())
+            stimes[nst++] = { L"Tzeis Shabbos:", z.tzeitShabbat };
+        if (hasFastDP && !isShabDP && z.tzeit_GRA.IsValid())
+            stimes[nst++] = { L"Fast ends:", z.tzeit_GRA };
+        if (isErevTBDP && !isShabDP && !isFriDP && z.shkia.IsValid())
+            stimes[nst++] = { L"Fast begins:", z.shkia };
+        if (isTishaBavDP && z.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", z.chatzot };
+        if (isErevYKDP && z.shkia.IsValid()) {
+            stimes[nst++] = { L"Fast begins:", z.shkia };
+            if (z.candleLighting.IsValid())
+                stimes[nst++] = { L"Candle lighting:", z.candleLighting };
+        }
+        if (isErevPesachDP && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0) {
+            TimeOfDay sofAchila = AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA));
+            TimeOfDay sofBiur   = AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA));
+            if (sofAchila.IsValid()) stimes[nst++] = { L"Eat chametz by:", sofAchila };
+            if (sofBiur.IsValid())   stimes[nst++] = { L"Burn chametz by:", sofBiur };
+        }
+
+        if (nst > 0) {
+            drawSection(L"Special Times");
+            for (int si = 0; si < nst; si++)
+                drawRow(stimes[si].label, FormatTime(stimes[si].time, u24), RGB(20, 20, 140));
+        }
+    }
+
     if (showFooter) {
         int fFoot3 = -(H * 16 / 1000); if (fFoot3 > -4) fFoot3 = -4;
         CFont fontFoot3;
@@ -1223,10 +1270,11 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             INT_PTR DoModal() override
             {
                 struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[24]; } b = {};
-                b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_SETFONT;
+                b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
                 b.t.cx = 140; b.t.cy = 60;
                 wcscpy_s(b.title, L"Choose Year");
-                return InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd);
+                if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
+                return CDialog::DoModal();
             }
             BOOL OnInitDialog() override
             {
@@ -1306,10 +1354,11 @@ bool DoPrintEventsList(CMainFrame* pFrame)
         INT_PTR DoModal() override
         {
             struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[32]; } b = {};
-            b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_SETFONT;
+            b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
             b.t.cx = 220; b.t.cy = 180;
             wcscpy_s(b.title, L"Print Events List");
-            return InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd);
+            if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
+            return CDialog::DoModal();
         }
         BOOL OnInitDialog() override
         {
@@ -1334,10 +1383,10 @@ bool DoPrintEventsList(CMainFrame* pFrame)
                 ed.SetWindowText(vs);
                 ey += lh+4;
             };
-            makeRow(L"Top margin:",   m_editTop,   0.75f);
-            makeRow(L"Bottom margin:",m_editBot,   0.75f);
-            makeRow(L"Left margin:",  m_editLeft,  0.50f);
-            makeRow(L"Right margin:", m_editRight, 0.50f);
+            makeRow(L"Top margin:",   m_editTop,   0.0f);
+            makeRow(L"Bottom margin:",m_editBot,   0.0f);
+            makeRow(L"Left margin:",  m_editLeft,  0.0f);
+            makeRow(L"Right margin:", m_editRight, 0.0f);
 
             m_chkFooter.Create(L"Show footer", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
                 CRect(ex,ey,ex+120,ey+lh), this, IDC_EP_FOOTER);
@@ -1360,7 +1409,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             opts.landscape = (m_radLandscape.GetSafeHwnd() && m_radLandscape.GetCheck() == BST_CHECKED);
             auto getF = [](CEdit& e) -> float {
                 CString s; e.GetWindowText(s); float v = (float)_wtof(s);
-                return (v > 0.0f && v < 3.0f) ? v : 0.5f;
+                return (v >= 0.0f && v < 3.0f) ? v : 0.0f;
             };
             opts.mTop   = getF(m_editTop);
             opts.mBot   = getF(m_editBot);
@@ -1454,10 +1503,13 @@ bool DoPrintEventsList(CMainFrame* pFrame)
 
 bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame, uint32_t colMask)
 {
-    bool u24 = pFrame ? pFrame->m_use24hr : true;
+    auto pU24 = std::make_shared<bool>(pFrame ? pFrame->m_use24hr : true);
     CSimplePageSetupDlg dlg(
-        [=](CDC* pDC, const CRect& rc, bool sf){ DrawZmanimMonthPage(pDC, rc, year, month, pFrame, colMask, u24, sf); },
-        L"WinLuach Zmanim", true /* defaultLandscape */, pFrame);
+        [=](CDC* pDC, const CRect& rc, bool sf){
+            DrawZmanimMonthPage(pDC, rc, year, month, pFrame, colMask, *pU24, sf);
+        },
+        L"WinLuach Zmanim", true, pFrame);
+    dlg.SetUse24HrPtr(pU24);
     dlg.DoModal();
     return true;
 }
@@ -1554,6 +1606,16 @@ BOOL CSimplePageSetupDlg::OnInitDialog()
     m_chkFooter.SetCheck(BST_CHECKED);
     y += 26;
 
+    // 12/24-hr checkbox (only when caller passes a shared_ptr)
+    if (m_pUse24hr)
+    {
+        m_chk24hr.Create(L"24-hour time", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(8, y, 200, y+18), this, IDC_SPS_CHK_24HR);
+        m_chk24hr.SetFont(pF);
+        m_chk24hr.SetCheck(*m_pUse24hr ? BST_CHECKED : BST_UNCHECKED);
+        y += 26;
+    }
+
     int btnY = H - 36;
     m_btnPreview.Create(L"Preview",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|WS_GROUP,
@@ -1581,12 +1643,14 @@ void CSimplePageSetupDlg::ReadControls()
     auto getF = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
         float v = (float)_wtof(s);
-        return (v > 0.0f && v < 5.0f) ? v : def;
+        return (v >= 0.0f && v < 5.0f) ? v : def;
     };
-    m_opts.mTop   = getF(m_editTop,   0.75f);
-    m_opts.mBot   = getF(m_editBot,   0.75f);
-    m_opts.mLeft  = getF(m_editLeft,  0.50f);
-    m_opts.mRight = getF(m_editRight, 0.50f);
+    m_opts.mTop   = getF(m_editTop,   0.0f);
+    m_opts.mBot   = getF(m_editBot,   0.0f);
+    m_opts.mLeft  = getF(m_editLeft,  0.0f);
+    m_opts.mRight = getF(m_editRight, 0.0f);
+    if (m_pUse24hr && m_chk24hr.GetSafeHwnd())
+        *m_pUse24hr = (m_chk24hr.GetCheck() == BST_CHECKED);
 }
 
 void CSimplePageSetupDlg::OnPreview()
@@ -1746,7 +1810,7 @@ INT_PTR CCalPrintDlg::DoModal()
     buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
-    buf.t.cy     = 356;
+    buf.t.cy     = 376;
     wcscpy_s(buf.title, L"Print Calendar");
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -1772,6 +1836,7 @@ BOOL CCalPrintDlg::OnInitDialog()
         m_opts.mRight        = ps.printMarginRight;
         m_opts.includeZmanim  = ps.printWeeklyZmanim;
         m_opts.zmanimColumns  = ps.printZmanimColMask;
+        m_opts.showFooter     = ps.printShowFooter;
     }
 
     CRect rcClient;
@@ -1889,6 +1954,14 @@ BOOL CCalPrintDlg::OnInitDialog()
     }
     y += 3 * 21 + 8;
 
+    // ── Show footer checkbox ─────────────────────────────────────────────────
+    m_chkShowFooter.Create(L"Show footer",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(20, y, 130, y + 18), this, IDC_PD_CHK_FOOTER);
+    m_chkShowFooter.SetFont(pF);
+    m_chkShowFooter.SetCheck(m_opts.showFooter ? BST_CHECKED : BST_UNCHECKED);
+    y += 24;
+
     // ── Buttons ──────────────────────────────────────────────────────────────
     int btnY = H - 36;
     m_btnPreview.Create(L"Preview",
@@ -1929,15 +2002,17 @@ void CCalPrintDlg::ReadControls()
         if (m_chkCol[i].GetCheck() == BST_CHECKED)
             m_opts.zmanimColumns |= (1u << i);
 
+    m_opts.showFooter = (m_chkShowFooter.GetCheck() == BST_CHECKED);
+
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
         float v = (float)_wtof(s);
-        return (v > 0.0f && v < 5.0f) ? v : def;
+        return (v >= 0.0f && v < 5.0f) ? v : def;
     };
-    m_opts.mTop   = getFloat(m_editTop,   0.75f);
-    m_opts.mBot   = getFloat(m_editBot,   0.75f);
-    m_opts.mLeft  = getFloat(m_editLeft,  0.50f);
-    m_opts.mRight = getFloat(m_editRight, 0.50f);
+    m_opts.mTop   = getFloat(m_editTop,   0.0f);
+    m_opts.mBot   = getFloat(m_editBot,   0.0f);
+    m_opts.mLeft  = getFloat(m_editLeft,  0.0f);
+    m_opts.mRight = getFloat(m_editRight, 0.0f);
 }
 
 // =============================================================================
@@ -1955,6 +2030,7 @@ static void SavePrintOptsToSettings(const CalPrintOptions& opts)
     ps.printMarginRight  = opts.mRight;
     ps.printWeeklyZmanim  = opts.includeZmanim;
     ps.printZmanimColMask = opts.zmanimColumns;
+    ps.printShowFooter    = opts.showFooter;
     SaveSettings(ps);
 }
 

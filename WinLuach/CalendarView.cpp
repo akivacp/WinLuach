@@ -439,7 +439,18 @@ void CCalendarView::OnLButtonDblClk(UINT nFlags, CPoint pt)
     }
 }
 
-// Right-click — show context menu: Add Event / Print Day Details.
+static HebrewDate AddHebrewYears(HebrewDate hd, int years)
+{
+    int newYear  = hd.year + years;
+    bool newLeap = IsHebrewLeapYear(newYear);
+    int newMonth = hd.month;
+    if      (newMonth == ADAR    &&  newLeap) newMonth = ADAR_II;
+    else if (newMonth == ADAR_II && !newLeap) newMonth = ADAR;
+    int maxDay = DaysInHebrewMonth(newMonth, newYear);
+    return HebrewDate(newYear, newMonth, hd.day < maxDay ? hd.day : maxDay);
+}
+
+// Right-click — show context menu: Add Event / Print Day Details / Bar|Bat Mitzvah jump.
 void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
 {
     int idx = HitTest(pt);
@@ -459,6 +470,9 @@ void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
     menu.CreatePopupMenu();
     menu.AppendMenu(MF_STRING, 1, addLabel);
     menu.AppendMenu(MF_STRING, 2, L"Print Day Details");
+    menu.AppendMenu(MF_SEPARATOR);
+    menu.AppendMenu(MF_STRING, 3, L"Jump to Bar Mitzvah from this date");
+    menu.AppendMenu(MF_STRING, 4, L"Jump to Bat Mitzvah from this date");
 
     CPoint screenPt = pt;
     ClientToScreen(&screenPt);
@@ -470,6 +484,12 @@ void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
         m_pFrame->AddEventForDate(g);
     else if (cmd == 2)
         DoPrintDay(g, m_pFrame);
+    else if (cmd == 3 || cmd == 4)
+    {
+        int years = (cmd == 3) ? 13 : 12;
+        HebrewDate target = AddHebrewYears(GregorianToHebrew(g), years);
+        m_pFrame->SelectDate(HebrewToGregorian(target));
+    }
 
     CWnd::OnRButtonDown(nFlags, pt);
 }

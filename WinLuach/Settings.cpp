@@ -143,6 +143,8 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printMarginLeft\": "  << s.printMarginLeft  << L",\n";
     f << L"  \"printMarginRight\": " << s.printMarginRight << L",\n";
     f << L"  \"printZmanimColMask\": " << s.printZmanimColMask << L",\n";
+    f << L"  \"printShowFooter\": " << (s.printShowFooter ? L"true" : L"false") << L",\n";
+    f << L"  \"showChatzosOnFasts\": " << (s.showChatzosOnFasts ? L"true" : L"false") << L",\n";
     f << L"  \"notifyPersonalEvents\": " << s.notifyPersonalEvents << L",\n";
     f << L"  \"notifyWebCalEvents\": "   << s.notifyWebCalEvents   << L",\n";
     f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
@@ -241,6 +243,8 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"printMarginLeft\"") != std::wstring::npos) s.printMarginLeft = (float)ParseJsonNumber(line);
         else if (line.find(L"\"printMarginRight\"")  != std::wstring::npos) s.printMarginRight    = (float)ParseJsonNumber(line);
         else if (line.find(L"\"printZmanimColMask\"")!= std::wstring::npos) s.printZmanimColMask = (uint32_t)ParseJsonNumber(line);
+        else if (line.find(L"\"printShowFooter\"")   != std::wstring::npos) s.printShowFooter   = ParseJsonBool(line);
+        else if (line.find(L"\"showChatzosOnFasts\"") != std::wstring::npos) s.showChatzosOnFasts = ParseJsonBool(line);
         else if (line.find(L"\"sidebarWidth\"")     != std::wstring::npos) s.sidebarWidth     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"zmanimHeight\"")     != std::wstring::npos) s.zmanimHeight     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"sidebarCollapsed\"") != std::wstring::npos) s.sidebarCollapsed = ParseJsonBool(line);
@@ -365,4 +369,13 @@ int ImportEvents(std::vector<UserEventEntry>& events, const std::wstring& path)
     int added = (int)imported.size();
     events.insert(events.end(), imported.begin(), imported.end());
     return added;
+}
+
+std::vector<UserEventEntry> ParseEventsFromFile(const std::wstring& path)
+{
+    std::wifstream f(path);
+    if (!f.is_open()) return {};
+    std::vector<UserEventEntry> result;
+    ParseEventsFromStream(f, result);
+    return result;
 }
