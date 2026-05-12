@@ -23,7 +23,9 @@
 #include <urlmon.h>
 #include <fstream>
 #include <thread>
+#include <commctrl.h>
 #pragma comment(lib, "Urlmon.lib")
+#pragma comment(lib, "comctl32.lib")
 
 static std::wstring WebCalTrim(const std::wstring& s)
 {
@@ -1690,6 +1692,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     if (CFrameWnd::OnCreate(lpcs) == -1)
         return -1;
 
+    ModifyStyleEx(0, WS_EX_COMPOSITED);
+
     // Build menu
     CMenu menu;
     menu.CreateMenu();
@@ -1815,7 +1819,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     CFont* pNF = &m_fontNormal;
     m_btnPrevDecade.SetFont(pNF);  m_btnPrevYear.SetFont(pNF);
     m_btnPrevMonth .SetFont(pNF);  m_btnPrevDay .SetFont(pNF);
-    m_btnToday     .SetFont(pNF);
+    m_btnToday     .SetFont(&m_fontBold);
     m_btnNextDay   .SetFont(pNF);  m_btnNextMonth.SetFont(pNF);
     m_btnNextYear  .SetFont(pNF);  m_btnNextDecade.SetFont(pNF);
     m_btnPrint     .SetFont(pNF);
@@ -2157,12 +2161,27 @@ void CMainFrame::OnCalPrintZmanim()
 
 void CMainFrame::OnHebCivilToggle()
 {
+    // Sync the corresponding calendar before switching so the view month is preserved
+    if (m_hebrewMonthView)
+    {
+        // Switching from Hebrew to Civil: derive Gregorian month from current Hebrew view
+        GregorianDate g = HebrewToGregorian(HebrewDate(m_viewHebrewYear, m_viewHebrewMonth, 1));
+        m_viewYear  = g.year;
+        m_viewMonth = g.month;
+    }
+    else
+    {
+        // Switching from Civil to Hebrew: derive Hebrew month from current Gregorian view
+        HebrewDate h = GregorianToHebrew(GregorianDate(m_viewYear, m_viewMonth, 1));
+        m_viewHebrewYear  = h.year;
+        m_viewHebrewMonth = h.month;
+    }
     m_hebrewMonthView = !m_hebrewMonthView;
     if (m_btnHebCivil.GetSafeHwnd())
         m_btnHebCivil.SetWindowText(m_hebrewMonthView ? L"Civil" : L"Heb");
     PopulateMonthCombo();
     UpdateMonthYearControls();
-    if (m_pCalView) m_pCalView->Invalidate(FALSE);
+    if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
 }
 
 // =============================================================================
@@ -2441,7 +2460,8 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     if (m_editYear.GetSafeHwnd())      m_editYear.SetFont(&m_fontNormal);
     auto setNavFont = [this](CButton& b) { if (b.GetSafeHwnd()) b.SetFont(&m_fontNormal); };
     setNavFont(m_btnPrevDecade); setNavFont(m_btnPrevYear);  setNavFont(m_btnPrevMonth);
-    setNavFont(m_btnPrevDay);    setNavFont(m_btnToday);     setNavFont(m_btnNextDay);
+    setNavFont(m_btnPrevDay);    setNavFont(m_btnNextDay);
+    if (m_btnToday.GetSafeHwnd()) m_btnToday.SetFont(&m_fontBold);
     setNavFont(m_btnNextMonth);  setNavFont(m_btnNextYear);  setNavFont(m_btnNextDecade);
     setNavFont(m_btnPrint);      setNavFont(m_btnSidebarToggle);  setNavFont(m_btnHebCivil);
     if (m_btnHebCivil.GetSafeHwnd())
@@ -2711,6 +2731,16 @@ void CMainFrame::OnFileExportEvents()
         MessageBox(L"Failed to export events.", L"WinLuach", MB_OK|MB_ICONERROR);
 }
 
+static bool IsDupEvent(const UserEventEntry& a, const UserEventEntry& b)
+{
+    if (a.name != b.name || a.type != b.type) return false;
+    bool gregMatch = (a.gregMonth != 0 && b.gregMonth != 0 &&
+                      a.gregMonth == b.gregMonth && a.gregDay == b.gregDay);
+    bool hebMatch  = (a.hebMonth  != 0 && b.hebMonth  != 0 &&
+                      a.hebMonth  == b.hebMonth  && a.hebDay  == b.hebDay);
+    return gregMatch || hebMatch;
+}
+
 void CMainFrame::OnFileImportEvents()
 {
     wchar_t path[MAX_PATH] = {};
@@ -2724,15 +2754,147 @@ void CMainFrame::OnFileImportEvents()
     ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (!GetOpenFileNameW(&ofn)) return;
 
-    int added = ImportEvents(theApp.m_settings.userEvents, path);
+    auto imported = ParseEventsFromFile(path);
+    if (imported.empty()) {
+        MessageBox(L"No events found in that file.", L"WinLuach", MB_OK|MB_ICONWARNING);
+        return;
+    }
+
+    auto& existing = theApp.m_settings.userEvents;
+
+    // Identify duplicates
+    std::vector<int> dupIdx;
+    for (int i = 0; i < (int)imported.size(); ++i)
+        for (const auto& e : existing)
+            if (IsDupEvent(imported[i], e)) { dupIdx.push_back(i); break; }
+
+    // No duplicates — add everything
+    if (dupIdx.empty()) {
+        int added = (int)imported.size();
+        existing.insert(existing.end(), imported.begin(), imported.end());
+        SaveEvents(existing);
+        if (m_pCalView) m_pCalView->Invalidate(FALSE);
+        if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
+        CString msg; msg.Format(L"Imported %d event(s).", added);
+        MessageBox(msg, L"WinLuach", MB_OK|MB_ICONINFORMATION);
+        return;
+    }
+
+    // Prompt user
+    CString content;
+    content.Format(L"%d duplicate(s) found out of %d event(s) to import.\n\nHow would you like to handle them?",
+        (int)dupIdx.size(), (int)imported.size());
+
+    TASKDIALOG_BUTTON dupButtons[] = {
+        { 101, L"Skip Duplicates\nImport only new events (skip the duplicates)" },
+        { 102, L"Add All\nImport everything, including duplicates" },
+        { 103, L"Overwrite Duplicates\nReplace existing events with imported versions" },
+        { 104, L"Review Each\nDecide individually for each duplicate" },
+        { 105, L"Abort\nCancel the import" },
+    };
+    TASKDIALOGCONFIG tdc = {};
+    tdc.cbSize             = sizeof(tdc);
+    tdc.hwndParent         = m_hWnd;
+    tdc.pszWindowTitle     = L"Import Events";
+    tdc.pszMainInstruction = L"Duplicate Events Found";
+    tdc.pszContent         = content;
+    tdc.dwFlags            = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+    tdc.pButtons           = dupButtons;
+    tdc.cButtons           = _countof(dupButtons);
+    tdc.nDefaultButton     = 101;
+
+    int nButton = 105;
+    TaskDialogIndirect(&tdc, &nButton, nullptr, nullptr);
+
+    if (nButton == 105 || nButton == 0) return; // Abort / cancelled
+
+    // Track which imported events to skip, and which existing to remove (for overwrite)
+    std::vector<bool> skipImport(imported.size(), false);
+    std::vector<bool> removeExisting(existing.size(), false);
+
+    // Start with all duplicates marked as skipped
+    for (int i : dupIdx) skipImport[i] = true;
+
+    if (nButton == 101) {
+        // Skip duplicates — already set above
+    }
+    else if (nButton == 102) {
+        // Add All — clear all skips
+        for (int i : dupIdx) skipImport[i] = false;
+    }
+    else if (nButton == 103) {
+        // Overwrite — remove existing duplicates, then add imported
+        for (int i : dupIdx) {
+            skipImport[i] = false;
+            for (int j = 0; j < (int)existing.size(); ++j)
+                if (IsDupEvent(imported[i], existing[j]))
+                    removeExisting[j] = true;
+        }
+    }
+    else if (nButton == 104) {
+        // Review each duplicate
+        bool skipRemaining = false;
+        for (int idx : dupIdx) {
+            if (skipRemaining) { skipImport[idx] = true; continue; }
+
+            CString revMsg;
+            revMsg.Format(L"Duplicate: \"%s\"", imported[idx].name.c_str());
+
+            TASKDIALOG_BUTTON revButtons[] = {
+                { 201, L"Skip\nKeep existing, don't import this one" },
+                { 202, L"Overwrite\nReplace existing with the imported version" },
+                { 203, L"Add Anyway\nImport as a duplicate" },
+                { 204, L"Continue Adding\nSkip this and all remaining duplicates" },
+                { 205, L"Abort\nCancel the entire import" },
+            };
+            TASKDIALOGCONFIG tdc2 = {};
+            tdc2.cbSize             = sizeof(tdc2);
+            tdc2.hwndParent         = m_hWnd;
+            tdc2.pszWindowTitle     = L"Review Duplicate";
+            tdc2.pszMainInstruction = L"Duplicate Event";
+            tdc2.pszContent         = revMsg;
+            tdc2.dwFlags            = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+            tdc2.pButtons           = revButtons;
+            tdc2.cButtons           = _countof(revButtons);
+            tdc2.nDefaultButton     = 201;
+
+            int nRev = 201;
+            TaskDialogIndirect(&tdc2, &nRev, nullptr, nullptr);
+
+            switch (nRev) {
+            default:
+            case 201: skipImport[idx] = true; break;
+            case 202:
+                skipImport[idx] = false;
+                for (int j = 0; j < (int)existing.size(); ++j)
+                    if (IsDupEvent(imported[idx], existing[j]))
+                        removeExisting[j] = true;
+                break;
+            case 203: skipImport[idx] = false; break;
+            case 204: skipImport[idx] = true; skipRemaining = true; break;
+            case 205: return; // Abort
+            }
+        }
+    }
+
+    // Apply removals (iterate backwards to preserve indices)
+    for (int j = (int)existing.size() - 1; j >= 0; --j)
+        if (removeExisting[j]) existing.erase(existing.begin() + j);
+
+    // Add non-skipped
+    int added = 0;
+    for (int i = 0; i < (int)imported.size(); ++i) {
+        if (!skipImport[i]) { existing.push_back(imported[i]); ++added; }
+    }
+
     if (added > 0) {
-        SaveEvents(theApp.m_settings.userEvents);
-        if (m_pCalView)  m_pCalView->Invalidate(FALSE);
-        if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+        SaveEvents(existing);
+        if (m_pCalView) m_pCalView->Invalidate(FALSE);
+        if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
         CString msg; msg.Format(L"Imported %d event(s).", added);
         MessageBox(msg, L"WinLuach", MB_OK|MB_ICONINFORMATION);
     } else {
-        MessageBox(L"No events found in that file.", L"WinLuach", MB_OK|MB_ICONWARNING);
+        MessageBox(L"No new events were imported.", L"WinLuach", MB_OK|MB_ICONINFORMATION);
     }
 }
 
@@ -2882,6 +3044,9 @@ std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
         else if (h.month == NISSAN && h.day == 15 && !m_isIsrael
                  && z.chatzotLayla.IsValid())
             motzStr = L"Chatz " + FormatTime(z.chatzotLayla, m_use24hr);  // Pesach night 1 diaspora
+        else if (theApp.m_settings.showChatzosOnFasts
+                 && hasFlag(HOLIDAY_FAST) && !isShabbat && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // public fast days (when enabled)
     }
 
     return { candleStr, motzStr };

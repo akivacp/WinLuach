@@ -245,6 +245,80 @@ void CSidebarPanel::OnPaint()
         yOff += rowH + 2;
     }
 
+    // Special times for notable days
+    {
+        const ZmanimResult& zs = m_pFrame->m_zmanim;
+        const HebrewDate& hs   = m_pFrame->m_selectedHebrew;
+        const GregorianDate& gs = m_pFrame->m_selectedDate;
+        DayOfWeek sdow  = GetDayOfWeek(gs);
+        bool isShab2    = (sdow == SHABBAT);
+        bool isFri2     = (sdow == FRIDAY);
+
+        auto hols3 = GetHolidays(hs, m_pFrame->m_isIsrael);
+        auto hasF3 = [&](int flag) {
+            for (const auto& ho : hols3) if (ho.flags & flag) return true; return false;
+        };
+        bool hasFast2     = hasF3(HOLIDAY_FAST);
+        bool isErevYK2    = (hs.month == TISHREI && hs.day == 9);
+        bool isTishaBav2  = (hs.month == AV && hs.day == 9);
+        bool isErevTB2    = (hs.month == AV && hs.day == 8);
+        bool isErevPesach2= (hs.month == NISSAN && hs.day == 14);
+
+        struct SpecTime { const wchar_t* label; TimeOfDay time; };
+        SpecTime stimes[8]; int nst = 0;
+
+        if (isShab2 && zs.tzeitShabbat.IsValid())
+            stimes[nst++] = { L"Tzeis Shabbos:", zs.tzeitShabbat };
+        if (hasFast2 && !isShab2 && zs.tzeit_GRA.IsValid())
+            stimes[nst++] = { L"Fast ends:", zs.tzeit_GRA };
+        if (isErevTB2 && !isShab2 && !isFri2 && zs.shkia.IsValid())
+            stimes[nst++] = { L"Fast begins:", zs.shkia };
+        if (isTishaBav2 && zs.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", zs.chatzot };
+        if (isErevYK2 && zs.shkia.IsValid())
+        {
+            stimes[nst++] = { L"Fast begins:", zs.shkia };
+            if (zs.candleLighting.IsValid())
+                stimes[nst++] = { L"Candle lighting:", zs.candleLighting };
+        }
+        if (isErevPesach2 && zs.hanetz.IsValid() && zs.shaahZmanit_GRA > 0.0)
+        {
+            TimeOfDay sofAchila = AddMinutes(zs.hanetz, (int)(4.0 * zs.shaahZmanit_GRA));
+            TimeOfDay sofBiur   = AddMinutes(zs.hanetz, (int)(5.0 * zs.shaahZmanit_GRA));
+            if (sofAchila.IsValid()) stimes[nst++] = { L"Eat chametz by:", sofAchila };
+            if (sofBiur.IsValid())   stimes[nst++] = { L"Burn chametz by:", sofBiur };
+        }
+
+        if (nst > 0 && yOff < cy - 20)
+        {
+            DrawSep(&memDC, x, yOff, w);
+            CRect rcSHdr(0, yOff - 2, cx - 1, yOff + 20);
+            memDC.FillSolidRect(rcSHdr, CLR_HEADER_BG);
+            memDC.SelectObject(&m_pFrame->m_fontBold);
+            memDC.SetTextColor(RGB(255, 255, 255));
+            CRect rcSTxt = rcSHdr; rcSTxt.left += 6;
+            memDC.DrawText(L"Special Times", rcSTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            yOff += 26;
+
+            for (int si = 0; si < nst; si++)
+            {
+                if (yOff > cy - 16) break;
+                int lblW2 = 100;
+                memDC.SelectObject(&m_pFrame->m_fontSmall);
+                memDC.SetTextColor(RGB(70, 70, 50));
+                CRect rcL(x + indent, yOff, x + indent + lblW2, yOff + 16);
+                memDC.DrawText(stimes[si].label, -1, rcL,
+                    DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+                memDC.SelectObject(&m_pFrame->m_fontNormal);
+                memDC.SetTextColor(RGB(20, 20, 140));
+                std::wstring ts = FormatTime(stimes[si].time, m_pFrame->m_use24hr);
+                CRect rcT(x + indent + lblW2, yOff, x + w, yOff + 16);
+                memDC.DrawText(ts.c_str(), -1, rcT, DT_LEFT | DT_TOP | DT_SINGLELINE);
+                yOff += 18;
+            }
+        }
+    }
+
     // Molad box
     {
         const HebrewDate& hm = m_pFrame->m_selectedHebrew;
@@ -275,8 +349,13 @@ void CSidebarPanel::OnPaint()
         CRect rcMHdrTxt = rcMHdr; rcMHdrTxt.left += 6;
         memDC.DrawText(L"Molad", rcMHdrTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         yOff += 26;
+        int mins   = parts / 18;
+        int chalak = parts % 18;
+        int hr12   = hour % 12; if (hr12 == 0) hr12 = 12;
+        const wchar_t* ampm = (hour < 12) ? L"am" : L"pm";
         CString moladStr;
-        moladStr.Format(L"%s, %dh %dp", kDayNames[dayIdx], hour, parts);
+        moladStr.Format(L"%s %d:%02d %s and %d chalakim",
+            kDayNames[dayIdx], hr12, mins, ampm, chalak);
         // Also show civil time approximation: epoch = Friday, 6 Oct 3761 BCE
         // Skip civil time for now; just show traditional
         memDC.SelectObject(&m_pFrame->m_fontNormal);
@@ -304,13 +383,17 @@ void CSidebarPanel::OnPaint()
         }
     }
 
-    // Year facts
+    // Year facts with alternating row shading
     auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
     memDC.SelectObject(&m_pFrame->m_fontSmall);
     memDC.SetTextColor(RGB(60, 60, 60));
+    int rowIdx = 0;
     for (const auto& fact : facts)
     {
         if (yOff > cy - 14) break;
+        COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
+        memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
+        rowIdx++;
         yOff += drawWrapped(fact.c_str(), 48);
     }
 

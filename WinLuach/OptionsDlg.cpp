@@ -50,6 +50,7 @@
 #define IDC_OPT_SHOW_TRAY       337
 #define IDC_OPT_ALOT_SHITA      338
 #define IDC_OPT_TZEIT_SHITA     339
+#define IDC_OPT_CHATZOS_FASTS   340
 
 // =============================================================================
 // CWebCalDlg — inline multi-calendar manager
@@ -330,7 +331,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Month view
     MakeCtrl(L"BUTTON", L"Month View", BS_GROUPBOX,
-        8, y, W - 16, 104, 309);
+        8, y, W - 16, 126, 309);
     y += 18;
 
     m_chkParshios.Create(L"Parshios", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -360,12 +361,15 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkMishna.Create(L"Mishna yomit", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(225, y, 350, y + 20), this, IDC_OPT_MISHNA);
     m_chkMishna.SetFont(pFont);
+    m_chkChatzosOnFasts.Create(L"Chatzos on fast days", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(18, y, 215, y + 20), this, IDC_OPT_CHATZOS_FASTS);
+    m_chkChatzosOnFasts.SetFont(pFont);
     y += 22;
 
     m_chkTanach.Create(L"Tanach yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(225, y, 350, y + 20), this, IDC_OPT_TANACH);
     m_chkTanach.SetFont(pFont);
-    y = 248;
+    y = 270;
 
     // Holiday schedule / zmanim
     MakeCtrl(L"BUTTON", L"Holiday Schedule and Zmanim", BS_GROUPBOX,
@@ -510,6 +514,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkHalacha.SetCheck(m_current.showHalachaYomit ? BST_CHECKED : BST_UNCHECKED);
     m_chkMishna.SetCheck(m_current.showMishnaYomit ? BST_CHECKED : BST_UNCHECKED);
     m_chkTanach.SetCheck(m_current.showTanachYomi ? BST_CHECKED : BST_UNCHECKED);
+    m_chkChatzosOnFasts.SetCheck(m_current.showChatzosOnFasts ? BST_CHECKED : BST_UNCHECKED);
     m_chkShowTrayIcon.SetCheck(m_current.showTrayIcon ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeToTray.SetCheck(m_current.minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
@@ -560,8 +565,9 @@ void COptionsDlg::OnOK()
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;
 
-    m_result.alotShita  = max(0, min(2, m_cmbAlotShita.GetCurSel()));
-    m_result.tzeitShita = max(0, min(4, m_cmbTzeitShita.GetCurSel()));
+    m_result.alotShita        = max(0, min(2, m_cmbAlotShita.GetCurSel()));
+    m_result.tzeitShita       = max(0, min(4, m_cmbTzeitShita.GetCurSel()));
+    m_result.showChatzosOnFasts = (m_chkChatzosOnFasts.GetCheck() == BST_CHECKED);
 
     CString candle;
     m_cmbCandleMinutes.GetWindowText(candle);
