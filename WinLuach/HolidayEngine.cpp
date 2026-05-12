@@ -738,13 +738,14 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
     long shabbosJDN = NextShabbos(jdn);
     HebrewDate shabbos = JDNToHebrew(shabbosJDN);
 
-    // When Shabbos is Yom Tov, the regular weekly parasha is not read.
-    // Leave the parasha blank so the UI does not show readings like Nasso
-    // on Shabbos Shavuos Day 2 in the Diaspora.
+    // When Shabbos is Yom Tov or Chol HaMoed, the regular weekly parasha
+    // is not read. Leave the parasha blank so the UI does not show readings
+    // like Nasso on Shabbos Shavuos Day 2 in the Diaspora or Acharei Mos on
+    // Shabbos Chol HaMoed Pesach.
     std::vector<HolidayInfo> shabbosHolidays = GetHolidays(shabbos, isIsrael);
     for (const auto& hol : shabbosHolidays)
     {
-        if (hol.flags & HOLIDAY_YOM_TOV)
+        if (hol.flags & (HOLIDAY_YOM_TOV | HOLIDAY_CHOL_HAMOED))
             return info;
     }
 
@@ -773,17 +774,66 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
     // How many Shabbosos from cycle start to our target Shabbos?
     long weeksDiff = (shabbosJDN - firstParashaJDN) / 7;
 
-    // Diaspora adjustment: when 7 Sivan (Shavuos Day 2) falls on Shabbos,
-    // diaspora skips that parasha reading. To catch up, Chukas-Balak is combined
-    // later in the year. We handle this in schedule-building below, not here.
-    bool sevenSivanOnShabbos = false;
-    if (!isIsrael)
-    {
-        HebrewDate shavuos(cycleYear, SIVAN, 6);
-        long shavuosJDN = HebrewToJDN(shavuos);
-        // 7 Sivan = shavuosJDN+1; Shabbos when (shavuosJDN+2)%7==6
-        sevenSivanOnShabbos = ((shavuosJDN + 2) % 7 == 6);
+    // ── Yom Tov / Chol HaMoed Pesach on Shabbos adjustment ───────────────────
+    // When Yom Tov or Chol HaMoed Pesach falls on Shabbos the weekly parasha
+    // is replaced by a special reading; the regular parasha is skipped.
+    // For every such skip we must:
+    //   (a) Subtract 1 from weeksDiff for all Shabbosos AFTER that date, so
+    //       the next Shabbos reads the "missed" parasha rather than jumping ahead.
+    //   (b) Add one parasha combination to the annual schedule to keep the
+    //       total Shabbos-reading count consistent.
+    //
+    // Pesach spans 15-21 Nissan (Israel) / 15-22 Nissan (Diaspora).
+    // All days can fall on Shabbos and cause a skip:
+    //   15 Nissan – Pesach Day 1     (both)
+    //   16 Nissan – Day 2/ChM Day 1  (Diaspora YT; Israel ChM — skip for both)
+    //   17-20 Nissan – Chol HaMoed   (both)
+    //   21 Nissan – Pesach Day 7     (both)
+    //   22 Nissan – Pesach Day 8     (Diaspora only)
+    //    6 Sivan  – Shavuos Day 1    (both)
+    //    7 Sivan  – Shavuos Day 2    (Diaspora only; always pairs with 17 Nissan)
+    // Tishrei Yom Tovim are handled implicitly by the choice of firstParashaJDN.
+    // ───────────────────────────────────────────────────────────────────────────
+    auto ytShabbos = [&](int month, int day) -> long {
+        long j = HebrewToJDN(HebrewDate(cycleYear, month, day));
+        if (j < firstParashaJDN) return -1;
+        return ((j + 1) % 7 == 6) ? j : -1;
+    };
+
+    std::vector<long> ytSkips;
+    { long j;
+      if ((j = ytShabbos(NISSAN, 15)) >= 0) ytSkips.push_back(j);
+      if ((j = ytShabbos(NISSAN, 16)) >= 0) ytSkips.push_back(j);  // YT (Diaspora) / ChM (Israel)
+      if ((j = ytShabbos(NISSAN, 17)) >= 0) ytSkips.push_back(j);  // ChM (both)
+      if ((j = ytShabbos(NISSAN, 18)) >= 0) ytSkips.push_back(j);  // ChM (both)
+      if ((j = ytShabbos(NISSAN, 19)) >= 0) ytSkips.push_back(j);  // ChM (both)
+      if ((j = ytShabbos(NISSAN, 20)) >= 0) ytSkips.push_back(j);  // ChM (both)
+      if ((j = ytShabbos(NISSAN, 21)) >= 0) ytSkips.push_back(j);
+      if (!isIsrael && (j = ytShabbos(NISSAN, 22)) >= 0) ytSkips.push_back(j);
+      if ((j = ytShabbos(SIVAN,   6)) >= 0) ytSkips.push_back(j);
+      if (!isIsrael && (j = ytShabbos(SIVAN,  7)) >= 0) ytSkips.push_back(j);
     }
+
+    // Count skips that occurred BEFORE our target Shabbos → reduce weeksDiff.
+    int totalSkips = (int)ytSkips.size();
+    for (long jt : ytSkips)
+        if (jt < shabbosJDN) weeksDiff--;
+
+    auto previousOrSameShabbos = [](long jdn) -> long {
+        int dow = (int)((jdn + 1) % 7); // 0=Sun…6=Shabbos
+        return jdn - ((dow + 1) % 7);
+    };
+
+    long tishaBavJDN = HebrewToJDN(HebrewDate(cycleYear, AV, 9));
+    long devarimJDN = previousOrSameShabbos(tishaBavJDN);
+    long devarimWeeksDiff = (devarimJDN - firstParashaJDN) / 7;
+    for (long jt : ytSkips)
+        if (jt < devarimJDN) devarimWeeksDiff--;
+
+    // There are 43 individual parshiyos before Devarim. The number of doubles
+    // before Devarim is whatever makes Devarim land on Shabbos Chazon.
+    int preDevarimCombinesNeeded = 43 - (int)devarimWeeksDiff;
+    if (preDevarimCombinesNeeded < 0) preDevarimCombinesNeeded = 0;
 
     if (weeksDiff < 0)
     {
@@ -791,106 +841,126 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
         return info;
     }
 
-    // Build the parasha schedule for this year.
-    // Combined parshiyos vary by year type and Israel/Diaspora.
-    // We use a known schedule based on the year properties.
-    bool leapYear = IsHebrewLeapYear(cycleYear);
-    int  yearType = DaysInHebrewYear(cycleYear); // 353/354/355/383/384/385
-    bool longYear = (yearType == 355 || yearType == 385);
+    // ── Build parasha schedule ─────────────────────────────────────────────────
+    // Each entry is a parasha index (0–52). Combined parshiyos are represented
+    // by the FIRST index of the pair; isCombined is detected later via a jump-of-2
+    // in consecutive schedule entries.
+    //
+    // Combination rules:
+    //   Non-leap years:   Tazria-Metzora, Acharei-Kedoshim, Behar-Bechukosai always
+    //                     combined.
+    //   Other pre-Devarim combinations are selected so Devarim is always read
+    //                     on Shabbos Chazon, the Shabbos before/on Tisha B'Av.
+    //   Nitzavim-Vayeilech: combined when only 8 Shabbosos remain from Devarim to
+    //                     the Shabbos before Simchas Torah (computed below).
+    bool leapYear  = IsHebrewLeapYear(cycleYear);
+    int  yearType  = DaysInHebrewYear(cycleYear); // 353/354/355/383/384/385
     bool shortYear = (yearType == 353 || yearType == 383);
 
-    // Build schedule: each entry is a parasha index (0-53).
-    // Combined parshiyos are represented by the first parasha index
-    // with isCombined=true set later.
-    // This schedule covers 54 slots for all year types.
+    bool combineVP = false;
+    bool combineCB = false;
+    bool combineMM = false;
+
+    if (leapYear)
+    {
+        if (preDevarimCombinesNeeded > 2) preDevarimCombinesNeeded = 2;
+        combineMM = (preDevarimCombinesNeeded >= 1);
+        combineCB = (preDevarimCombinesNeeded >= 2);
+    }
+    else
+    {
+        if (preDevarimCombinesNeeded > 6) preDevarimCombinesNeeded = 6;
+
+        // Three doubles are fixed in non-leap years:
+        // Tazria-Metzora, Acharei-Kedoshim, and Behar-Bechukosai.
+        int remainingCombines = preDevarimCombinesNeeded - 3;
+        if (remainingCombines > 0)
+        {
+            combineMM = true;
+            remainingCombines--;
+        }
+        if (remainingCombines > 0 && shortYear)
+        {
+            combineVP = true;
+            remainingCombines--;
+        }
+        if (remainingCombines > 0)
+        {
+            combineCB = true;
+            remainingCombines--;
+        }
+        if (remainingCombines > 0 && !combineVP)
+            combineVP = true;
+    }
+
     std::vector<int> schedule;
 
-    // Bereishis through Vayechi (12 parshiyos, always separate)
-    for (int i = 0; i <= 11; i++) schedule.push_back(i);
-
-    // Shemos through Mishpatim (6 parshiyos, always separate)
-    for (int i = 12; i <= 17; i++) schedule.push_back(i);
-
-    // Terumah through Pekudei — Vayakhel-Pekudei combined in short/regular years
-    schedule.push_back(18); // Terumah
-    schedule.push_back(19); // Tetzaveh
-    schedule.push_back(20); // Ki Sisa
-    if (shortYear && !leapYear)
-    {
-        // Combine Vayakhel-Pekudei only in short (Chaser) non-leap years
-        schedule.push_back(21); // represents Vayakhel-Pekudei combined
-    }
+    for (int i = 0; i <= 11; i++) schedule.push_back(i); // Bereishis–Vayechi
+    for (int i = 12; i <= 17; i++) schedule.push_back(i); // Shemos–Mishpatim
+    schedule.push_back(18); schedule.push_back(19); schedule.push_back(20);
+    if (combineVP)
+        schedule.push_back(21);           // Vayakhel-Pekudei combined
     else
-    {
-        schedule.push_back(21); // Vayakhel separate
-        schedule.push_back(22); // Pekudei separate
-    }
-
-    // Vayikra through Shemini (always separate)
-    schedule.push_back(23); // Vayikra
-    schedule.push_back(24); // Tzav
-    schedule.push_back(25); // Shemini
-
-    // Tazria-Metzora: combined in non-leap years
+        { schedule.push_back(21); schedule.push_back(22); }
+    schedule.push_back(23); schedule.push_back(24); schedule.push_back(25);
     if (!leapYear)
-        schedule.push_back(26); // Tazria-Metzora combined
+        schedule.push_back(26);           // Tazria-Metzora combined
     else
-    {
-        schedule.push_back(26); // Tazria
-        schedule.push_back(27); // Metzora
-    }
-
-    // Acharei Mos-Kedoshim: combined in non-leap years
+        { schedule.push_back(26); schedule.push_back(27); }
     if (!leapYear)
-        schedule.push_back(28); // Acharei-Kedoshim combined
+        schedule.push_back(28);           // Acharei-Kedoshim combined
     else
-    {
-        schedule.push_back(28); // Acharei Mos
-        schedule.push_back(29); // Kedoshim
-    }
-
-    // Emor (always separate)
-    schedule.push_back(30);
-
-    // Behar-Bechukosai: combined in non-leap years
+        { schedule.push_back(28); schedule.push_back(29); }
+    schedule.push_back(30);               // Emor
     if (!leapYear)
-        schedule.push_back(31); // Behar-Bechukosai combined
+        schedule.push_back(31);           // Behar-Bechukosai combined
     else
-    {
-        schedule.push_back(31); // Behar
-        schedule.push_back(32); // Bechukosai
-    }
-
-    // Bamidbar through Nasso (always separate)
-    schedule.push_back(33); // Bamidbar
-    schedule.push_back(34); // Nasso
-
-    // Beha'aloscha through Pinchas (always separate)
-    schedule.push_back(35);
-    schedule.push_back(36);
-    schedule.push_back(37);
-    // Chukas-Balak: combined in diaspora when 7 Sivan falls on Shabbos
-    // (diaspora missed a reading that week and catches up here)
-    if (sevenSivanOnShabbos)
-        schedule.push_back(38); // Chukas-Balak combined (next entry 40 → jump=2)
+        { schedule.push_back(31); schedule.push_back(32); }
+    schedule.push_back(33);               // Bamidbar
+    schedule.push_back(34);               // Nasso
+    schedule.push_back(35); schedule.push_back(36); schedule.push_back(37);
+    if (combineCB)
+        schedule.push_back(38);           // Chukas-Balak combined
     else
-    {
-        schedule.push_back(38); // Chukas
-        schedule.push_back(39); // Balak
-    }
-    schedule.push_back(40); // Pinchas
-
-    // Matos-Masei: combined in most years
-    if (leapYear && longYear)
-    {
-        schedule.push_back(41); // Matos separate
-        schedule.push_back(42); // Masei separate
-    }
+        { schedule.push_back(38); schedule.push_back(39); }
+    schedule.push_back(40);               // Pinchas
+    if (combineMM)
+        schedule.push_back(41);           // Matos-Masei combined
     else
-        schedule.push_back(41); // Matos-Masei combined
+        { schedule.push_back(41); schedule.push_back(42); }
 
-    // Devarim through Ha'azinu (always separate)
-    for (int i = 43; i <= 52; i++) schedule.push_back(i);
+    // Devarim (43) through Ha'azinu (52).
+    // Devarim must fall on the Shabbos before Tisha B'Av (Shabbas Chazon).
+    // Nitzavim (50) and Vayeilech (51) are combined when only 8 post-Devarim
+    // Shabbosos are available before Simchas Torah (vs. 9 when separate).
+    //
+    // Compute the Shabbos immediately before Simchas Torah of cycleYear+1.
+    {
+        int simchasNext = isIsrael ? 22 : 23;
+        long stNextJDN  = HebrewToJDN(HebrewDate(cycleYear + 1, TISHREI, simchasNext));
+        // Previous Shabbos: subtract (dow+1) days where dow=(stNextJDN+1)%7
+        int  dow = (int)((stNextJDN + 1) % 7);  // 0=Sun…6=Shabbos
+        long lastRegularJDN = (dow == 6) ? stNextJDN - 7   // Simchas Torah is Shabbos → skip it
+                                         : stNextJDN - (dow + 1); // prev Shabbos
+        // Devarim is always at the position just after Matos-Masei in our schedule.
+        // Count how many Shabbosos exist from (schedule[devarimPos] start) to lastRegularJDN.
+        // Easier: net Shabbosos remaining after Devarim's slot = slots from Devarim+1 to end.
+        // Total net Shabbosos in year:
+        long totalNetShabbos = (lastRegularJDN - firstParashaJDN) / 7 + 1 - totalSkips;
+        // Entries already in schedule = before Devarim:
+        int beforeDevarim = (int)schedule.size(); // Devarim will be pushed next
+        int postDevarimSlots = (int)(totalNetShabbos - beforeDevarim - 1); // -1 for Devarim itself
+        // Post-Devarim: Vaetchanan(44)…Ha'azinu(52) = 9 parshiyos.
+        // If only 8 slots remain, combine Nitzavim-Vayeilech.
+        bool combineNV = (postDevarimSlots <= 8);
+
+        for (int i = 43; i <= 49; i++) schedule.push_back(i); // Devarim–Ki Tavo
+        if (combineNV)
+            schedule.push_back(50);       // Nitzavim-Vayeilech combined
+        else
+            { schedule.push_back(50); schedule.push_back(51); }
+        schedule.push_back(52);           // Ha'azinu
+    }
 
     // V'Zos HaBracha is always Simchas Torah, not a regular Shabbos reading
     // so we don't add it to the schedule
