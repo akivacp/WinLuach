@@ -111,10 +111,12 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     int gridTop  = dayHdrY + dayHdrH;
     int availH   = H - (gridTop - y0) - footH;
     int gridH    = opts.includeZmanim ? (availH * 56 / 100) : availH;
-    int cellH    = gridH / 6;
 
     DayOfWeek dow0     = GetDayOfWeek(gFirst);
     long      jdn0     = GregorianToJDN(gFirst) - (int)dow0;
+    int       daysInMo = DaysInGregorianMonth(month, year);
+    int       numRows  = ((int)dow0 + daysInMo - 1) / 7 + 1;  // 4, 5, or 6
+    int       cellH    = gridH / numRows;
     int       lineH    = -fSmall + 2;
     int       mg       = max(2, W / 250);
 
@@ -123,7 +125,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     bool showPar    = pFrame ? pFrame->m_showParshios: true;
     GregorianDate today = pFrame ? pFrame->m_today : GregorianDate{};
 
-    for (int cell = 0; cell < 42; cell++)
+    for (int cell = 0; cell < numRows * 7; cell++)
     {
         long         jdn = jdn0 + cell;
         GregorianDate g  = JDNToGregorian(jdn);
@@ -267,7 +269,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     int penW = max(1, W / 500);
     CPen penGrid(PS_SOLID, penW, CLR_GRID);
     CPen* pOld = pDC->SelectObject(&penGrid);
-    for (int r = 0; r <= 6; r++)
+    for (int r = 0; r <= numRows; r++)
     {
         int gy = gridTop + r * cellH;
         pDC->MoveTo(x0, gy);
@@ -276,14 +278,14 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     for (int c = 0; c <= 7; c++)
     {
         pDC->MoveTo(colX[c], gridTop);
-        pDC->LineTo(colX[c], gridTop + 6 * cellH);
+        pDC->LineTo(colX[c], gridTop + numRows * cellH);
     }
     pDC->SelectObject(pOld);
 
     // === Weekly Zmanim Table ================================================
     if (opts.includeZmanim && pFrame)
     {
-        int tblTop = gridTop + 6 * cellH;
+        int tblTop = gridTop + numRows * cellH;
         int tblH   = y0 + H - tblTop;
 
         if (tblH >= 40)
@@ -351,20 +353,29 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             }
 
             // Data rows
-            int dataY    = hdrRowY + hdrRowH;
-            int dataRowH = max(4, (y0 + H - dataY) / 6);
+            int dataY = hdrRowY + hdrRowH;
+            // Count shabboses in this month to size rows
+            int numShabRows = 0;
+            for (int w = 0; w < numRows; w++) {
+                GregorianDate ts = JDNToGregorian(jdn0 + w * 7 + 6);
+                if (ts.year == year && ts.month == month) numShabRows++;
+            }
+            int dataRowH = max(4, (y0 + H - dataY) / max(1, numShabRows));
 
-            for (int w = 0; w < 6; w++)
+            int drawnRows = 0;
+            for (int w = 0; w < numRows; w++)
             {
-                int ry = dataY + w * dataRowH;
-                COLORREF rowBg = (w % 2 == 0) ? RGB(248,250,255) : RGB(235,242,255);
+                long         shabJDN = jdn0 + w * 7 + 6;
+                GregorianDate shab   = JDNToGregorian(shabJDN);
+                if (shab.year != year || shab.month != month) continue;  // skip out-of-month shabbos
+                int ry = dataY + drawnRows * dataRowH;
+                drawnRows++;
+                COLORREF rowBg = (drawnRows % 2 == 0) ? RGB(248,250,255) : RGB(235,242,255);
                 pDC->FillSolidRect(CRect(x0, ry, x0+W, ry+dataRowH), rowBg);
                 pDC->SetBkMode(TRANSPARENT);
 
-                // Shabbos for this row (col 6); candle lighting from Friday (col 5)
-                long         shabJDN = jdn0 + w * 7 + 6;
+                // Candle lighting from Friday (col 5)
                 long         friJDN  = jdn0 + w * 7 + 5;
-                GregorianDate shab   = JDNToGregorian(shabJDN);
                 GregorianDate fri    = JDNToGregorian(friJDN);
                 HebrewDate    hShab  = JDNToHebrew(shabJDN);
 
@@ -431,7 +442,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             CPen* pOldT = pDC->SelectObject(&penTbl);
             pDC->MoveTo(x0, tblTop);  pDC->LineTo(x0+W, tblTop);
             pDC->MoveTo(x0, hdrRowY); pDC->LineTo(x0+W, hdrRowY);
-            for (int r = 0; r <= 6; r++)
+            for (int r = 0; r <= numShabRows; r++)
             {
                 int gy = dataY + r * dataRowH;
                 pDC->MoveTo(x0, gy); pDC->LineTo(x0+W, gy);
@@ -439,7 +450,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             for (int c = 0; c <= numDataCols + 1; c++)
             {
                 pDC->MoveTo(tblColX[c], tblTop);
-                pDC->LineTo(tblColX[c], dataY + 6*dataRowH);
+                pDC->LineTo(tblColX[c], dataY + numShabRows*dataRowH);
             }
             pDC->SelectObject(pOldT);
         }
@@ -572,7 +583,8 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame)
 
 void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                          int year, int month, CMainFrame* pFrame,
-                         uint32_t colMask, bool use24hr, bool showFooter)
+                         uint32_t colMask, bool use24hr, bool showFooter, bool showSedra,
+                         uint32_t sedraHolMask)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -630,20 +642,22 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
     int nc = (int)activeCols.size();
 
     // ── Column geometry: Date | Day | Hebrew | [time cols...] ─────────────────
-    int dateW = W * 7 / 100;
-    int dayW  = W * 5 / 100;
-    int hebW  = W * 9 / 100;
-    int timeW = nc > 0 ? (W - dateW - dayW - hebW) / nc : 1;
+    int dateW  = W * 7 / 100;
+    int dayW   = W * 5 / 100;
+    int hebW   = W * 9 / 100;
+    int sedraW = showSedra ? W * 11 / 100 : 0;
+    int ftc    = showSedra ? 4 : 3;  // first time column index
+    int timeW  = nc > 0 ? (W - dateW - dayW - hebW - sedraW) / nc : 1;
 
-    // colX[0..3+nc]: colX[c] = left edge of column c; colX[c+1] = right edge
-    // cols 0,1,2 = Date, Day, Hebrew; cols 3..3+nc-1 = time data
-    std::vector<int> colX(3 + nc + 1);
+    // colX[0..ftc+nc]: cols 0,1,2 = Date,Day,Hebrew; [3=Sedra if showSedra]; ftc..ftc+nc = time data
+    std::vector<int> colX(ftc + nc + 1);
     colX[0] = x0;
     colX[1] = x0 + dateW;
     colX[2] = x0 + dateW + dayW;
     colX[3] = x0 + dateW + dayW + hebW;
-    for (int c = 1; c <= nc; c++)  colX[3+c] = colX[3] + c * timeW;
-    colX[3+nc] = x0 + W;  // stretch last column to right edge
+    if (showSedra) colX[4] = colX[3] + sedraW;
+    for (int c = 1; c <= nc; c++) colX[ftc+c] = colX[ftc] + c * timeW;
+    colX[ftc+nc] = x0 + W;  // stretch last column to right edge
 
     // ── Header row ────────────────────────────────────────────────────────────
     int hdrH = H * 5 / 100;
@@ -659,12 +673,16 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
     drawHdr(0, L"Date");
     drawHdr(1, L"Day");
     drawHdr(2, L"Hebrew");
-    for (int c = 0; c < nc; c++) drawHdr(3+c, kColHdr[activeCols[c]]);
+    if (showSedra) drawHdr(3, L"Sedra");
+    for (int c = 0; c < nc; c++) drawHdr(ftc+c, kColHdr[activeCols[c]]);
 
     // ── Data rows ─────────────────────────────────────────────────────────────
     int dataY    = hdrY + hdrH;
     int daysInMo = DaysInGregorianMonth(month, year);
-    int rowH     = max(4, (y0 + H - dataY) / daysInMo);
+    // Compute footer height first to avoid overlap
+    int fFootZ = -(H * 16 / 1000); if (fFootZ > -4) fFootZ = -4;
+    int footHZ = showFooter ? (-fFootZ + 2) : 0;
+    int rowH     = max(4, (y0 + H - dataY - footHZ) / daysInMo);
 
     static const wchar_t* kDayAbbr[7] = {
         L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat" };
@@ -738,6 +756,42 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->DrawText(hebDayStr.c_str(), -1, CRect(colX[2], ry, colX[3], ry+rowH),
             DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
 
+        // Sedra column: parasha on Shabbos; holiday names on other days per sedraHolMask
+        if (showSedra) {
+            std::wstring sedraText;
+            COLORREF sedraColor = RGB(30, 80, 160);
+            if (dow == SHABBAT) {
+                ParashaInfo parZ = GetParasha(h, isIsrael);
+                if (!parZ.name.empty()) {
+                    sedraText = parZ.name;
+                    if (parZ.isCombined && !parZ.name2.empty()) sedraText += L"-" + parZ.name2;
+                }
+            } else if (sedraHolMask) {
+                // Priority: Yom Tov > Minor > Fast > Modern
+                static const uint32_t kPrio[] = {
+                    HOLIDAY_YOM_TOV, HOLIDAY_MINOR, HOLIDAY_FAST, HOLIDAY_MODERN
+                };
+                static const COLORREF kClr[] = {
+                    RGB(0, 110, 0), RGB(60, 100, 0), RGB(140, 0, 0), RGB(0, 100, 80)
+                };
+                for (int pi = 0; pi < 4 && sedraText.empty(); ++pi) {
+                    if (!(sedraHolMask & kPrio[pi])) continue;
+                    for (const auto& ho : hols2) {
+                        if (ho.flags & kPrio[pi]) {
+                            sedraText  = ho.name;
+                            sedraColor = kClr[pi];
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!sedraText.empty()) {
+                pDC->SetTextColor(sedraColor);
+                pDC->DrawText(sedraText.c_str(), -1, CRect(colX[3], ry, colX[4], ry+rowH),
+                    DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+            }
+        }
+
         // Time columns
         const TimeOfDay* kTimes[14] = {
             &z.alot_GRA,        &z.misheyakir_11,   &z.hanetz,
@@ -765,7 +819,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                 ts = FormatTime(*kTimes[ci], use24hr);
             }
             if (!ts.empty())
-                pDC->DrawText(ts.c_str(), -1, CRect(colX[3+c], ry, colX[3+c+1], ry+rowH),
+                pDC->DrawText(ts.c_str(), -1, CRect(colX[ftc+c], ry, colX[ftc+c+1], ry+rowH),
                     DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         }
     }
@@ -778,24 +832,22 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         int gy = dataY + d * rowH;
         pDC->MoveTo(x0, gy); pDC->LineTo(x0+W, gy);
     }
-    for (int c = 0; c <= 3+nc; c++) {
+    for (int c = 0; c <= ftc+nc; c++) {
         pDC->MoveTo(colX[c], hdrY);
         pDC->LineTo(colX[c], dataY + daysInMo * rowH);
     }
     pDC->SelectObject(pOld);
 
-    // Footer
-    int fFoot2 = -(H * 16 / 1000); if (fFoot2 > -4) fFoot2 = -4;
+    // Footer (uses fFootZ and footHZ computed above)
     CFont fontFoot2;
-    fontFoot2.CreateFont(fFoot2,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+    fontFoot2.CreateFont(fFootZ,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
     if (showFooter) {
         pDC->SelectObject(&fontFoot2);
         pDC->SetTextColor(RGB(140,140,140));
         pDC->SetBkMode(TRANSPARENT);
-        int footH2 = -fFoot2 + 2;
-        pDC->FillSolidRect(CRect(x0, y0+H-footH2, x0+W, y0+H), RGB(245, 245, 245));
+        pDC->FillSolidRect(CRect(x0, y0+H-footHZ, x0+W, y0+H), RGB(245, 245, 245));
         pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
-            CRect(x0, y0+H-footH2, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+            CRect(x0, y0+H-footHZ, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
     }
 }
 
@@ -956,11 +1008,13 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         for (const auto& ho : hols) if (ho.flags & HOLIDAY_FAST) { hasFastDP = true; break; }
         bool isErevYKDP     = (h.month == TISHREI && h.day == 9);
         bool isTishaBavDP   = (h.month == AV      && h.day == 9);
+        bool is10AvDP       = (h.month == AV      && h.day == 10);
         bool isErevTBDP     = (h.month == AV      && h.day == 8);
         bool isErevPesachDP = (h.month == NISSAN  && h.day == 14);
+        bool isLagBaOmerDP  = (h.month == IYAR    && h.day == 18);
 
         struct SpecTime { const wchar_t* label; TimeOfDay time; };
-        SpecTime stimes[8]; int nst = 0;
+        SpecTime stimes[12]; int nst = 0;
 
         if (isShabDP && z.tzeitShabbat.IsValid())
             stimes[nst++] = { L"Tzeis Shabbos:", z.tzeitShabbat };
@@ -970,7 +1024,13 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
             stimes[nst++] = { L"Fast begins:", z.shkia };
         if (isTishaBavDP && z.chatzot.IsValid())
             stimes[nst++] = { L"Chatzos:", z.chatzot };
+        if (is10AvDP && z.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", z.chatzot };
+        if (isLagBaOmerDP && z.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", z.chatzot };
         if (isErevYKDP && z.shkia.IsValid()) {
+            if (z.chatzot.IsValid())
+                stimes[nst++] = { L"Chatzos:", z.chatzot };
             stimes[nst++] = { L"Fast begins:", z.shkia };
             if (z.candleLighting.IsValid())
                 stimes[nst++] = { L"Candle lighting:", z.candleLighting };
@@ -980,6 +1040,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
             TimeOfDay sofBiur   = AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA));
             if (sofAchila.IsValid()) stimes[nst++] = { L"Eat chametz by:", sofAchila };
             if (sofBiur.IsValid())   stimes[nst++] = { L"Burn chametz by:", sofBiur };
+            if (z.chatzot.IsValid()) stimes[nst++] = { L"Chatzos:", z.chatzot };
         }
 
         if (nst > 0) {
