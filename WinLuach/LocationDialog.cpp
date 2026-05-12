@@ -39,7 +39,7 @@ bool LocationDialog::Show(HWND parent, const Location& currentLoc, Location& sel
         wchar_t     title[20];
     } dlgData = {};
 
-    dlgData.tmpl.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    dlgData.tmpl.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
     dlgData.tmpl.dwExtendedStyle = 0;
     dlgData.tmpl.cdit = 0; // no items in template; we add in WM_INITDIALOG
     dlgData.tmpl.x = 0;

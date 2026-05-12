@@ -75,6 +75,15 @@ private:
     // Returns the CRect for a given cell index (0-41).
     CRect GetCellRect(int idx) const;
 
+    // Multi-day selection helpers for Ctrl/Shift calendar picking.
+    bool IsSelectedDate(const GregorianDate& g) const;
+    bool IsExplicitlySelected(const GregorianDate& g) const;
+    std::vector<GregorianDate> GetSelectedDates() const;
+    void ClearMultiSelection();
+    void ToggleSelectedCell(int idx);
+    void SelectRangeToCell(int idx);
+    int FindSelectedCellIndex() const;
+
     // Pointer to the parent frame (not owned — do not delete)
     CMainFrame* m_pFrame = nullptr;
 
@@ -89,6 +98,9 @@ private:
 
     // Fonts (owned by CMainFrame, not by this class)
     // We borrow them from m_pFrame
+
+    std::vector<long> m_selectedJdns;
+    int m_anchorIndex = -1;
 
     DECLARE_MESSAGE_MAP()
 };

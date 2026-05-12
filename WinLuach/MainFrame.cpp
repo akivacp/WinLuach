@@ -89,6 +89,152 @@ static bool ParseIcsDate(const std::wstring& line, GregorianDate& g)
     }
 }
 
+static CString BuildHelpContentsText()
+{
+    CString text =
+LR"(WinLuach Help Guide
+
+Overview
+WinLuach is a Hebrew/Gregorian calendar with zmanim, holidays, parsha information, learning schedules, and personal events.
+
+Main Calendar
+- The main grid shows the current civil month or Hebrew month.
+- Use the Hebrew/Civil toggle in the header to switch month systems.
+- Today's date is highlighted.
+- Shabbos, Yom Tov, Chol Hamoed, Rosh Chodesh, fast days, and other special days use distinct background colors.
+- Click a day to select it and update the sidebar and zmanim panel.
+- Double-click a day, or use the day popup, to see full day details.
+- Right-click a day to add an event, print day details, or jump to bar/bat mitzvah dates.
+
+Navigation
+- Previous/next day: Left and Right arrows.
+- Today: Home.
+- Go to Date: Ctrl+G.
+- Previous/next month: Page Up and Page Down.
+- Previous/next year: Ctrl+Left and Ctrl+Right.
+- Previous/next decade: Ctrl+Alt+Left and Ctrl+Alt+Right.
+- Change the month or year directly from the header controls.
+
+Sidebar
+- The sidebar summarizes the selected day.
+- It shows the Hebrew date, holidays, parsha, Omer, daily learning, and personal events.
+- Resize the sidebar with the splitter, or collapse/expand it with the sidebar button.
+
+Zmanim
+- The bottom panel shows zmanim for the selected date and location.
+- Preferences control 12/24-hour display, calculation shitos, candle-lighting offset, and which zmanim are shown.
+- Location settings control latitude, longitude, time zone, and Israel/Diaspora behavior.
+
+Parsha And Holidays
+- Parsha scheduling follows Israel/Diaspora rules.
+- On Shabbos Chol Hamoed or Yom Tov, the holiday reading is shown instead of a regular weekly parsha.
+- Israel and Diaspora can diverge after Pesach/Shavuos and then resynchronize through combined parshiyos.
+- Devarim is kept before Tisha B'Av.
+
+Events
+- Open Calendar > Events, or press Ctrl+E.
+- Add birthdays, anniversaries, yahrzeits, and custom events.
+- Events can be Hebrew-date or Gregorian-date based.
+- Hebrew events can be adjusted for leap years and after-sunset observance.
+- Use Export iCal to save events to an .ics file.
+- Use Print List in the Events dialog to print the full event list.
+
+Web Calendar
+- Preferences can import/sync external calendar items.
+- Imported items appear in calendar cells and day details.
+- Use refresh/import options from the preferences and event tools as needed.
+
+Printing
+- File > Print opens the full print dialog.
+- File > Print Preview previews the current print setup.
+- Calendar > Print Month prints the current month.
+- Calendar > Print Zmanim Month prints a detailed monthly zmanim table.
+- Print options include month/year/range, weekly zmanim, visible zmanim columns, footer, margins, and 12/24-hour printed zmanim.
+- Long text in print preview shrinks to fit cells where possible.
+
+Options
+- Options > Location sets the calculation location and Israel/Diaspora mode.
+- Options > Preferences controls display, zmanim, learning, parsha/holiday visibility, printing defaults, tray behavior, and notifications.
+- File > Backup Settings saves your settings.
+- File > Restore Settings restores a saved settings backup.
+
+Tray And Notifications
+- WinLuach can show a tray icon and daily event notifications depending on Preferences.
+- Tray actions include opening WinLuach, viewing About, and exiting.
+
+Troubleshooting
+- For use on another computer, run the Release build of WinLuach.exe.
+- Debug builds require Visual Studio debug runtime DLLs and are not meant for normal deployment.
+- If a print preview looks crowded, reduce visible zmanim columns or use landscape/month-specific print modes.)";
+
+    text.Replace(L"\n", L"\r\n");
+    return text;
+}
+
+class CHelpContentsDlg : public CDialog
+{
+public:
+    CHelpContentsDlg(CWnd* pParent = nullptr) : CDialog()
+    {
+        m_pParentWnd = pParent;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.cx = 520;
+        b.t.cy = 390;
+        wcscpy_s(b.title, L"WinLuach Help");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd))
+            return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"WinLuach Help Contents");
+
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+
+        CRect rc;
+        GetClientRect(&rc);
+        m_text.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER |
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL,
+            CRect(10, 10, rc.Width() - 10, rc.Height() - 44), this, 7001);
+        m_text.SetFont(pF);
+        m_text.SetWindowText(BuildHelpContentsText());
+        m_text.SetSel(0, 0);
+
+        m_btnClose.Create(L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(rc.Width() - 92, rc.Height() - 32, rc.Width() - 10, rc.Height() - 8),
+            this, IDOK);
+        m_btnClose.SetFont(pF);
+        return TRUE;
+    }
+
+    afx_msg void OnSize(UINT nType, int cx, int cy)
+    {
+        CDialog::OnSize(nType, cx, cy);
+        if (m_text.GetSafeHwnd())
+            m_text.MoveWindow(10, 10, max(50, cx - 20), max(50, cy - 54));
+        if (m_btnClose.GetSafeHwnd())
+            m_btnClose.MoveWindow(max(10, cx - 92), max(10, cy - 32), 82, 24);
+    }
+
+    CEdit   m_text;
+    CButton m_btnClose;
+
+    DECLARE_MESSAGE_MAP()
+};
+
+BEGIN_MESSAGE_MAP(CHelpContentsDlg, CDialog)
+    ON_WM_SIZE()
+END_MESSAGE_MAP()
+
 // =============================================================================
 // CGotoDateDlg — compact mini-calendar date picker
 // =============================================================================
@@ -108,7 +254,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[20]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         b.t.cx = 230; b.t.cy = 265;
         wcscpy_s(b.title, L"Go to Date");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -371,7 +517,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
         b.t.cx = 380; b.t.cy = 260;
         wcscpy_s(b.title, L"Event");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -724,7 +870,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
         b.t.cx = 260; b.t.cy = 160;
         wcscpy_s(b.title, L"Export to iCal");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -815,7 +961,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
-        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
         b.t.cx = 320; b.t.cy = 280;
         wcscpy_s(b.title, L"Events - Birthdays, Yahrzeits...");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -845,6 +991,7 @@ protected:
         mkBtn(L"Edit",        42,   802);
         mkBtn(L"Delete",      74,   803);
         mkBtn(L"Export iCal", 114,  804);
+        mkBtn(L"Print List",   146,  805);
         mkBtn(L"Close",       H-36, IDOK);
 
         RebuildList();
@@ -858,6 +1005,7 @@ protected:
         case 802: OnEdit();       return TRUE;
         case 803: OnDelete();     return TRUE;
         case 804: OnExportIcal(); return TRUE;
+        case 805: OnPrintList();  return TRUE;
         case 800:
             if (HIWORD(wParam) == LBN_DBLCLK) { OnEdit(); return TRUE; }
             break;
@@ -987,6 +1135,13 @@ private:
         } else {
             MessageBox(L"Failed to write file.", L"WinLuach", MB_OK|MB_ICONERROR);
         }
+    }
+
+    void OnPrintList()
+    {
+        CMainFrame* pFrame = static_cast<CMainFrame*>(
+            m_pParentWnd ? m_pParentWnd : AfxGetMainWnd());
+        DoPrintEventsList(pFrame);
     }
 };
 BEGIN_MESSAGE_MAP(CEventsManagerDlg, CDialog) END_MESSAGE_MAP()
@@ -1349,7 +1504,7 @@ public:
 
     INT_PTR DoModal() override {
         struct Tmpl { DLGTEMPLATE t; WORD m, c; wchar_t title[30]; } b = {};
-        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+        b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
         b.t.cx = 230; b.t.cy = 440;
         wcscpy_s(b.title, L"Print Zmanim Month");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -1451,11 +1606,10 @@ protected:
         else           m_rad12hr.SetCheck(BST_CHECKED);
         py += 28;
 
-        auto makeLabel = [&](const wchar_t* txt, int y2) {
-            CStatic* s = new CStatic;
-            s->Create(txt, WS_CHILD|SS_LEFT,
+        auto makeLabel = [&](CStatic& s, const wchar_t* txt, int y2) {
+            s.Create(txt, WS_CHILD|WS_VISIBLE|SS_LEFT,
                 CRect(tx+8, y2, tx+tw-8, y2+14), this);
-            s->SetFont(pF);
+            s.SetFont(pF);
         };
         auto makeEdit = [&](CEdit& e, float val, int y2) {
             CString sv; sv.Format(L"%.2f", val);
@@ -1464,10 +1618,10 @@ protected:
             e.SetFont(pF);
             e.SetWindowText(sv);
         };
-        makeLabel(L"Top margin (in):",    py); makeEdit(m_editTop,   0.75f, py+16); py += 40;
-        makeLabel(L"Bottom margin (in):", py); makeEdit(m_editBot,   0.75f, py+16); py += 40;
-        makeLabel(L"Left margin (in):",   py); makeEdit(m_editLeft,  0.50f, py+16); py += 40;
-        makeLabel(L"Right margin (in):",  py); makeEdit(m_editRight, 0.50f, py+16);
+        makeLabel(m_lblTop,   L"Top margin (in):",    py); makeEdit(m_editTop,   0.50f, py+16); py += 40;
+        makeLabel(m_lblBot,   L"Bottom margin (in):", py); makeEdit(m_editBot,   0.50f, py+16); py += 40;
+        makeLabel(m_lblLeft,  L"Left margin (in):",   py); makeEdit(m_editLeft,  0.50f, py+16); py += 40;
+        makeLabel(m_lblRight, L"Right margin (in):",  py); makeEdit(m_editRight, 0.50f, py+16);
         py += 40;
         m_chkFooter.Create(L"Show footer",
             WS_CHILD|WS_TABSTOP|BS_AUTOCHECKBOX,
@@ -1480,6 +1634,10 @@ protected:
         m_radLandscape.ShowWindow(SW_HIDE);
         m_rad12hr.ShowWindow(SW_HIDE);
         m_rad24hr.ShowWindow(SW_HIDE);
+        m_lblTop.ShowWindow(SW_HIDE);
+        m_lblBot.ShowWindow(SW_HIDE);
+        m_lblLeft.ShowWindow(SW_HIDE);
+        m_lblRight.ShowWindow(SW_HIDE);
         m_editTop.ShowWindow(SW_HIDE);
         m_editBot.ShowWindow(SW_HIDE);
         m_editLeft.ShowWindow(SW_HIDE);
@@ -1493,11 +1651,23 @@ protected:
         m_btnPreview.Create(L"Preview", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
             CRect(W/2-35, bY, W/2+35, bY+28), this, IDC_ZPD_PREVIEW);
         m_btnPreview.SetFont(pF);
-        CButton* bCancel = new CButton;
-        bCancel->Create(L"Cancel", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        m_btnCancel.Create(L"Cancel", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
             CRect(W-74, bY, W-4, bY+28), this, IDCANCEL);
-        bCancel->SetFont(pF);
+        m_btnCancel.SetFont(pF);
         return TRUE;
+    }
+
+    afx_msg void OnSize(UINT nType, int cx, int cy) {
+        CDialog::OnSize(nType, cx, cy);
+        if (m_tab.GetSafeHwnd())
+            m_tab.MoveWindow(4, 4, max(120, cx - 8), max(120, cy - 48));
+        int bY = max(4, cy - 36);
+        if (m_btnPrint.GetSafeHwnd())
+            m_btnPrint.MoveWindow(4, bY, 70, 28);
+        if (m_btnPreview.GetSafeHwnd())
+            m_btnPreview.MoveWindow(max(80, cx / 2 - 35), bY, 70, 28);
+        if (m_btnCancel.GetSafeHwnd())
+            m_btnCancel.MoveWindow(max(152, cx - 74), bY, 70, 28);
     }
 
     afx_msg void OnTabChanged(NMHDR* /*pNM*/, LRESULT* pResult) {
@@ -1510,6 +1680,10 @@ protected:
         m_radLandscape.ShowWindow(s1);
         m_rad12hr.ShowWindow(s1);
         m_rad24hr.ShowWindow(s1);
+        m_lblTop.ShowWindow(s1);
+        m_lblBot.ShowWindow(s1);
+        m_lblLeft.ShowWindow(s1);
+        m_lblRight.ShowWindow(s1);
         m_editTop.ShowWindow(s1);
         m_editBot.ShowWindow(s1);
         m_editLeft.ShowWindow(s1);
@@ -1547,8 +1721,9 @@ private:
     CButton      m_chk[15];
     CButton      m_radPortrait, m_radLandscape;
     CButton      m_rad12hr, m_rad24hr;
+    CStatic      m_lblTop, m_lblBot, m_lblLeft, m_lblRight;
     CEdit        m_editTop, m_editBot, m_editLeft, m_editRight;
-    CButton      m_btnPrint, m_btnPreview;
+    CButton      m_btnPrint, m_btnPreview, m_btnCancel;
     CButton      m_chkFooter, m_chkSedra;
     CButton      m_chkMajor, m_chkMinor, m_chkFast, m_chkIsrael;
     bool         m_use24hr = true;
@@ -1611,6 +1786,7 @@ private:
 };
 
 BEGIN_MESSAGE_MAP(CZmanimPrintDlg, CDialog)
+    ON_WM_SIZE()
     ON_NOTIFY(TCN_SELCHANGE, CZmanimPrintDlg::IDC_ZPD_TAB, &CZmanimPrintDlg::OnTabChanged)
     ON_BN_CLICKED(CZmanimPrintDlg::IDC_ZPD_PRINT,   &CZmanimPrintDlg::OnPrint)
     ON_BN_CLICKED(CZmanimPrintDlg::IDC_ZPD_PREVIEW, &CZmanimPrintDlg::OnPreview)
@@ -1702,6 +1878,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_VIEW_NEXTDECADE, &CMainFrame::OnViewNextDecade)
     ON_COMMAND(ID_OPTIONS_LOCATION, &CMainFrame::OnOptionsLocation)
     ON_COMMAND(ID_OPTIONS_PREFS, &CMainFrame::OnOptionsPrefs)
+    ON_COMMAND(ID_HELP_CONTENTS, &CMainFrame::OnHelpContents)
     ON_COMMAND(ID_HELP_ABOUT, &CMainFrame::OnHelpAbout)
     ON_COMMAND(ID_TRAY_OPEN, &CMainFrame::RestoreFromTray)
     ON_COMMAND(ID_TRAY_ABOUT, &CMainFrame::OnHelpAbout)
@@ -1774,7 +1951,6 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_EXPORT_EVT,  L"Export &Events...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_IMPORT_EVT,  L"&Import Events...");
-    fileMenu.AppendMenu(MF_STRING, ID_FILE_PRINT_EVENTS, L"Print Events &List...");
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_APP_EXIT,         L"E&xit");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)fileMenu.Detach(), L"&File");
@@ -1796,7 +1972,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTDECADE, L"Next Deca&de\tCtrl+Alt+Right");
     calMenu.AppendMenu(MF_SEPARATOR);
     calMenu.AppendMenu(MF_STRING, ID_CAL_PRINT_MONTH,  L"Print &Month\tCtrl+Shift+P");
-    calMenu.AppendMenu(MF_STRING, ID_CAL_PRINT_ZMANIM, L"Print &Zmanim Month...");
+    calMenu.AppendMenu(MF_STRING, ID_CAL_PRINT_ZMANIM, L"Print &Zmanim Month...\tCtrl+Alt+P");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)calMenu.Detach(), L"&Calendar");
 
     CMenu viewMenu;
@@ -1814,6 +1990,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     CMenu helpMenu;
     helpMenu.CreatePopupMenu();
+    helpMenu.AppendMenu(MF_STRING, ID_HELP_CONTENTS, L"&Contents...");
+    helpMenu.AppendMenu(MF_SEPARATOR);
     helpMenu.AppendMenu(MF_STRING, ID_HELP_ABOUT, L"&About WinLuach...");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)helpMenu.Detach(), L"&Help");
 
@@ -2216,6 +2394,9 @@ void CMainFrame::OnCalPrintMonth()
     opts.mLeft         = theApp.m_settings.printMarginLeft;
     opts.mRight        = theApp.m_settings.printMarginRight;
     opts.includeZmanim = theApp.m_settings.printWeeklyZmanim;
+    opts.zmanimColumns = theApp.m_settings.printZmanimColMask;
+    opts.showFooter    = theApp.m_settings.printShowFooter;
+    opts.use24hr       = theApp.m_settings.use24Hour;
     DoPrint(opts, this);
 }
 
@@ -2492,6 +2673,29 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_alotShita   = s.alotShita;
     m_tzeitShita  = s.tzeitShita;
     m_zmanimShita = s.zmanimShita;
+    m_customAlotMode = max(0, min(2, s.customAlotMode));
+    m_customAlotValue = s.customAlotValue > 0.0 ? s.customAlotValue : 16.1;
+    m_customTzeitMode = max(0, min(2, s.customTzeitMode));
+    m_customTzeitValue = s.customTzeitValue > 0.0 ? s.customTzeitValue : 8.5;
+
+    m_colorNormalCell = (COLORREF)s.colorNormalCell;
+    m_colorOtherMonthCell = (COLORREF)s.colorOtherMonthCell;
+    m_colorTodayCell = (COLORREF)s.colorTodayCell;
+    m_colorShabbosCell = (COLORREF)s.colorShabbosCell;
+    m_colorYomTovCell = (COLORREF)s.colorYomTovCell;
+    m_colorRoshChodeshCell = (COLORREF)s.colorRoshChodeshCell;
+    m_colorCholHamoedCell = (COLORREF)s.colorCholHamoedCell;
+    m_colorFastDayCell = (COLORREF)s.colorFastDayCell;
+    m_colorGregorianText = (COLORREF)s.colorGregorianText;
+    m_colorHebrewText = (COLORREF)s.colorHebrewText;
+    m_colorHolidayText = (COLORREF)s.colorHolidayText;
+    m_colorParshaText = (COLORREF)s.colorParshaText;
+    m_colorCivilEventText = (COLORREF)s.colorCivilEventText;
+    m_colorHebrewEventText = (COLORREF)s.colorHebrewEventText;
+    m_colorOmerText = (COLORREF)s.colorOmerText;
+    m_colorLearningText = (COLORREF)s.colorLearningText;
+    m_colorCandleText = (COLORREF)s.colorCandleText;
+    m_colorMotzText = (COLORREF)s.colorMotzText;
 
     // Restore persisted layout
     if (s.sidebarWidth > 0)  m_sidebarW = s.sidebarWidth;
@@ -2692,9 +2896,9 @@ LRESULT CMainFrame::OnWebCalDone(WPARAM, LPARAM)
     return 0;
 }
 
-std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& g) const
+std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const GregorianDate& g) const
 {
-    std::vector<std::wstring> events;
+    std::vector<CalendarEventLine> events;
     if (!theApp.m_settings.showUserEvents)
         return events;
 
@@ -2702,7 +2906,7 @@ std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& 
     for (const auto& ev : m_webEvents)
     {
         if (ev.date.year == g.year && ev.date.month == g.month && ev.date.day == g.day)
-            events.push_back(ev.title);
+            events.push_back({ ev.title, false, true });
     }
 
     // Personal recurring events (birthday / anniversary / yahrzeit / custom)
@@ -2715,7 +2919,7 @@ std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& 
         // Gregorian recurrence (ev.gregYear == 0 means any year)
         if (ev.gregMonth > 0 && ev.gregMonth == g.month && ev.gregDay == g.day
             && (ev.gregYear == 0 || ev.gregYear == g.year))
-            events.push_back(std::wstring(prefix) + ev.name);
+            events.push_back({ std::wstring(prefix) + ev.name + L" (civil)", false, false });
 
         // Hebrew recurrence
         if (ev.hebMonth > 0)
@@ -2724,7 +2928,7 @@ std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& 
             {
                 if (h.month == ev.hebMonth && h.day == ev.hebDay
                     && (ev.hebYear == 0 || ev.hebYear == h.year))
-                    events.push_back(std::wstring(prefix) + ev.name);
+                    events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew)", true, false });
             }
             else
             {
@@ -2732,11 +2936,19 @@ std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& 
                 HebrewDate nextDay = JDNToHebrew(GregorianToJDN(g) + 1);
                 if (nextDay.month == ev.hebMonth && nextDay.day == ev.hebDay
                     && (ev.hebYear == 0 || ev.hebYear == nextDay.year))
-                    events.push_back(std::wstring(prefix) + ev.name + L" (eve)");
+                    events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew eve)", true, false });
             }
         }
     }
 
+    return events;
+}
+
+std::vector<std::wstring> CMainFrame::GetUserEventsForDate(const GregorianDate& g) const
+{
+    std::vector<std::wstring> events;
+    for (const auto& ev : GetCalendarEventLinesForDate(g))
+        events.push_back(ev.title);
     return events;
 }
 
@@ -3418,6 +3630,12 @@ void CMainFrame::OnHelpAbout()
         MB_OK | MB_ICONINFORMATION);
 }
 
+void CMainFrame::OnHelpContents()
+{
+    CHelpContentsDlg dlg(this);
+    dlg.DoModal();
+}
+
 // =============================================================================
 // MONTH / YEAR PICKER CONTROLS
 // =============================================================================
@@ -3576,6 +3794,15 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
         return TRUE;
     }
 
+    // Ctrl+Alt+P — print zmanim month page setup
+    if ((pMsg->message == WM_KEYDOWN || pMsg->message == WM_SYSKEYDOWN) &&
+        pMsg->wParam == 'P' &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && (GetKeyState(VK_MENU) & 0x8000))
+    {
+        OnCalPrintZmanim();
+        return TRUE;
+    }
+
     // Ctrl + Plus/= — larger font
     if (pMsg->message == WM_KEYDOWN &&
         (pMsg->wParam == VK_OEM_PLUS || pMsg->wParam == (WPARAM)'+') &&
@@ -3669,6 +3896,10 @@ void CMainFrame::OnCalPreview()
     opts.mBot      = ps.printMarginBot;
     opts.mLeft     = ps.printMarginLeft;
     opts.mRight    = ps.printMarginRight;
+    opts.includeZmanim = ps.printWeeklyZmanim;
+    opts.zmanimColumns = ps.printZmanimColMask;
+    opts.showFooter    = ps.printShowFooter;
+    opts.use24hr       = ps.use24Hour;
     CCalPreviewDlg dlg(opts, this, this);
     dlg.DoModal();
 }
