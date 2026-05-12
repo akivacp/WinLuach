@@ -121,6 +121,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"minimizeToTray\": " << (s.minimizeToTray ? L"true" : L"false") << L",\n";
     f << L"  \"minimizeTrayWhen\": " << s.minimizeTrayWhen << L",\n";
     f << L"  \"trayTextColor\": " << s.trayTextColor << L",\n";
+    f << L"  \"trayTooltipZmanimMask\": " << s.trayTooltipZmanimMask << L",\n";
     f << L"  \"minimizeOnStartup\": " << (s.minimizeOnStartup ? L"true" : L"false") << L",\n";
     f << L"  \"startWithWindows\": " << (s.startWithWindows ? L"true" : L"false") << L",\n";
     f << L"  \"desktopShortcut\": " << (s.desktopShortcut ? L"true" : L"false") << L",\n";
@@ -261,6 +262,7 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"minimizeToTray\"") != std::wstring::npos) s.minimizeToTray = ParseJsonBool(line);
         else if (line.find(L"\"minimizeTrayWhen\"") != std::wstring::npos) s.minimizeTrayWhen = (int)ParseJsonNumber(line);
         else if (line.find(L"\"trayTextColor\"") != std::wstring::npos) s.trayTextColor = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"trayTooltipZmanimMask\"") != std::wstring::npos) s.trayTooltipZmanimMask = (uint32_t)ParseJsonNumber(line);
         else if (line.find(L"\"minimizeOnStartup\"") != std::wstring::npos) s.minimizeOnStartup = ParseJsonBool(line);
         else if (line.find(L"\"startWithWindows\"") != std::wstring::npos) s.startWithWindows = ParseJsonBool(line);
         else if (line.find(L"\"desktopShortcut\"") != std::wstring::npos) s.desktopShortcut = ParseJsonBool(line);
