@@ -134,6 +134,8 @@ bool SaveSettings(const AppSettings& s)
         f << L"  \"webCal" << i << L"_enabled\": " << (s.webCalendars[i].enabled ? L"true" : L"false") << L",\n";
     }
     f << L"  \"zmanimShita\": " << s.zmanimShita << L",\n";
+    f << L"  \"alotShita\": "   << s.alotShita   << L",\n";
+    f << L"  \"tzeitShita\": "  << s.tzeitShita  << L",\n";
     f << L"  \"printLandscape\": "   << (s.printLandscape ? L"true" : L"false") << L",\n";
     f << L"  \"printRange\": "       << s.printRange       << L",\n";
     f << L"  \"printMarginTop\": "   << s.printMarginTop   << L",\n";
@@ -230,6 +232,8 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"notifyPersonalEvents\"") != std::wstring::npos) s.notifyPersonalEvents = (int)ParseJsonNumber(line);
         else if (line.find(L"\"notifyWebCalEvents\"")   != std::wstring::npos) s.notifyWebCalEvents   = (int)ParseJsonNumber(line);
         else if (line.find(L"\"zmanimShita\"")     != std::wstring::npos) s.zmanimShita     = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"alotShita\"")       != std::wstring::npos) s.alotShita       = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"tzeitShita\"")      != std::wstring::npos) s.tzeitShita      = (int)ParseJsonNumber(line);
         else if (line.find(L"\"printLandscape\"")  != std::wstring::npos) s.printLandscape  = ParseJsonBool(line);
         else if (line.find(L"\"printRange\"")      != std::wstring::npos) s.printRange      = (int)ParseJsonNumber(line);
         else if (line.find(L"\"printMarginTop\"")  != std::wstring::npos) s.printMarginTop  = (float)ParseJsonNumber(line);

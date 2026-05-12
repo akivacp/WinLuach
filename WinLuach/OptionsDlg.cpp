@@ -48,6 +48,8 @@
 #define IDC_OPT_NOTIFY_WEBCAL   335
 #define IDC_OPT_PREVIEW_NOTIFY  336
 #define IDC_OPT_SHOW_TRAY       337
+#define IDC_OPT_ALOT_SHITA      338
+#define IDC_OPT_TZEIT_SHITA     339
 
 // =============================================================================
 // CWebCalDlg — inline multi-calendar manager
@@ -236,7 +238,7 @@ INT_PTR COptionsDlg::DoModal()
     buf.t.x = 0;
     buf.t.y = 0;
     buf.t.cx = 430;
-    buf.t.cy = 502;
+    buf.t.cy = 550;
     wcscpy_s(buf.title, L"Options and Preferences");
 
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd))
@@ -367,7 +369,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Holiday schedule / zmanim
     MakeCtrl(L"BUTTON", L"Holiday Schedule and Zmanim", BS_GROUPBOX,
-        8, y, W - 16, 82, 350);
+        8, y, W - 16, 130, 350);
     y += 18;
 
     m_radDiaspora.Create(L"Diaspora (outside Israel)",
@@ -397,7 +399,20 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         CRect(18, y + 22, 170, y + 40), this, IDC_OPT_RAD_MA90);
     m_radMA90.SetFont(pFont);
-    y = 338;
+    y += 46;
+
+    MakeCtrl(L"STATIC", L"Alot hashachar:", 0, 18, y + 3, 100, 18, 352);
+    InitCombo(m_cmbAlotShita, 122, y, 190, IDC_OPT_ALOT_SHITA,
+        { L"GRA (16.1°)", L"Magen Avraham (72 min)", L"Magen Avraham (90 min)" },
+        max(0, min(2, m_current.alotShita)));
+    y += 24;
+
+    MakeCtrl(L"STATIC", L"Tzeis hakochavim:", 0, 18, y + 3, 110, 18, 353);
+    InitCombo(m_cmbTzeitShita, 132, y, 240, IDC_OPT_TZEIT_SHITA,
+        { L"GRA (8.5°)", L"Magen Avraham (72 min)", L"Magen Avraham (90 min)",
+          L"Magen Avraham (72 min prop.)", L"Magen Avraham (90 min prop.)" },
+        max(0, min(4, m_current.tzeitShita)));
+    y = 386;
 
     // Interface / tray
     MakeCtrl(L"BUTTON", L"Interface Preferences", BS_GROUPBOX,
@@ -544,6 +559,9 @@ void COptionsDlg::OnOK()
     if (m_radMA72.GetCheck() == BST_CHECKED) m_result.zmanimShita = 1;
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;
+
+    m_result.alotShita  = max(0, min(2, m_cmbAlotShita.GetCurSel()));
+    m_result.tzeitShita = max(0, min(4, m_cmbTzeitShita.GetCurSel()));
 
     CString candle;
     m_cmbCandleMinutes.GetWindowText(candle);

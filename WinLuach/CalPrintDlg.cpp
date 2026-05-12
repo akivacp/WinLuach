@@ -294,22 +294,29 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             fontTblB.CreateFont(fTbl, 0,0,0, FW_BOLD,0,0,0, DEFAULT_CHARSET,0,0,
                 CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
 
-            // Column layout: 1 label column + 15 data columns
-            static const wchar_t* kColHdr[16] = {
-                L"Week / Parasha",
+            // Column layout: 1 label column + up to 15 data columns (filtered by bitmask)
+            static const wchar_t* kAllColHdr[15] = {
                 L"Alos", L"Mishey.", L"Netz",
                 L"Shma MA", L"Shma GRA",
                 L"Tfla MA", L"Tfla GRA",
                 L"Chatzos", L"Mn.Gd.", L"Mn.Kt.",
                 L"Plag", L"Candle", L"Shkia", L"Tzais", L"Sha’a"
             };
+            uint32_t colMask = opts.zmanimColumns ? opts.zmanimColumns : 0x7FFF;
+            int numDataCols = 0;
+            int visIdx[15];   // maps visible column → original index 0-14
+            for (int i = 0; i < 15; i++)
+                if ((colMask >> i) & 1) visIdx[numDataCols++] = i;
+            if (numDataCols == 0) { colMask = 0x7FFF; numDataCols = 15; for (int i=0;i<15;i++) visIdx[i]=i; }
+
             int lblW  = W * 21 / 100;
-            int timeW = (W - lblW) / 15;
-            int tblColX[17];
+            int timeW = (numDataCols > 0) ? (W - lblW) / numDataCols : 1;
+            int tblColX[17];   // tblColX[0]=label start, [1..numDataCols+1]=data cols
             tblColX[0] = x0;
             tblColX[1] = x0 + lblW;
-            for (int c = 2; c <= 15; c++) tblColX[c] = tblColX[c-1] + timeW;
-            tblColX[16] = x0 + W;
+            for (int c = 1; c <= numDataCols; c++) tblColX[c+1] = tblColX[c] + timeW;
+            // ensure last column reaches right edge
+            tblColX[numDataCols + 1] = x0 + W;
 
             // Title row (10%)
             int titleRowH = max(6, tblH * 10 / 100);
@@ -327,10 +334,15 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             pDC->FillSolidRect(CRect(x0, hdrRowY, x0+W, hdrRowY+hdrRowH), RGB(70,100,160));
             pDC->SetTextColor(RGB(255,255,255));
             pDC->SelectObject(&fontTbl);
-            for (int c = 0; c < 16; c++)
+            // Label column header
+            pDC->DrawText(L"Week / Parasha", -1,
+                CRect(tblColX[0]+2, hdrRowY, tblColX[1], hdrRowY+hdrRowH),
+                DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+            // Data column headers (only visible columns)
+            for (int v = 0; v < numDataCols; v++)
             {
-                int cx = tblColX[c], cw = tblColX[c+1] - tblColX[c];
-                pDC->DrawText(kColHdr[c], -1, CRect(cx, hdrRowY, cx+cw, hdrRowY+hdrRowH),
+                int cx = tblColX[v+1], cw = tblColX[v+2] - tblColX[v+1];
+                pDC->DrawText(kAllColHdr[visIdx[v]], -1, CRect(cx, hdrRowY, cx+cw, hdrRowY+hdrRowH),
                     DT_CENTER|DT_VCENTER|DT_SINGLELINE);
             }
 
@@ -378,30 +390,35 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 zFri.candleLighting  = AddMinutes(zFri.shkia,
                                            -theApp.m_settings.candleLightingMinutes);
 
-                const TimeOfDay* kT[14] = {
+                const TimeOfDay* kAllT[15] = {
                     &z.alot_GRA,         &z.misheyakir_11,    &z.hanetz,
                     &z.sofShema_MA72,    &z.sofShema_GRA,
                     &z.sofTefilla_MA72,  &z.sofTefilla_GRA,
                     &z.chatzot,          &z.minchaGedola_GRA, &z.minchaKetana_GRA,
-                    &z.plagMincha_GRA,   &zFri.candleLighting,  // Friday candle time
-                    &z.shkia,            &z.tzeit_GRA
+                    &z.plagMincha_GRA,   &zFri.candleLighting,
+                    &z.shkia,            &z.tzeit_GRA,
+                    nullptr              // placeholder for sha'a (handled separately)
                 };
                 pDC->SetTextColor(RGB(20,40,80));
-                for (int c = 0; c < 14; c++)
+                for (int v = 0; v < numDataCols; v++)
                 {
-                    if (!kT[c]->IsValid()) continue;
-                    std::wstring ts = FormatTime(*kT[c], true);
-                    int cx = tblColX[c+1], cw = tblColX[c+2] - tblColX[c+1];
-                    pDC->DrawText(ts.c_str(), -1, CRect(cx, ry, cx+cw, ry+dataRowH),
-                        DT_CENTER|DT_VCENTER|DT_SINGLELINE);
-                }
-                if (z.shaahZmanit_GRA > 0.0)
-                {
-                    int szMin = (int)round(z.shaahZmanit_GRA);
-                    CString szs; szs.Format(L"%d:%02d", szMin/60, szMin%60);
-                    pDC->DrawText(szs,
-                        CRect(tblColX[15], ry, tblColX[16], ry+dataRowH),
-                        DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+                    int orig = visIdx[v];
+                    int cx = tblColX[v+1], cw = tblColX[v+2] - tblColX[v+1];
+                    if (orig == 14) // Sha'a Zmanit
+                    {
+                        if (z.shaahZmanit_GRA > 0.0) {
+                            int szMin = (int)round(z.shaahZmanit_GRA);
+                            CString szs; szs.Format(L"%d:%02d", szMin/60, szMin%60);
+                            pDC->DrawText(szs, CRect(cx, ry, cx+cw, ry+dataRowH),
+                                DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+                        }
+                    }
+                    else if (kAllT[orig] && kAllT[orig]->IsValid())
+                    {
+                        std::wstring ts = FormatTime(*kAllT[orig], true);
+                        pDC->DrawText(ts.c_str(), -1, CRect(cx, ry, cx+cw, ry+dataRowH),
+                            DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+                    }
                 }
             }
 
@@ -415,7 +432,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 int gy = dataY + r * dataRowH;
                 pDC->MoveTo(x0, gy); pDC->LineTo(x0+W, gy);
             }
-            for (int c = 0; c <= 16; c++)
+            for (int c = 0; c <= numDataCols + 1; c++)
             {
                 pDC->MoveTo(tblColX[c], tblTop);
                 pDC->LineTo(tblColX[c], dataY + 6*dataRowH);
@@ -988,6 +1005,453 @@ bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
     return true;
 }
 
+// =============================================================================
+// DRAW EVENTS LIST PAGE
+// Renders a year's recurring events as a sorted table.
+// =============================================================================
+
+struct EventListRow
+{
+    GregorianDate greg;
+    HebrewDate    heb;
+    std::wstring  typeStr;
+    std::wstring  name;
+};
+
+static std::vector<EventListRow> BuildEventRows(
+    const std::vector<UserEventEntry>& events, int gregYear)
+{
+    std::vector<EventListRow> rows;
+
+    for (const auto& ev : events)
+    {
+        // Skip one-time events that don't fall in this year
+        if (ev.gregYear != 0 && ev.gregYear != gregYear) continue;
+
+        EventListRow row;
+        static const wchar_t* kTypes[] = { L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" };
+        row.typeStr = (ev.type >= 0 && ev.type <= 3) ? kTypes[ev.type] : L"Event";
+        row.name    = ev.name;
+
+        if (ev.hebMonth != 0)
+        {
+            // Hebrew-based: find the Gregorian date for this month/day in gregYear
+            // Try both possible Hebrew years that overlap gregYear
+            for (int tryHY = gregYear + 3760; tryHY <= gregYear + 3762; ++tryHY)
+            {
+                if (ev.hebYear != 0 && ev.hebYear != tryHY) continue;
+                bool ly = IsHebrewLeapYear(tryHY);
+                // Adar I only exists in leap years; Adar = Adar II in leap, Adar in regular
+                int mo = ev.hebMonth;
+                if (mo == ADAR && ly) mo = ADAR_II;
+                HebrewDate h; h.year = tryHY; h.month = mo; h.day = ev.hebDay;
+                // Validate day in month
+                int daysInMo = DaysInHebrewMonth(mo, tryHY);
+                if (ev.hebDay > daysInMo) h.day = daysInMo;
+                GregorianDate g = HebrewToGregorian(h);
+                if (g.year == gregYear)
+                {
+                    if (ev.afterSunset)
+                    {
+                        // Show on day before (evening before)
+                        long jd = GregorianToJDN(g) - 1;
+                        g = JDNToGregorian(jd);
+                    }
+                    row.greg = g;
+                    row.heb  = GregorianToHebrew(g);
+                    rows.push_back(row);
+                    break;
+                }
+            }
+        }
+        else if (ev.gregMonth != 0)
+        {
+            // Gregorian-based
+            if (ev.gregYear != 0 && ev.gregYear != gregYear) continue;
+            GregorianDate g; g.year = gregYear; g.month = ev.gregMonth; g.day = ev.gregDay;
+            row.greg = g;
+            row.heb  = GregorianToHebrew(g);
+            rows.push_back(row);
+        }
+    }
+
+    // Sort chronologically
+    std::sort(rows.begin(), rows.end(), [](const EventListRow& a, const EventListRow& b) {
+        if (a.greg.month != b.greg.month) return a.greg.month < b.greg.month;
+        return a.greg.day < b.greg.day;
+    });
+    return rows;
+}
+
+void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
+                        const std::vector<UserEventEntry>& events,
+                        int gregYear, int pageIndex, int totalPages,
+                        bool showFooter)
+{
+    const int W  = rcPage.Width();
+    const int H  = rcPage.Height();
+    const int x0 = rcPage.left;
+    const int y0 = rcPage.top;
+
+    pDC->FillSolidRect(rcPage, RGB(255, 255, 255));
+
+    int fTitle = -(H * 4 / 100);   if (fTitle > -10) fTitle = -10;
+    int fHdr   = -(H * 28/1000);   if (fHdr   > -7)  fHdr   = -7;
+    int fRow   = -(H * 24/1000);   if (fRow   > -6)  fRow   = -6;
+
+    CFont fontTitle, fontHdr, fontRow;
+    fontTitle.CreateFont(fTitle,0,0,0,FW_BOLD,  0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+    fontHdr  .CreateFont(fHdr,  0,0,0,FW_BOLD,  0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+    fontRow  .CreateFont(fRow,  0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+
+    // Header bar
+    int hdrH = H * 8 / 100;
+    pDC->FillSolidRect(CRect(x0, y0, x0+W, y0+hdrH), RGB(50, 80, 140));
+    pDC->SetBkMode(TRANSPARENT);
+    pDC->SetTextColor(RGB(255, 255, 255));
+    pDC->SelectObject(&fontTitle);
+    CString title; title.Format(L"Events for %d", gregYear);
+    pDC->DrawText(title, CRect(x0+8, y0, x0+W-8, y0+hdrH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+
+    // Column layout: Greg date | Heb date | Type | Name
+    int colGreg  = x0 + 4;
+    int wGreg    = W * 18 / 100;
+    int colHeb   = colGreg + wGreg + 4;
+    int wHeb     = W * 22 / 100;
+    int colType  = colHeb + wHeb + 4;
+    int wType    = W * 16 / 100;
+    int colName  = colType + wType + 4;
+    int wName    = x0 + W - colName - 4;
+
+    // Column header row
+    int y = y0 + hdrH + 2;
+    int rowH = -fRow + 4;
+    pDC->FillSolidRect(CRect(x0, y, x0+W, y+rowH+2), RGB(200, 212, 240));
+    pDC->SetTextColor(RGB(30, 50, 110));
+    pDC->SelectObject(&fontHdr);
+    pDC->DrawText(L"Date",     CRect(colGreg, y, colGreg+wGreg,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    pDC->DrawText(L"Hebrew",   CRect(colHeb,  y, colHeb +wHeb,    y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    pDC->DrawText(L"Type",     CRect(colType, y, colType+wType,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    pDC->DrawText(L"Event",    CRect(colName, y, colName+wName,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    y += rowH + 4;
+
+    // Build rows for this year, calculate which ones fall on this page
+    auto rows = BuildEventRows(events, gregYear);
+    int footerH = showFooter ? (H * 4 / 100 + 4) : 0;
+    int contentBottom = y0 + H - footerH;
+    int rowsPerPage = (contentBottom - y) / (rowH + 2);
+    if (rowsPerPage < 1) rowsPerPage = 1;
+    int startIdx = pageIndex * rowsPerPage;
+    int endIdx   = min((int)rows.size(), startIdx + rowsPerPage);
+
+    pDC->SelectObject(&fontRow);
+    bool altRow = false;
+    for (int i = startIdx; i < endIdx; ++i)
+    {
+        const auto& r = rows[i];
+        if (y + rowH > contentBottom) break;
+
+        if (altRow)
+            pDC->FillSolidRect(CRect(x0, y, x0+W, y+rowH), RGB(245, 247, 255));
+
+        // Gregorian date
+        CString gs; gs.Format(L"%s %d, %d",
+            GregorianMonthName(r.greg.month).c_str(), r.greg.day, r.greg.year);
+        pDC->SetTextColor(RGB(50, 50, 50));
+        pDC->DrawText(gs, CRect(colGreg, y, colGreg+wGreg, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+
+        // Hebrew date
+        bool leap = IsHebrewLeapYear(r.heb.year);
+        CString hs; hs.Format(L"%d %s %d",
+            r.heb.day, HebrewMonthName(r.heb.month, leap).c_str(), r.heb.year);
+        pDC->SetTextColor(RGB(30, 30, 180));
+        pDC->DrawText(hs, CRect(colHeb, y, colHeb+wHeb, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+
+        // Type
+        pDC->SetTextColor(RGB(100, 60, 140));
+        pDC->DrawText(r.typeStr.c_str(), -1, CRect(colType, y, colType+wType, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+
+        // Name
+        pDC->SetTextColor(RGB(20, 20, 20));
+        pDC->DrawText(r.name.c_str(), -1, CRect(colName, y, colName+wName, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE|DT_END_ELLIPSIS);
+
+        y += rowH + 2;
+        altRow = !altRow;
+    }
+
+    if (rows.empty())
+    {
+        pDC->SetTextColor(RGB(120, 120, 120));
+        pDC->SelectObject(&fontRow);
+        pDC->DrawText(L"No events found for this year.", CRect(x0+8, y, x0+W-8, y+rowH*3), DT_LEFT|DT_TOP|DT_WORDBREAK);
+    }
+
+    // Footer
+    if (showFooter)
+    {
+        int fy = y0 + H - H * 4 / 100;
+        CPen penLine(PS_SOLID, 1, RGB(180, 180, 180));
+        CPen* pOld = pDC->SelectObject(&penLine);
+        pDC->MoveTo(x0, fy); pDC->LineTo(x0+W, fy);
+        pDC->SelectObject(pOld);
+        fy += 3;
+        CFont fontFoot;
+        fontFoot.CreateFont(-(H*22/1000), 0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+        pDC->SelectObject(&fontFoot);
+        pDC->SetTextColor(RGB(120,120,120));
+        CString pg; pg.Format(L"Page %d of %d", pageIndex+1, totalPages);
+        pDC->DrawText(L"WinLuach - Hebrew Calendar", CRect(x0, fy, x0+W, y0+H), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        pDC->DrawText(pg, CRect(x0, fy, x0+W-4, y0+H), DT_RIGHT|DT_TOP|DT_SINGLELINE);
+    }
+}
+
+// Year-picker + print dialog for events list
+bool DoPrintEventsList(CMainFrame* pFrame)
+{
+    if (!pFrame) return false;
+    const auto& events = theApp.m_settings.userEvents;
+
+    // Simple year-picker dialog
+    int chosenYear = pFrame->m_today.year;
+    {
+        struct YearDlg : public CDialog
+        {
+            int year;
+            CEdit m_edit;
+            CSpinButtonCtrl m_spin;
+            YearDlg(int y, CWnd* p) : CDialog(), year(y) { m_pParentWnd = p; }
+            INT_PTR DoModal() override
+            {
+                struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[24]; } b = {};
+                b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_SETFONT;
+                b.t.cx = 140; b.t.cy = 60;
+                wcscpy_s(b.title, L"Choose Year");
+                return InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd);
+            }
+            BOOL OnInitDialog() override
+            {
+                CDialog::OnInitDialog();
+                SetWindowText(L"Choose Year");
+                CRect rc; GetClientRect(&rc);
+                int bh = rc.Height()*40/100;
+                int by = (rc.Height() - bh*2 - 4) / 2;
+                int ew = 60, sw = 16, ex = (rc.Width()-ew-sw)/2;
+                m_edit.Create(WS_CHILD|WS_VISIBLE|WS_BORDER|ES_NUMBER, CRect(ex,by,ex+ew,by+bh), this, 100);
+                m_spin.Create(WS_CHILD|WS_VISIBLE|UDS_SETBUDDYINT|UDS_ALIGNRIGHT|UDS_ARROWKEYS,
+                    CRect(ex+ew,by,ex+ew+sw,by+bh), this, 101);
+                m_spin.SetBuddy(&m_edit);
+                m_spin.SetRange32(1, 9999);
+                m_spin.SetPos32(year);
+                CString s; s.Format(L"%d", year);
+                m_edit.SetWindowText(s);
+                CButton* ok = new CButton();
+                ok->Create(L"Print...", WS_CHILD|WS_VISIBLE|BS_DEFPUSHBUTTON,
+                    CRect(rc.Width()/2-28, by+bh+4, rc.Width()/2+28, by+bh*2+4), this, IDOK);
+                return TRUE;
+            }
+            void OnOK() override
+            {
+                CString s; m_edit.GetWindowText(s);
+                year = _wtoi(s);
+                if (year < 1) year = 1;
+                CDialog::OnOK();
+            }
+        } dlg(chosenYear, pFrame);
+        if (dlg.DoModal() != IDOK) return false;
+        chosenYear = dlg.year;
+    }
+
+    // Estimate total pages using approximate portrait page dimensions (8.5"x11" at 100dpi)
+    auto rows = BuildEventRows(events, chosenYear);
+    int totalPages = 1;
+    {
+        int approxH = 1100;
+        float mTop = 0.75f, mBot = 0.75f;
+        int contentH = approxH - (int)(approxH * mTop / 11.0f) - (int)(approxH * mBot / 11.0f);
+        int fRow = -(contentH * 24/1000); if (fRow > -6) fRow = -6;
+        int hdrH = contentH * 8 / 100;
+        int rowH  = -fRow + 4;
+        int firstRowY = hdrH + 2 + rowH + 4 + 2;
+        int footerH = contentH * 4 / 100 + 4;
+        int rpp = (contentH - firstRowY - footerH) / (rowH + 2); if (rpp < 1) rpp = 1;
+        totalPages = rows.empty() ? 1 : ((int)rows.size() + rpp - 1) / rpp;
+    }
+
+    struct CEventsSetupDlg : public CDialog
+    {
+        std::vector<UserEventEntry> evts;
+        int                         year;
+        int                         totalPgs;
+        SimplePageOpts              opts;
+        CButton m_radPortrait, m_radLandscape;
+        CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
+        CButton m_btnPreview, m_chkFooter;
+        CWnd*   m_pOwner;
+
+        enum {
+            IDC_EP_PORT    = 260,
+            IDC_EP_LAND    = 261,
+            IDC_EP_TOP     = 262,
+            IDC_EP_BOT     = 263,
+            IDC_EP_LEFT    = 264,
+            IDC_EP_RIGHT   = 265,
+            IDC_EP_PREVIEW = 266,
+            IDC_EP_FOOTER  = 267,
+        };
+
+        CEventsSetupDlg(const std::vector<UserEventEntry>& e, int y, int tp, CWnd* p)
+            : CDialog(), evts(e), year(y), totalPgs(tp), m_pOwner(p)
+        { m_pParentWnd = p; }
+
+        INT_PTR DoModal() override
+        {
+            struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[32]; } b = {};
+            b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_SETFONT;
+            b.t.cx = 220; b.t.cy = 180;
+            wcscpy_s(b.title, L"Print Events List");
+            return InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd);
+        }
+        BOOL OnInitDialog() override
+        {
+            CDialog::OnInitDialog();
+            SetWindowText(L"Print Events List");
+            CRect rc; GetClientRect(&rc);
+            int lh = 16, pad = 8, ex = pad, ey = pad;
+
+            m_radPortrait .Create(L"Portrait",  WS_CHILD|WS_VISIBLE|BS_AUTORADIOBUTTON|WS_GROUP,
+                CRect(ex,ey,ex+70,ey+lh), this, IDC_EP_PORT);
+            m_radLandscape.Create(L"Landscape", WS_CHILD|WS_VISIBLE|BS_AUTORADIOBUTTON,
+                CRect(ex+74,ey,ex+160,ey+lh), this, IDC_EP_LAND);
+            m_radPortrait.SetCheck(BST_CHECKED);
+            ey += lh+6;
+
+            auto makeRow = [&](const wchar_t* lbl, CEdit& ed, float v) {
+                CStatic* s = new CStatic();
+                s->Create(lbl, WS_CHILD|WS_VISIBLE, CRect(ex,ey,ex+55,ey+lh), this, 0);
+                CString vs; vs.Format(L"%.2f", v);
+                ed.Create(WS_CHILD|WS_VISIBLE|WS_BORDER,
+                    CRect(ex+58,ey,ex+100,ey+lh), this, 0);
+                ed.SetWindowText(vs);
+                ey += lh+4;
+            };
+            makeRow(L"Top margin:",   m_editTop,   0.75f);
+            makeRow(L"Bottom margin:",m_editBot,   0.75f);
+            makeRow(L"Left margin:",  m_editLeft,  0.50f);
+            makeRow(L"Right margin:", m_editRight, 0.50f);
+
+            m_chkFooter.Create(L"Show footer", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex,ey,ex+120,ey+lh), this, IDC_EP_FOOTER);
+            m_chkFooter.SetCheck(BST_CHECKED);
+            ey += lh+8;
+
+            m_btnPreview.Create(L"Preview", WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
+                CRect(ex,ey,ex+60,ey+20), this, IDC_EP_PREVIEW);
+            CButton* ok = new CButton();
+            ok->Create(L"Print", WS_CHILD|WS_VISIBLE|BS_DEFPUSHBUTTON,
+                CRect(ex+64,ey,ex+124,ey+20), this, IDOK);
+            CButton* cancel = new CButton();
+            cancel->Create(L"Cancel", WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
+                CRect(ex+128,ey,ex+188,ey+20), this, IDCANCEL);
+            return TRUE;
+        }
+
+        void ReadOpts()
+        {
+            opts.landscape = (m_radLandscape.GetSafeHwnd() && m_radLandscape.GetCheck() == BST_CHECKED);
+            auto getF = [](CEdit& e) -> float {
+                CString s; e.GetWindowText(s); float v = (float)_wtof(s);
+                return (v > 0.0f && v < 3.0f) ? v : 0.5f;
+            };
+            opts.mTop   = getF(m_editTop);
+            opts.mBot   = getF(m_editBot);
+            opts.mLeft  = getF(m_editLeft);
+            opts.mRight = getF(m_editRight);
+        }
+
+        void OnPreview()
+        {
+            ReadOpts();
+            bool sf = (m_chkFooter.GetSafeHwnd() && m_chkFooter.GetCheck() == BST_CHECKED);
+            auto& ev2 = evts; int yr = year; int tp = totalPgs;
+            PageRenderFn fn = [ev2,yr,tp,sf](CDC* dc, const CRect& rc, bool /*ignored*/) {
+                DrawEventsListPage(dc, rc, ev2, yr, 0, tp, sf);
+            };
+            CSimplePreviewDlg prev(fn, L"WinLuach Events", !opts.landscape, sf, m_pParentWnd);
+            prev.DoModal();
+        }
+
+        LRESULT WindowProc(UINT msg, WPARAM wp, LPARAM lp) override
+        {
+            if (msg == WM_COMMAND && LOWORD(wp) == IDC_EP_PREVIEW)
+            {
+                OnPreview();
+                return 0;
+            }
+            return CDialog::WindowProc(msg, wp, lp);
+        }
+
+        void OnOK() override
+        {
+            ReadOpts();
+            bool sf = (m_chkFooter.GetSafeHwnd() && m_chkFooter.GetCheck() == BST_CHECKED);
+
+            CPrintDialog pd(FALSE);
+            pd.m_pd.Flags |= PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS;
+            if (pd.DoModal() != IDOK) { CDialog::OnCancel(); return; }
+            HDC hDC = pd.GetPrinterDC();
+            if (!hDC) { CDialog::OnCancel(); return; }
+
+            CDC dc; dc.Attach(hDC);
+            int pw = dc.GetDeviceCaps(HORZRES);
+            int ph = dc.GetDeviceCaps(VERTRES);
+            int dpiX = dc.GetDeviceCaps(LOGPIXELSX);
+            int dpiY = dc.GetDeviceCaps(LOGPIXELSY);
+
+            int mL = (int)(opts.mLeft  * dpiX);
+            int mR = (int)(opts.mRight * dpiX);
+            int mT = (int)(opts.mTop   * dpiY);
+            int mB = (int)(opts.mBot   * dpiY);
+
+            DOCINFOW di = {}; di.cbSize = sizeof(di);
+            CString docName; docName.Format(L"WinLuach Events %d", year);
+            di.lpszDocName = docName;
+            dc.StartDoc(&di);
+
+            auto& ev2 = evts; int yr = year;
+
+            // Recompute total pages on the actual printer DC
+            {
+                int fRow = -(ph * 24/1000); if (fRow > -6) fRow = -6;
+                int hdrH = ph * 8 / 100;
+                int rowH  = -fRow + 4;
+                int firstRowY = hdrH + 2 + rowH + 4 + 2;
+                int footerH = sf ? (ph * 4/100 + 4) : 0;
+                int usable  = ph - mT - mB - firstRowY - footerH;
+                int rpp = usable / (rowH + 2); if (rpp < 1) rpp = 1;
+                auto rows2 = BuildEventRows(ev2, yr);
+                totalPgs = rows2.empty() ? 1 : ((int)rows2.size() + rpp - 1) / rpp;
+            }
+
+            int tp2 = totalPgs;
+            for (int pg = 0; pg < tp2; ++pg)
+            {
+                dc.StartPage();
+                CRect rcPage(mL, mT, pw-mR, ph-mB);
+                DrawEventsListPage(&dc, rcPage, ev2, yr, pg, tp2, sf);
+                dc.EndPage();
+            }
+            dc.EndDoc();
+            dc.Detach(); ::DeleteDC(hDC);
+            CDialog::OnOK();
+        }
+
+    };
+
+    CEventsSetupDlg dlg(events, chosenYear, totalPages, pFrame);
+    dlg.DoModal();
+    return true;
+}
+
 bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame, uint32_t colMask)
 {
     bool u24 = pFrame ? pFrame->m_use24hr : true;
@@ -1282,7 +1746,7 @@ INT_PTR CCalPrintDlg::DoModal()
     buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
-    buf.t.cy     = 256;
+    buf.t.cy     = 356;
     wcscpy_s(buf.title, L"Print Calendar");
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -1306,7 +1770,8 @@ BOOL CCalPrintDlg::OnInitDialog()
         m_opts.mBot          = ps.printMarginBot;
         m_opts.mLeft         = ps.printMarginLeft;
         m_opts.mRight        = ps.printMarginRight;
-        m_opts.includeZmanim = ps.printWeeklyZmanim;
+        m_opts.includeZmanim  = ps.printWeeklyZmanim;
+        m_opts.zmanimColumns  = ps.printZmanimColMask;
     }
 
     CRect rcClient;
@@ -1395,7 +1860,34 @@ BOOL CCalPrintDlg::OnInitDialog()
         CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_ZMANIM);
     m_chkZmanim.SetFont(pF);
     m_chkZmanim.SetCheck(m_opts.includeZmanim ? BST_CHECKED : BST_UNCHECKED);
-    y += 26;
+    y += 24;
+
+    // ── Zmanim column selection ──────────────────────────────────────────────
+    static const wchar_t* kColNames[15] = {
+        L"Alos", L"Misheyakir", L"Netz",
+        L"Shma MA", L"Shma GRA",
+        L"Tfla MA", L"Tfla GRA",
+        L"Chatzos", L"Mn. Gedola", L"Mn. Ketana",
+        L"Plag", L"Candle", L"Shkia", L"Tzeis", L"Sha'a"
+    };
+    mkStatic(L"Zmanim columns:", 20, y, 120, 16); y += 18;
+    {
+        int colsPerRow = 5;
+        int chkW = (W - 24) / colsPerRow;
+        for (int i = 0; i < 15; i++)
+        {
+            int col = i % colsPerRow;
+            int row = i / colsPerRow;
+            int cx = 20 + col * chkW;
+            int cy2 = y + row * 21;
+            m_chkCol[i].Create(kColNames[i],
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(cx, cy2, cx + chkW - 4, cy2 + 18), this, IDC_PD_COL_0 + i);
+            m_chkCol[i].SetFont(pF);
+            m_chkCol[i].SetCheck((m_opts.zmanimColumns >> i) & 1 ? BST_CHECKED : BST_UNCHECKED);
+        }
+    }
+    y += 3 * 21 + 8;
 
     // ── Buttons ──────────────────────────────────────────────────────────────
     int btnY = H - 36;
@@ -1432,6 +1924,11 @@ void CCalPrintDlg::ReadControls()
     m_opts.landscape     = (m_radLandscape.GetCheck() == BST_CHECKED);
     m_opts.includeZmanim = (m_chkZmanim.GetCheck()    == BST_CHECKED);
 
+    m_opts.zmanimColumns = 0;
+    for (int i = 0; i < 15; i++)
+        if (m_chkCol[i].GetCheck() == BST_CHECKED)
+            m_opts.zmanimColumns |= (1u << i);
+
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
         float v = (float)_wtof(s);
@@ -1456,7 +1953,8 @@ static void SavePrintOptsToSettings(const CalPrintOptions& opts)
     ps.printMarginBot    = opts.mBot;
     ps.printMarginLeft   = opts.mLeft;
     ps.printMarginRight  = opts.mRight;
-    ps.printWeeklyZmanim = opts.includeZmanim;
+    ps.printWeeklyZmanim  = opts.includeZmanim;
+    ps.printZmanimColMask = opts.zmanimColumns;
     SaveSettings(ps);
 }
 
