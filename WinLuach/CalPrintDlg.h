@@ -46,6 +46,9 @@ struct CalPrintOptions
     uint32_t zmanimColumns  = 0x7FFF;  // bitmask: which of 15 columns to include
 };
 
+// Render function type for single-page prints: DC, page rect, showFooter.
+using PageRenderFn = std::function<void(CDC*, const CRect&, bool)>;
+
 // ── Free functions ────────────────────────────────────────────────────────────
 
 // Renders one calendar month nicely to any DC, filling rcPage.
@@ -63,16 +66,18 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame);
 
 // Low-level single-page print: shows CPrintDialog and invokes render. Returns false if cancelled.
 bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
-                 std::function<void(CDC*, const CRect&)> render);
+                 PageRenderFn render, bool showFooter = true);
 
 // Renders a daily zmanim table for one month. colMask picks columns; use24hr controls time format.
 void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                          int year, int month, CMainFrame* pFrame,
-                         uint32_t colMask = 0x7FFF, bool use24hr = true);
+                         uint32_t colMask = 0x7FFF, bool use24hr = true,
+                         bool showFooter = true);
 
 // Renders one day's details (holidays, learning, zmanim) to any DC.
 void DrawDayPage(CDC* pDC, const CRect& rcPage,
-                 const GregorianDate& g, CMainFrame* pFrame);
+                 const GregorianDate& g, CMainFrame* pFrame,
+                 bool showFooter = true);
 
 // Shows CPrintDialog and prints a zmanim-month page. Returns false if cancelled.
 bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame,
@@ -130,7 +135,7 @@ private:
 class CSimplePageSetupDlg : public CDialog
 {
 public:
-    CSimplePageSetupDlg(std::function<void(CDC*, const CRect&)> render,
+    CSimplePageSetupDlg(PageRenderFn render,
                         const wchar_t* docName, bool defaultLandscape,
                         CWnd* pParent = nullptr);
     virtual INT_PTR DoModal() override;
@@ -143,13 +148,14 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
-    std::function<void(CDC*, const CRect&)> m_render;
-    std::wstring m_docName;
+    PageRenderFn   m_render;
+    std::wstring   m_docName;
     SimplePageOpts m_opts;
 
     CButton m_radPortrait, m_radLandscape;
     CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
     CButton m_btnPreview;
+    CButton m_chkFooter;
 
     enum {
         IDC_SPS_RAD_PORT    = 240,
@@ -159,6 +165,7 @@ private:
         IDC_SPS_EDT_LEFT    = 244,
         IDC_SPS_EDT_RIGHT   = 245,
         IDC_SPS_BTN_PREVIEW = 246,
+        IDC_SPS_CHK_FOOTER  = 247,
     };
 
     void ReadControls();
@@ -169,9 +176,10 @@ private:
 class CSimplePreviewDlg : public CDialog
 {
 public:
-    CSimplePreviewDlg(std::function<void(CDC*, const CRect&)> render,
+    // render receives (DC, pageRect, showFooter)
+    CSimplePreviewDlg(PageRenderFn render,
                       const wchar_t* docName, bool portrait,
-                      CWnd* pParent = nullptr);
+                      bool showFooter = true, CWnd* pParent = nullptr);
     virtual INT_PTR DoModal() override;
 
 protected:
@@ -184,9 +192,10 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
-    std::function<void(CDC*, const CRect&)> m_render;
+    PageRenderFn m_render;
     std::wstring m_docName;
     bool         m_portrait;
+    bool         m_showFooter;
     CButton      m_btnPrint, m_btnClose;
     enum { IDC_SP_PRINT = 230 };
 };

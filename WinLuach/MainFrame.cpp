@@ -1478,12 +1478,12 @@ protected:
     afx_msg void OnPrint() {
         theApp.m_settings.printZmanimColMask = ReadColMask();
         SaveSettings(theApp.m_settings);
-        SimplePrint(L"WinLuach Zmanim", ReadPageOpts(), MakeRender());
+        SimplePrint(L"WinLuach Zmanim", ReadPageOpts(), MakeRender(), true);
     }
 
     afx_msg void OnPreview() {
         SimplePageOpts opts = ReadPageOpts();
-        CSimplePreviewDlg prev(MakeRender(), L"WinLuach Zmanim", !opts.landscape, this);
+        CSimplePreviewDlg prev(MakeRender(), L"WinLuach Zmanim", !opts.landscape, true, this);
         prev.DoModal();
     }
 
@@ -1531,13 +1531,13 @@ private:
         return opts;
     }
 
-    std::function<void(CDC*, const CRect&)> MakeRender() {
+    PageRenderFn MakeRender() {
         uint32_t mask = ReadColMask();
         bool u24 = (m_rad24hr.GetSafeHwnd() && m_rad24hr.GetCheck() == BST_CHECKED);
         int yr = m_year, mo = m_month;
         CMainFrame* pF = m_pFrame;
-        return [=](CDC* pDC, const CRect& rc) {
-            DrawZmanimMonthPage(pDC, rc, yr, mo, pF, mask, u24);
+        return [=](CDC* pDC, const CRect& rc, bool sf) {
+            DrawZmanimMonthPage(pDC, rc, yr, mo, pF, mask, u24, sf);
         };
     }
 };
