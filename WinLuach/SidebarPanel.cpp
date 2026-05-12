@@ -363,25 +363,42 @@ void CSidebarPanel::OnPaint()
     // Molad box
     {
         const HebrewDate& hm = m_pFrame->m_selectedHebrew;
-        int Y = hm.year;
-        bool isLeap = IsHebrewLeapYear(Y);
-        // Offset of current month from Tishrei (0-based)
-        long monthOffset;
-        if (!isLeap)
-            monthOffset = (hm.month <= ADAR) ? (hm.month - 1) : (hm.month - 2);
-        else
-            monthOffset = hm.month - 1;
-        long long completedYears = (long long)(Y - 1);
-        long long leapsBeforeY   = (7LL * completedYears + 1LL) / 19LL;
-        long long M              = 12LL * completedYears + leapsBeforeY + monthOffset;
-        long long totalParts     = M * 765433LL + 57444LL;
-        int dayIdx = (int)((totalParts / 25920LL) % 7LL);
-        int hour   = (int)((totalParts % 25920LL) / 1080LL);
-        int parts  = (int)(totalParts % 1080LL);
         static const wchar_t* kDayNames[7] = {
             L"Shabbos", L"Sunday", L"Monday", L"Tuesday",
             L"Wednesday", L"Thursday", L"Friday"
         };
+
+        auto moladText = [&](int year, int month) -> CString {
+            bool isLeap = IsHebrewLeapYear(year);
+            long monthOffset = isLeap
+                ? (month - 1)
+                : ((month <= ADAR) ? (month - 1) : (month - 2));
+            long long completedYears = (long long)(year - 1);
+            long long leapsBeforeY   = (7LL * completedYears + 1LL) / 19LL;
+            long long M              = 12LL * completedYears + leapsBeforeY + monthOffset;
+            long long totalParts     = M * 765433LL + 57444LL;
+            int dayIdx = (int)((totalParts / 25920LL) % 7LL);
+            int hour   = (int)((totalParts % 25920LL) / 1080LL);
+            int parts  = (int)(totalParts % 1080LL);
+            int mins   = parts / 18;
+            int chalak = parts % 18;
+            int hr12   = hour % 12; if (hr12 == 0) hr12 = 12;
+            const wchar_t* ampm = (hour < 12) ? L"am" : L"pm";
+            CString text;
+            text.Format(L"Molad %s %d: %s %d:%02d %s and %d chalakim",
+                HebrewMonthName(month, isLeap).c_str(), year,
+                kDayNames[dayIdx], hr12, mins, ampm, chalak);
+            return text;
+        };
+
+        int nextYear = hm.year;
+        int nextMonth = hm.month + 1;
+        if (nextMonth > MonthsInHebrewYear(hm.year))
+        {
+            nextMonth = TISHREI;
+            nextYear++;
+        }
+
         DrawSep(&memDC, x, yOff, w);
         CRect rcMHdr(0, yOff - 2, cx - 1, yOff + 20);
         memDC.FillSolidRect(rcMHdr, CLR_HEADER_BG);
@@ -390,19 +407,13 @@ void CSidebarPanel::OnPaint()
         CRect rcMHdrTxt = rcMHdr; rcMHdrTxt.left += 6;
         memDC.DrawText(L"Molad", rcMHdrTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         yOff += 26;
-        int mins   = parts / 18;
-        int chalak = parts % 18;
-        int hr12   = hour % 12; if (hr12 == 0) hr12 = 12;
-        const wchar_t* ampm = (hour < 12) ? L"am" : L"pm";
-        CString moladStr;
-        moladStr.Format(L"%s %d:%02d %s and %d chalakim",
-            kDayNames[dayIdx], hr12, mins, ampm, chalak);
-        // Also show civil time approximation: epoch = Friday, 6 Oct 3761 BCE
-        // Skip civil time for now; just show traditional
         memDC.SelectObject(&m_pFrame->m_fontNormal);
         memDC.SetTextColor(RGB(60, 40, 110));
         CRect rcMolad(x, yOff, x + w, yOff + 16);
-        memDC.DrawText(moladStr, rcMolad, DT_LEFT | DT_TOP | DT_SINGLELINE);
+        memDC.DrawText(moladText(hm.year, hm.month), rcMolad, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        yOff += 18;
+        CRect rcMoladNext(x, yOff, x + w, yOff + 16);
+        memDC.DrawText(moladText(nextYear, nextMonth), rcMoladNext, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
         yOff += 20;
     }
 

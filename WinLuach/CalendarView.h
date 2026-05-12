@@ -55,6 +55,8 @@ protected:
     // MFC message handlers
     afx_msg void OnPaint();
     afx_msg void OnLButtonDown(UINT nFlags, CPoint pt);
+    afx_msg void OnMouseMove(UINT nFlags, CPoint pt);
+    afx_msg void OnLButtonUp(UINT nFlags, CPoint pt);
     afx_msg void OnLButtonDblClk(UINT nFlags, CPoint pt);
     afx_msg void OnRButtonDown(UINT nFlags, CPoint pt);
     afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
@@ -101,6 +103,10 @@ private:
 
     std::vector<long> m_selectedJdns;
     int m_anchorIndex = -1;
+    bool m_dragSelecting = false;
+    bool m_dragMoved = false;
+    int  m_dragStartIndex = -1;
+    int  m_lastDragIndex = -1;
 
     DECLARE_MESSAGE_MAP()
 };

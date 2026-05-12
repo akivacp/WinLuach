@@ -27,6 +27,8 @@ class CCalendarView;
 class CSidebarPanel;
 class CZmanimPanel;
 class CSplitterBar;
+class CCountdownClockWnd;
+class COptionsDlg;
 
 struct UserEventInfo
 {
@@ -110,6 +112,7 @@ struct CalendarEventLine
 #define ID_HEB_CIVIL_TOGGLE 1035
 #define ID_FILE_PRINT_EVENTS 1036
 #define ID_HELP_CONTENTS    1037
+#define ID_VIEW_COUNTDOWN   1038
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -122,6 +125,7 @@ struct CalendarEventLine
 
 class CMainFrame : public CFrameWnd
 {
+    friend class CCountdownClockWnd;
 public:
     CMainFrame();
     virtual ~CMainFrame();
@@ -146,6 +150,8 @@ public:
 
     // Opens the options/preferences dialog
     void OnPickOptions();
+    void ApplyAndSaveSettings(const AppSettings& s);
+    void OnOptionsDialogClosed(COptionsDlg* dlg);
 
     std::vector<CalendarEventLine> GetCalendarEventLinesForDate(const GregorianDate& g) const;
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
@@ -287,6 +293,7 @@ protected:
     afx_msg void OnViewZoomIn();
     afx_msg void OnViewZoomOut();
     afx_msg void OnViewZoomReset();
+    afx_msg void OnViewCountdownClock();
     afx_msg void OnCalGoTo();
     afx_msg void OnCalEvents();
     afx_msg void OnFileExportEvents();
@@ -311,6 +318,7 @@ protected:
     void ChangeMonth(int deltaMonths);
     void ChangeYear(int deltaYears);
     void RefreshWebCalendarEvents();
+    void CheckZmanNotifications();
     bool ShouldHideToTrayOnClose() const;
     void HideToTray();
     void AddTrayIcon();
@@ -344,12 +352,15 @@ protected:
     CSplitterBar*  m_pSplitSidebar = nullptr;
     CSplitterBar*  m_pSplitZmanim  = nullptr;
     CButton        m_btnSidebarToggle;
+    CCountdownClockWnd* m_pCountdownClock = nullptr;
+    COptionsDlg*    m_pOptionsDlg = nullptr;
 
     NOTIFYICONDATA m_trayIcon = {};
     bool m_isInTray = false;
     HICON m_hTrayDateIcon = nullptr;
     std::vector<UserEventInfo> m_webEvents;
     std::wstring               m_icsPath;
+    std::vector<std::wstring>  m_sentZmanNotificationKeys;
 
     DECLARE_MESSAGE_MAP()
 };
