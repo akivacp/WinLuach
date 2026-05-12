@@ -32,7 +32,7 @@ private:
 
     CMainFrame* m_pFrame  = nullptr;
     int         m_yearHdrY = -1;   // Y of Year details header (set during paint)
-    float       m_splitFrac = 0.5f; // fraction of height where year section begins
+    float       m_splitFrac = 0.65f; // fraction of height where year section begins
     bool        m_dragging  = false;
     int         m_dragStartY = 0;
 

@@ -102,11 +102,12 @@ struct AppSettings
     // --- Print options (persisted across sessions) ---
     bool         printLandscape    = true;
     int          printRange        = 0;     // 0=month, 1=year, 2=next12
-    float        printMarginTop    = 0.75f;
-    float        printMarginBot    = 0.75f;
-    float        printMarginLeft   = 0.50f;
-    float        printMarginRight  = 0.50f;
+    float        printMarginTop    = 0.0f;
+    float        printMarginBot    = 0.0f;
+    float        printMarginLeft   = 0.0f;
+    float        printMarginRight  = 0.0f;
     uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
+    bool         printShowFooter   = true;
 
     // --- Zmanim shita ---
     // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90
@@ -115,6 +116,9 @@ struct AppSettings
     int          alotShita   = 0;
     // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop
     int          tzeitShita  = 0;
+
+    // --- Zmanim display ---
+    bool         showChatzosOnFasts = false; // show chatzos on public fast day cells
 
     // --- Layout (splitters) ---
     int          sidebarWidth     = 190;   // persisted splitter position
@@ -163,3 +167,6 @@ bool ExportEvents(const std::vector<UserEventEntry>& events, const std::wstring&
 
 // Imports user events from a file. Appends to existing list. Returns count added.
 int  ImportEvents(std::vector<UserEventEntry>& events, const std::wstring& path);
+
+// Parses user events from a file without appending to any list. Returns parsed events.
+std::vector<UserEventEntry> ParseEventsFromFile(const std::wstring& path);
