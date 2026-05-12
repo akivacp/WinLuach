@@ -15,6 +15,7 @@
 #include "pch.h"
 #include "HebrewDate.h"
 #include "HolidayEngine.h"
+#include "Settings.h"
 #include <functional>
 
 class CMainFrame;
@@ -86,6 +87,15 @@ bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame,
 // Shows CPrintDialog and prints a single day detail page.
 bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame);
 
+// Renders a list of events for a year to any DC (portrait, multi-page aware via pageIndex/totalPages).
+void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
+                        const std::vector<UserEventEntry>& events,
+                        int gregYear, int pageIndex, int totalPages,
+                        bool showFooter = true);
+
+// Shows a year-picker + page setup dialog and prints all event list pages.
+bool DoPrintEventsList(CMainFrame* pFrame);
+
 // ── Print options dialog ──────────────────────────────────────────────────────
 
 class CCalPrintDlg : public CDialog
@@ -112,6 +122,7 @@ private:
     CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
     CButton m_chkZmanim;
     CButton m_btnPreview;
+    CButton m_chkCol[15];
 
     enum {
         IDC_PD_RAD_MONTH   = 200,
@@ -125,6 +136,7 @@ private:
         IDC_PD_EDT_RIGHT   = 208,
         IDC_PD_BTN_PREVIEW = 210,
         IDC_PD_CHK_ZMANIM  = 211,
+        IDC_PD_COL_0       = 212,   // first of 15 column checkboxes (212..226)
     };
 
     void ReadControls();
