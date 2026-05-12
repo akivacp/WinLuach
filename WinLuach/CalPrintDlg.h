@@ -15,8 +15,20 @@
 #include "pch.h"
 #include "HebrewDate.h"
 #include "HolidayEngine.h"
+#include <functional>
 
 class CMainFrame;
+
+// ── Simple page options (orientation + margins, no range) ─────────────────────
+
+struct SimplePageOpts
+{
+    bool  landscape = false;
+    float mTop  = 0.75f;
+    float mBot  = 0.75f;
+    float mLeft = 0.50f;
+    float mRight= 0.50f;
+};
 
 // ── Print options ─────────────────────────────────────────────────────────────
 
@@ -30,7 +42,8 @@ struct CalPrintOptions
     float mBot          = 0.75f;
     float mLeft         = 0.50f;
     float mRight        = 0.50f;
-    bool  includeZmanim = false;
+    bool     includeZmanim  = false;
+    uint32_t zmanimColumns  = 0x7FFF;  // bitmask: which of 15 columns to include
 };
 
 // ── Free functions ────────────────────────────────────────────────────────────
@@ -47,6 +60,26 @@ std::vector<std::pair<int, int>> BuildPageList(
 
 // Shows CPrintDialog and prints all pages. Returns false if cancelled.
 bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame);
+
+// Low-level single-page print: shows CPrintDialog and invokes render. Returns false if cancelled.
+bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
+                 std::function<void(CDC*, const CRect&)> render);
+
+// Renders a daily zmanim table for one month. colMask picks columns; use24hr controls time format.
+void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
+                         int year, int month, CMainFrame* pFrame,
+                         uint32_t colMask = 0x7FFF, bool use24hr = true);
+
+// Renders one day's details (holidays, learning, zmanim) to any DC.
+void DrawDayPage(CDC* pDC, const CRect& rcPage,
+                 const GregorianDate& g, CMainFrame* pFrame);
+
+// Shows CPrintDialog and prints a zmanim-month page. Returns false if cancelled.
+bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame,
+                        uint32_t colMask = 0x7FFF);
+
+// Shows CPrintDialog and prints a single day detail page.
+bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame);
 
 // ── Print options dialog ──────────────────────────────────────────────────────
 
@@ -72,7 +105,6 @@ private:
     CButton m_radMonth, m_radYear, m_rad12;
     CButton m_radPortrait, m_radLandscape;
     CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
-    CButton m_chkPDF;
     CButton m_chkZmanim;
     CButton m_btnPreview;
 
@@ -86,12 +118,77 @@ private:
         IDC_PD_EDT_BOT     = 206,
         IDC_PD_EDT_LEFT    = 207,
         IDC_PD_EDT_RIGHT   = 208,
-        IDC_PD_CHK_PDF     = 209,
         IDC_PD_BTN_PREVIEW = 210,
         IDC_PD_CHK_ZMANIM  = 211,
     };
 
     void ReadControls();
+};
+
+// ── Page setup + preview dialog (for day details and zmanim-month prints) ─────
+
+class CSimplePageSetupDlg : public CDialog
+{
+public:
+    CSimplePageSetupDlg(std::function<void(CDC*, const CRect&)> render,
+                        const wchar_t* docName, bool defaultLandscape,
+                        CWnd* pParent = nullptr);
+    virtual INT_PTR DoModal() override;
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnPreview();
+    afx_msg void OnPrint();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    std::function<void(CDC*, const CRect&)> m_render;
+    std::wstring m_docName;
+    SimplePageOpts m_opts;
+
+    CButton m_radPortrait, m_radLandscape;
+    CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
+    CButton m_btnPreview;
+
+    enum {
+        IDC_SPS_RAD_PORT    = 240,
+        IDC_SPS_RAD_LAND    = 241,
+        IDC_SPS_EDT_TOP     = 242,
+        IDC_SPS_EDT_BOT     = 243,
+        IDC_SPS_EDT_LEFT    = 244,
+        IDC_SPS_EDT_RIGHT   = 245,
+        IDC_SPS_BTN_PREVIEW = 246,
+    };
+
+    void ReadControls();
+};
+
+// ── Single-page preview dialog (used for day and zmanim-month prints) ─────────
+
+class CSimplePreviewDlg : public CDialog
+{
+public:
+    CSimplePreviewDlg(std::function<void(CDC*, const CRect&)> render,
+                      const wchar_t* docName, bool portrait,
+                      CWnd* pParent = nullptr);
+    virtual INT_PTR DoModal() override;
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnPaint();
+    afx_msg BOOL OnEraseBkgnd(CDC* pDC);
+    afx_msg void OnPrint();
+    afx_msg void OnSize(UINT nType, int cx, int cy);
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    std::function<void(CDC*, const CRect&)> m_render;
+    std::wstring m_docName;
+    bool         m_portrait;
+    CButton      m_btnPrint, m_btnClose;
+    enum { IDC_SP_PRINT = 230 };
 };
 
 // ── Print-preview dialog ──────────────────────────────────────────────────────

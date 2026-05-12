@@ -13,6 +13,7 @@
 
 #include "pch.h"
 #include "OptionsDlg.h"
+#include "MainFrame.h"
 
 #define IDC_OPT_RAD_AMPM       301
 #define IDC_OPT_RAD_24HR       302
@@ -43,6 +44,10 @@
 #define IDC_OPT_CANDLE         331
 #define IDC_OPT_TRAY_COLOR     332
 #define IDC_OPT_MANAGE_CALS    333
+#define IDC_OPT_NOTIFY_PERSONAL 334
+#define IDC_OPT_NOTIFY_WEBCAL   335
+#define IDC_OPT_PREVIEW_NOTIFY  336
+#define IDC_OPT_SHOW_TRAY       337
 
 // =============================================================================
 // CWebCalDlg — inline multi-calendar manager
@@ -87,6 +92,8 @@ protected:
         m_editUrl.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
             CRect(8, H - 68, W - 8, H - 48), this, 402);
         m_editUrl.SetFont(pF);
+        ::SendMessage(m_editUrl.GetSafeHwnd(), EM_SETCUEBANNER, TRUE,
+            (LPARAM)L"Paste calendar URL here (https://...)  then click Add");
 
         auto mkBtn = [&](const wchar_t* t, int x, int w, UINT id) {
             CButton* b = new CButton;
@@ -194,8 +201,9 @@ BEGIN_MESSAGE_MAP(CWebCalDlg, CDialog)
 END_MESSAGE_MAP()
 
 BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
-    ON_BN_CLICKED(IDC_OPT_TRAY_COLOR, &COptionsDlg::OnTrayTextColor)
-    ON_BN_CLICKED(IDC_OPT_MANAGE_CALS, &COptionsDlg::OnManageCals)
+    ON_BN_CLICKED(IDC_OPT_TRAY_COLOR,      &COptionsDlg::OnTrayTextColor)
+    ON_BN_CLICKED(IDC_OPT_MANAGE_CALS,     &COptionsDlg::OnManageCals)
+    ON_BN_CLICKED(IDC_OPT_PREVIEW_NOTIFY,  &COptionsDlg::OnPreviewNotification)
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -228,7 +236,7 @@ INT_PTR COptionsDlg::DoModal()
     buf.t.x = 0;
     buf.t.y = 0;
     buf.t.cx = 430;
-    buf.t.cy = 445;
+    buf.t.cy = 502;
     wcscpy_s(buf.title, L"Options and Preferences");
 
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd))
@@ -311,12 +319,8 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkDateTracking.SetFont(pFont);
     y += 25;
 
-    MakeCtrl(L"STATIC", L"Haftarah shita", 0, 18, y + 3, 82, 18, 340);
-    InitCombo(m_cmbHaftarah, 105, y, 140, IDC_OPT_HAFTARAH,
-        { L"Ashkenazi", L"Eidot Mizrach", L"Italian", L"Yemenite" },
-        max(0, min(3, m_current.haftarahShita)));
-    MakeCtrl(L"STATIC", L"Font size", 0, 255, y + 3, 65, 18, 341);
-    InitCombo(m_cmbFontSize, 325, y, 90, IDC_OPT_FONT_SIZE,
+    MakeCtrl(L"STATIC", L"Font size", 0, 18, y + 3, 65, 18, 341);
+    InitCombo(m_cmbFontSize, 88, y, 90, IDC_OPT_FONT_SIZE,
         { L"Tiny (13)", L"Normal (14)", L"Medium (15)", L"Large (16)",
           L"Larger (17)", L"Big (18)", L"Biggest (19)" },
         max(0, min(6, m_current.fontSize)));
@@ -397,8 +401,14 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Interface / tray
     MakeCtrl(L"BUTTON", L"Interface Preferences", BS_GROUPBOX,
-        8, y, W - 16, 46, 360);
+        8, y, W - 16, 68, 360);
     y += 18;
+
+    m_chkShowTrayIcon.Create(L"Always show tray icon",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(18, y, 200, y + 20), this, IDC_OPT_SHOW_TRAY);
+    m_chkShowTrayIcon.SetFont(pFont);
+    y += 22;
 
     m_chkMinimizeToTray.Create(L"Minimize to system tray",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -436,6 +446,26 @@ BOOL COptionsDlg::OnInitDialog()
     m_btnManageCals.SetFont(pFont);
     y += 32;
 
+    // Notifications
+    MakeCtrl(L"BUTTON", L"Notifications", BS_GROUPBOX, 8, y, W - 16, 58, 373);
+    y += 18;
+    MakeCtrl(L"STATIC", L"Events (birthdays, yahrzeits):", 0, 18, y + 3, 170, 18, 374);
+    InitCombo(m_cmbNotifyPersonal, 192, y, 110, IDC_OPT_NOTIFY_PERSONAL,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyPersonalEvents)));
+    y += 24;
+    MakeCtrl(L"STATIC", L"Web calendar events:", 0, 18, y + 3, 170, 18, 375);
+    InitCombo(m_cmbNotifyWebCal, 192, y, 110, IDC_OPT_NOTIFY_WEBCAL,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifyWebCalEvents)));
+
+    // "Test" button so user can preview what the selected style looks like
+    m_btnPreviewNotify.Create(L"Test Notification",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        CRect(316, y, 416, y+22), this, IDC_OPT_PREVIEW_NOTIFY);
+    m_btnPreviewNotify.SetFont(pFont);
+    y += 30;
+
     // OK / Cancel buttons
     CButton* btnOK = new CButton();
     btnOK->Create(L"OK",
@@ -465,6 +495,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkHalacha.SetCheck(m_current.showHalachaYomit ? BST_CHECKED : BST_UNCHECKED);
     m_chkMishna.SetCheck(m_current.showMishnaYomit ? BST_CHECKED : BST_UNCHECKED);
     m_chkTanach.SetCheck(m_current.showTanachYomi ? BST_CHECKED : BST_UNCHECKED);
+    m_chkShowTrayIcon.SetCheck(m_current.showTrayIcon ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeToTray.SetCheck(m_current.minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
     m_chkStartWithWindows.SetCheck(m_current.startWithWindows ? BST_CHECKED : BST_UNCHECKED);
@@ -501,9 +532,10 @@ void COptionsDlg::OnOK()
     m_result.showHalachaYomit = (m_chkHalacha.GetCheck() == BST_CHECKED);
     m_result.showMishnaYomit = (m_chkMishna.GetCheck() == BST_CHECKED);
     m_result.showTanachYomi = (m_chkTanach.GetCheck() == BST_CHECKED);
-    m_result.haftarahShita = m_cmbHaftarah.GetCurSel();
+    m_result.haftarahShita = m_current.haftarahShita;
     m_result.fontSize = max(0, min(6, m_cmbFontSize.GetCurSel()));
     m_result.language = 0;
+    m_result.showTrayIcon   = (m_chkShowTrayIcon.GetCheck()   == BST_CHECKED);
     m_result.minimizeToTray = (m_chkMinimizeToTray.GetCheck() == BST_CHECKED);
     m_result.minimizeTrayWhen = m_cmbTrayWhen.GetCurSel();
     m_result.minimizeOnStartup = (m_chkMinimizeOnStartup.GetCheck() == BST_CHECKED);
@@ -516,6 +548,9 @@ void COptionsDlg::OnOK()
     CString candle;
     m_cmbCandleMinutes.GetWindowText(candle);
     m_result.candleLightingMinutes = _wtoi(candle);
+
+    m_result.notifyPersonalEvents = max(0, m_cmbNotifyPersonal.GetCurSel());
+    m_result.notifyWebCalEvents   = max(0, m_cmbNotifyWebCal.GetCurSel());
 
     CDialog::OnOK();
 }
@@ -532,4 +567,30 @@ void COptionsDlg::OnManageCals()
     CWebCalDlg dlg(m_result.webCalendars, this);
     if (dlg.DoModal() == IDOK)
         m_result.webCalendars = dlg.calendars;
+}
+
+void COptionsDlg::OnPreviewNotification()
+{
+    // Pick the highest-priority style the user has enabled across both combos
+    int styleP = max(0, m_cmbNotifyPersonal.GetCurSel());
+    int styleW = max(0, m_cmbNotifyWebCal.GetCurSel());
+    int style  = max(styleP, styleW);
+
+    if (style == 0) {
+        MessageBox(
+            L"Both notification settings are set to Off.\n\n"
+            L"Change one to Toast, Popup, or Toast + Popup to see a sample.",
+            L"WinLuach – Notifications", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    CMainFrame* pFrame = (CMainFrame*)AfxGetMainWnd();
+    if (!pFrame) return;
+
+    std::wstring body =
+        L"Birthday: Moshe Levy\n"
+        L"Yahrzeit: Rivka Cohen (eve)\n"
+        L"Anniversary: Yitzchak & Sara";
+
+    pFrame->ShowEventNotification(L"Today's Events  —  Sample", body, style);
 }

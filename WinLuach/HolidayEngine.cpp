@@ -772,20 +772,21 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
 
     // How many Shabbosos from cycle start to our target Shabbos?
     long weeksDiff = (shabbosJDN - firstParashaJDN) / 7;
-    // Israel adjustment: after Shavuos, Israel reads 1 parasha ahead
-    // of Diaspora because Shavuos is 1 day in Israel (not 2).
-    // That extra day gives Israel an extra Shabbos parasha reading.
-    // Starting from the Shabbos after Shavuos, weeksDiff-- to shift
-    // Israel's schedule 1 week back relative to Diaspora's.
-    if (isIsrael && weeksDiff > 0)
+    // Diaspora adjustment: when 7 Sivan (Shavuos Day 2 for Diaspora) falls on
+    // Shabbos, Diaspora skips that parasha reading while Israel reads normally.
+    // From that Shabbos onward, Diaspora is one week behind, so weeksDiff--.
+    if (!isIsrael && weeksDiff > 0)
     {
-        // Find the Shabbos immediately after Shavuos (6 Sivan)
         HebrewDate shavuos(cycleYear, SIVAN, 6);
         long shavuosJDN = HebrewToJDN(shavuos);
-        long firstShabbosAfter = NextShabbos(shavuosJDN + 1);
-
-        if (shabbosJDN >= firstShabbosAfter)
-            weeksDiff--;
+        // 7 Sivan = shavuosJDN+1; DOW = (jdn+1)%7, so Shabbos when (shavuosJDN+2)%7==6
+        bool sevenSivanOnShabbos = ((shavuosJDN + 2) % 7 == 6);
+        if (sevenSivanOnShabbos)
+        {
+            long firstShabbosAfter = NextShabbos(shavuosJDN + 1);
+            if (shabbosJDN >= firstShabbosAfter)
+                weeksDiff--;
+        }
     }
 
     if (weeksDiff < 0)
