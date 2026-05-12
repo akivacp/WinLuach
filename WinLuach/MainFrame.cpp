@@ -3814,6 +3814,90 @@ void CMainFrame::SyncViewToSelected()
     m_viewHebrewMonth = m_selectedHebrew.month;
 }
 
+CString CMainFrame::BuildTrayTooltip()
+{
+    GregorianDate g = GetTodayGregorian();
+    HebrewDate hToday = CurrentHebrewDateForTray();
+    bool isDst = IsDST(g, m_location);
+    ZmanimResult z = CalculateZmanim(g, m_location, isDst);
+    z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
+
+    int zmanSh = max(0, min(2, m_zmanimShita));
+    TimeOfDay sofShemaTime   = (zmanSh == 1) ? z.sofShema_MA72     : (zmanSh == 2) ? z.sofShema_MA90     : z.sofShema_GRA;
+    TimeOfDay sofTefillaTime = (zmanSh == 1) ? z.sofTefilla_MA72   : (zmanSh == 2) ? z.sofTefilla_MA90   : z.sofTefilla_GRA;
+    TimeOfDay minchaGTime    = (zmanSh == 1) ? z.minchaGedola_MA72 : (zmanSh == 2) ? z.minchaGedola_MA90 : z.minchaGedola_GRA;
+    TimeOfDay minchaKTime    = (zmanSh == 1) ? z.minchaKetana_MA72 : (zmanSh == 2) ? z.minchaKetana_MA90 : z.minchaKetana_GRA;
+    TimeOfDay plagTime       = (zmanSh == 1) ? z.plagMincha_MA72   : (zmanSh == 2) ? z.plagMincha_MA90   : z.plagMincha_GRA;
+    double shaahMin          = (zmanSh == 1) ? z.shaahZmanit_MA72  : (zmanSh == 2) ? z.shaahZmanit_MA90  : z.shaahZmanit_GRA;
+
+    auto customBoundary = [&](bool morning, int mode, double value) -> TimeOfDay {
+        if (mode == 0)
+            return CalculateSunAtAngle(g, m_location, isDst, value, morning);
+        if (mode == 1)
+            return AddMinutes(morning ? z.hanetz : z.shkia, morning ? -(int)round(value) : (int)round(value));
+        return AddShaot(morning ? z.hanetz : z.shkia, shaahMin, (morning ? -1.0 : 1.0) * value / 60.0);
+    };
+
+    TimeOfDay alotTime = customBoundary(true, m_customAlotMode, m_customAlotValue);
+    TimeOfDay tzeitTime = customBoundary(false, m_customTzeitMode, m_customTzeitValue);
+
+    struct TooltipZman { int bit; const wchar_t* label; TimeOfDay time; };
+    std::vector<TooltipZman> items = {
+        { 0, L"Alos", alotTime },
+        { 1, L"Misheyakir", z.misheyakir_10 },
+        { 2, L"Netz", z.hanetz },
+        { 3, L"Sof Shema", sofShemaTime },
+        { 4, L"Sof Tefilla", sofTefillaTime },
+        { 5, L"Chatzos", z.chatzot },
+        { 6, L"Mincha Gedola", minchaGTime },
+        { 7, L"Mincha Ketana", minchaKTime },
+        { 8, L"Plag", plagTime },
+        { 9, L"Shkiah", z.shkia },
+        { 10, L"Tzais", tzeitTime },
+        { 11, L"Candles", z.candleLighting },
+    };
+
+    HebrewDate h = GregorianToHebrew(g);
+    auto hols = GetHolidays(h, m_isIsrael);
+    bool isFast = false;
+    for (const auto& ho : hols)
+        if (ho.flags & HOLIDAY_FAST) { isFast = true; break; }
+    if (isFast)
+        items.push_back({ 12, L"Fast ends", z.tzeit_GRA });
+
+    DayOfWeek dow = GetDayOfWeek(g);
+    bool isErevTishaBav = (h.month == AV && h.day == 8);
+    if (isErevTishaBav && dow != SHABBAT && dow != FRIDAY)
+        items.push_back({ 12, L"Fast begins", z.shkia });
+
+    bool isErevPesach = (h.month == NISSAN && h.day == 14);
+    if (isErevPesach && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0)
+    {
+        items.push_back({ 13, L"Eat chametz", AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA)) });
+        items.push_back({ 14, L"Burn chametz", AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA)) });
+    }
+
+    CString tip;
+    tip.Format(L"%d %s %d",
+        hToday.day,
+        HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
+        hToday.year);
+
+    uint32_t mask = theApp.m_settings.trayTooltipZmanimMask;
+    for (const auto& item : items)
+    {
+        if (!(mask & (1u << item.bit)) || !item.time.IsValid())
+            continue;
+        std::wstring time = FormatTime(item.time, m_use24hr);
+        CString line;
+        line.Format(L"\n%s: %s", item.label, time.c_str());
+        if (tip.GetLength() + line.GetLength() >= 120)
+            break;
+        tip += line;
+    }
+    return tip;
+}
+
 void CMainFrame::AddTrayIcon()
 {
     if (m_isInTray)
@@ -3831,12 +3915,8 @@ void CMainFrame::AddTrayIcon()
     HebrewDate hToday = CurrentHebrewDateForTray();
     m_hTrayDateIcon = CreateTrayDateIcon(hToday);
     m_trayIcon.hIcon = m_hTrayDateIcon ? m_hTrayDateIcon : AfxGetApp()->LoadIcon(IDI_WINLUACH);
-    CString tip;
-    tip.Format(L"%d %s %d",
-        hToday.day,
-        HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
-        hToday.year);
-    wcscpy_s(m_trayIcon.szTip, tip);
+    CString tip = BuildTrayTooltip();
+    wcsncpy_s(m_trayIcon.szTip, ARRAYSIZE(m_trayIcon.szTip), tip.GetString(), _TRUNCATE);
     Shell_NotifyIcon(NIM_ADD, &m_trayIcon);
     m_isInTray = true;
 }
@@ -3845,12 +3925,8 @@ void CMainFrame::UpdateTrayIcon()
 {
     if (!m_isInTray) return;
     HebrewDate hToday = CurrentHebrewDateForTray();
-    CString tip;
-    tip.Format(L"%d %s %d",
-        hToday.day,
-        HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
-        hToday.year);
-    wcscpy_s(m_trayIcon.szTip, tip);
+    CString tip = BuildTrayTooltip();
+    wcsncpy_s(m_trayIcon.szTip, ARRAYSIZE(m_trayIcon.szTip), tip.GetString(), _TRUNCATE);
     HICON hNewIcon = CreateTrayDateIcon(hToday);
     if (hNewIcon)
     {

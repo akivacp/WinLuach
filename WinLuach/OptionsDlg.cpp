@@ -78,6 +78,7 @@
 #define IDC_OPT_NOTIFY_PERSONAL_OFFSETS 363
 #define IDC_OPT_ADV_REMINDERS 364
 #define IDC_OPT_NOTIFY_ZMAN_FIRST 380
+#define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
 enum ColorPreviewKind
 {
@@ -137,6 +138,12 @@ static const wchar_t* kColorPreviewNames[] = {
     L"Hebrew event",
     L"Learning",
     L"Zmanim",
+};
+
+static const wchar_t* kZmanCheckboxLabels[] = {
+    L"Alos", L"Misheyakir", L"Netz (Hanetz)", L"Sof Shema", L"Sof Tefilla",
+    L"Chatzos", L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah",
+    L"Tzais", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz"
 };
 
 static CString ColorToHex(COLORREF c)
@@ -863,6 +870,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_pageGeneral.clear();
     m_pageMonth.clear();
     m_pageInterface.clear();
+    m_pageTrayTooltip.clear();
     m_pageColors.clear();
     m_pageZmanim.clear();
     m_pageNotifications.clear();
@@ -875,9 +883,10 @@ BOOL COptionsDlg::OnInitDialog()
     ti.pszText = const_cast<LPWSTR>(L"General");   m_tab.InsertItem(0, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Month View");m_tab.InsertItem(1, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Interface"); m_tab.InsertItem(2, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Colors");    m_tab.InsertItem(3, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Zmanim");    m_tab.InsertItem(4, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(5, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Tray Tooltip"); m_tab.InsertItem(3, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Colors");    m_tab.InsertItem(4, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Zmanim");    m_tab.InsertItem(5, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(6, &ti);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
         page.push_back(wnd);
@@ -981,6 +990,23 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(135, y, 220, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
     m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(238, y, 395, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
+
+    // Tray Tooltip tab
+    y = 38;
+    mkGroup(m_pageTrayTooltip, L"Zmanim Shown In Today's Tray Tooltip", 14, y, W - 28, 202); y += 26;
+    for (int i = 0; i < 15; ++i)
+    {
+        int col = i / 8;
+        int row = i % 8;
+        int x0 = 28 + col * 190;
+        int yy = y + row * 22;
+        m_chkTrayTooltipZmanim[i].Create(kZmanCheckboxLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(x0, yy, x0 + 178, yy + 20), this, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
+        track(m_pageTrayTooltip, &m_chkTrayTooltipZmanim[i]);
+        m_chkTrayTooltipZmanim[i].SetCheck((m_current.trayTooltipZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+    }
+
     // Colors tab
     mkGroup(m_pageColors, L"Calendar Cell and Text Colors", 14, 38, W - 28, 304);
     mkStatic(m_pageColors, L"Text", 28, 63, 55, 20);
@@ -1085,18 +1111,13 @@ BOOL COptionsDlg::OnInitDialog()
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifyZmanimStyle)));
     y += 28;
-    static const wchar_t* kZmanNotifyLabels[] = {
-        L"Alos", L"Misheyakir", L"Hanetz", L"Sof Shema", L"Sof Tefilla",
-        L"Chatzos", L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah",
-        L"Tzeis", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz"
-    };
     for (int i = 0; i < 15; ++i)
     {
         int col = i / 8;
         int row = i % 8;
         int x0 = 28 + col * 190;
         int yy = y + row * 20;
-        m_chkNotifyZmanim[i].Create(kZmanNotifyLabels[i],
+        m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
             CRect(x0, yy, x0 + 170, yy + 18), this, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
         track(m_pageNotifications, &m_chkNotifyZmanim[i]);
@@ -1267,9 +1288,10 @@ void COptionsDlg::ShowOptionsPage(int page)
     showPage(m_pageGeneral, 0);
     showPage(m_pageMonth, 1);
     showPage(m_pageInterface, 2);
-    showPage(m_pageColors, 3);
-    showPage(m_pageZmanim, 4);
-    showPage(m_pageNotifications, 5);
+    showPage(m_pageTrayTooltip, 3);
+    showPage(m_pageColors, 4);
+    showPage(m_pageZmanim, 5);
+    showPage(m_pageNotifications, 6);
 }
 
 void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
@@ -1615,6 +1637,11 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.minimizeOnStartup = (m_chkMinimizeOnStartup.GetCheck() == BST_CHECKED);
     m_result.startWithWindows = (m_chkStartWithWindows.GetCheck() == BST_CHECKED);
     m_result.desktopShortcut = (m_chkDesktopShortcut.GetCheck() == BST_CHECKED);
+    m_result.trayTooltipZmanimMask = 0;
+    for (int i = 0; i < 15; ++i)
+        if (m_chkTrayTooltipZmanim[i].GetSafeHwnd() &&
+            m_chkTrayTooltipZmanim[i].GetCheck() == BST_CHECKED)
+            m_result.trayTooltipZmanimMask |= (1u << i);
     if (m_radMA72.GetCheck() == BST_CHECKED) m_result.zmanimShita = 1;
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;

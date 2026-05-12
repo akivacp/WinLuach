@@ -324,6 +324,7 @@ protected:
     void AddTrayIcon();
     void RemoveTrayIcon();
     void UpdateTrayIcon();
+    CString BuildTrayTooltip();
     HebrewDate CurrentHebrewDateForTray();
     std::wstring HebrewDayLetters(int day) const;
     HICON CreateTrayDateIcon(const HebrewDate& h) const;

@@ -108,6 +108,7 @@ private:
     std::vector<CWnd*> m_pageGeneral;
     std::vector<CWnd*> m_pageMonth;
     std::vector<CWnd*> m_pageInterface;
+    std::vector<CWnd*> m_pageTrayTooltip;
     std::vector<CWnd*> m_pageColors;
     std::vector<CWnd*> m_pageZmanim;
     std::vector<CWnd*> m_pageNotifications;
@@ -149,6 +150,7 @@ private:
 
     CComboBox m_cmbNotifyZmanim;
     CButton   m_chkNotifyZmanim[15];
+    CButton   m_chkTrayTooltipZmanim[15];
     CComboBox m_cmbNotifyMoadim;
     CEdit     m_editNotifyMoadimOffsets;
     CComboBox m_cmbNotifyParsha;
