@@ -34,6 +34,13 @@ struct UserEventInfo
     std::wstring  title;
 };
 
+struct CalendarEventLine
+{
+    std::wstring title;
+    bool         isHebrew = false;
+    bool         isWebCalendar = false;
+};
+
 // =============================================================================
 // LAYOUT CONSTANTS
 // =============================================================================
@@ -102,6 +109,7 @@ struct UserEventInfo
 #define ID_PRINT_DAY_VIEW   1034
 #define ID_HEB_CIVIL_TOGGLE 1035
 #define ID_FILE_PRINT_EVENTS 1036
+#define ID_HELP_CONTENTS    1037
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -139,6 +147,7 @@ public:
     // Opens the options/preferences dialog
     void OnPickOptions();
 
+    std::vector<CalendarEventLine> GetCalendarEventLinesForDate(const GregorianDate& g) const;
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
 
     // Opens the day detail popup for the given date
@@ -177,15 +186,37 @@ public:
     bool          m_hebrewMonthView = false;
     bool          m_showParshios = true;
     bool          m_showMoadim = true;
-    bool          m_showDafYomi = true;
+    bool          m_showDafYomi = false;
     bool          m_showYerushalmi = false;
-    bool          m_showHalachaYomit = true;
-    bool          m_showMishnaYomit = true;
-    bool          m_showTanachYomi = true;
+    bool          m_showHalachaYomit = false;
+    bool          m_showMishnaYomit = false;
+    bool          m_showTanachYomi = false;
     bool          m_showTrayIcon   = false;
     bool          m_minimizeToTray = false;
     int           m_minimizeTrayWhen = 0;
     ZmanimResult  m_zmanim;
+    int           m_customAlotMode = 0;
+    double        m_customAlotValue = 16.1;
+    int           m_customTzeitMode = 0;
+    double        m_customTzeitValue = 8.5;
+    COLORREF      m_colorNormalCell = CLR_NORMAL;
+    COLORREF      m_colorOtherMonthCell = CLR_OTHER_MONTH;
+    COLORREF      m_colorTodayCell = CLR_TODAY;
+    COLORREF      m_colorShabbosCell = CLR_SHABBOS;
+    COLORREF      m_colorYomTovCell = CLR_YOM_TOV;
+    COLORREF      m_colorRoshChodeshCell = CLR_ROSH_CHODESH;
+    COLORREF      m_colorCholHamoedCell = CLR_CHOL_HAMOED;
+    COLORREF      m_colorFastDayCell = CLR_FAST_DAY;
+    COLORREF      m_colorGregorianText = CLR_GREG_TXT;
+    COLORREF      m_colorHebrewText = CLR_HEBREW_TXT;
+    COLORREF      m_colorHolidayText = CLR_HOLIDAY_TXT;
+    COLORREF      m_colorParshaText = RGB(30, 80, 160);
+    COLORREF      m_colorCivilEventText = RGB(120, 30, 120);
+    COLORREF      m_colorHebrewEventText = RGB(0, 110, 80);
+    COLORREF      m_colorOmerText = RGB(100, 80, 150);
+    COLORREF      m_colorLearningText = RGB(0, 90, 180);
+    COLORREF      m_colorCandleText = RGB(180, 80, 0);
+    COLORREF      m_colorMotzText = RGB(0, 80, 160);
 
     // Fonts — public so child panels (CalendarView, SidebarPanel, ZmanimPanel)
     // can use them directly without accessors
@@ -241,6 +272,7 @@ protected:
     afx_msg void OnViewNextDecade();
     afx_msg void OnOptionsLocation();
     afx_msg void OnOptionsPrefs();
+    afx_msg void OnHelpContents();
     afx_msg void OnHelpAbout();
     afx_msg void OnTrayExit();
     afx_msg void OnDestroy();

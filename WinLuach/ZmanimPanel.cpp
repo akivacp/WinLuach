@@ -66,13 +66,8 @@ void CZmanimPanel::OnPaint()
 
     // Select time variants based on shita settings
     const ZmanimResult& z = m_pFrame->m_zmanim;
-    int alotSh  = m_pFrame->m_alotShita;
-    int tzeitSh = m_pFrame->m_tzeitShita;
     int zmanSh  = m_pFrame->m_zmanimShita;
 
-    TimeOfDay alotTime  = (alotSh == 1) ? z.alot_MA72  : (alotSh == 2) ? z.alot_MA90  : z.alot_GRA;
-    TimeOfDay tzeitTime = (tzeitSh == 1) ? z.tzeit_MA72 : (tzeitSh == 2) ? z.tzeit_MA90
-                        : (tzeitSh == 3) ? z.tzeit_MA72P : (tzeitSh == 4) ? z.tzeit_MA90P : z.tzeit_GRA;
     TimeOfDay sofShemaTime    = (zmanSh == 1) ? z.sofShema_MA72    : (zmanSh == 2) ? z.sofShema_MA90    : z.sofShema_GRA;
     TimeOfDay sofTefillaTime  = (zmanSh == 1) ? z.sofTefilla_MA72  : (zmanSh == 2) ? z.sofTefilla_MA90  : z.sofTefilla_GRA;
     TimeOfDay minchaGTime     = (zmanSh == 1) ? z.minchaGedola_MA72: (zmanSh == 2) ? z.minchaGedola_MA90: z.minchaGedola_GRA;
@@ -80,15 +75,34 @@ void CZmanimPanel::OnPaint()
     TimeOfDay plagTime        = (zmanSh == 1) ? z.plagMincha_MA72  : (zmanSh == 2) ? z.plagMincha_MA90  : z.plagMincha_GRA;
     double    shaahMin        = (zmanSh == 1) ? z.shaahZmanit_MA72 : (zmanSh == 2) ? z.shaahZmanit_MA90 : z.shaahZmanit_GRA;
 
-    static const wchar_t* kAlotLabels[]  = { L"Alos Hashachar (16.1°)", L"Alos Hashachar (72m)", L"Alos Hashachar (90m)" };
-    static const wchar_t* kTzeitLabels[] = { L"Tzeis (8.5°)", L"Tzeis (72m)", L"Tzeis (90m)", L"Tzeis (72m prop)", L"Tzeis (90m prop)" };
+    auto customBoundary = [&](bool morning, int mode, double value) -> TimeOfDay {
+        if (mode == 0)
+            return CalculateSunAtAngle(m_pFrame->m_selectedDate, m_pFrame->m_location,
+                m_pFrame->m_isDST, value, morning);
+        if (mode == 1)
+            return AddMinutes(morning ? z.hanetz : z.shkia, morning ? -(int)round(value) : (int)round(value));
+        return AddShaot(morning ? z.hanetz : z.shkia, shaahMin, (morning ? -1.0 : 1.0) * value / 60.0);
+    };
+    auto customLabel = [](const wchar_t* base, int mode, double value) -> std::wstring {
+        CString s;
+        if (mode == 0) s.Format(L"%s (%.2g deg)", base, value);
+        else if (mode == 1) s.Format(L"%s (%.0f min)", base, value);
+        else s.Format(L"%s (%.0f z-min)", base, value);
+        return (LPCWSTR)s;
+    };
+
+    TimeOfDay alotTime  = customBoundary(true,  m_pFrame->m_customAlotMode,  m_pFrame->m_customAlotValue);
+    TimeOfDay tzeitTime = customBoundary(false, m_pFrame->m_customTzeitMode, m_pFrame->m_customTzeitValue);
+    std::wstring alotLabel  = customLabel(L"Alos Hashachar", m_pFrame->m_customAlotMode,  m_pFrame->m_customAlotValue);
+    std::wstring tzeitLabel = customLabel(L"Tzeis",           m_pFrame->m_customTzeitMode, m_pFrame->m_customTzeitValue);
+
     static const wchar_t* kShemaLabels[] = { L"Sof Shema (GRA)", L"Sof Shema (MA72)", L"Sof Shema (MA90)" };
     static const wchar_t* kMinchaGLabels[] = { L"Mincha Gedola", L"Mincha Gedola", L"Mincha Gedola" };
 
     // 12 zmanim entries
-    struct ZmanEntry { const wchar_t* label; TimeOfDay time; };
+    struct ZmanEntry { std::wstring label; TimeOfDay time; };
     ZmanEntry entries[] = {
-        { kAlotLabels[alotSh],          alotTime        },
+        { alotLabel,                    alotTime        },
         { L"Misheyakir",                z.misheyakir_10 },
         { L"Hanetz",                    z.hanetz        },
         { kShemaLabels[zmanSh],         sofShemaTime    },
@@ -98,7 +112,7 @@ void CZmanimPanel::OnPaint()
         { L"Mincha Ketana",             minchaKTime     },
         { L"Plag HaMincha",             plagTime        },
         { L"Shkiah",                    z.shkia         },
-        { kTzeitLabels[tzeitSh],        tzeitTime       },
+        { tzeitLabel,                   tzeitTime       },
         { L"Candle Lighting",           z.candleLighting},
     };
 
@@ -135,7 +149,7 @@ void CZmanimPanel::OnPaint()
         memDC.SelectObject(&m_pFrame->m_fontSmall);
         memDC.SetTextColor(RGB(70, 70, 50));
         CRect rcLabel(x, y, x + labelW, y + rowH);
-        memDC.DrawText(entries[i].label, -1, rcLabel,
+        memDC.DrawText(entries[i].label.c_str(), -1, rcLabel,
             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         // Time
