@@ -109,9 +109,12 @@ struct AppSettings
     uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
 
     // --- Zmanim shita ---
-    // Which opinion to use for alot/tzeit in the main display
-    // 0=GRA, 1=MA72, 2=MA90
+    // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90
     int          zmanimShita = 0;
+    // alotShita: 0=16.1deg(GRA), 1=72min, 2=90min
+    int          alotShita   = 0;
+    // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop
+    int          tzeitShita  = 0;
 
     // --- Layout (splitters) ---
     int          sidebarWidth     = 190;   // persisted splitter position

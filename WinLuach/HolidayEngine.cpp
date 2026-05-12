@@ -772,21 +772,17 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
 
     // How many Shabbosos from cycle start to our target Shabbos?
     long weeksDiff = (shabbosJDN - firstParashaJDN) / 7;
-    // Diaspora adjustment: when 7 Sivan (Shavuos Day 2 for Diaspora) falls on
-    // Shabbos, Diaspora skips that parasha reading while Israel reads normally.
-    // From that Shabbos onward, Diaspora is one week behind, so weeksDiff--.
-    if (!isIsrael && weeksDiff > 0)
+
+    // Diaspora adjustment: when 7 Sivan (Shavuos Day 2) falls on Shabbos,
+    // diaspora skips that parasha reading. To catch up, Chukas-Balak is combined
+    // later in the year. We handle this in schedule-building below, not here.
+    bool sevenSivanOnShabbos = false;
+    if (!isIsrael)
     {
         HebrewDate shavuos(cycleYear, SIVAN, 6);
         long shavuosJDN = HebrewToJDN(shavuos);
-        // 7 Sivan = shavuosJDN+1; DOW = (jdn+1)%7, so Shabbos when (shavuosJDN+2)%7==6
-        bool sevenSivanOnShabbos = ((shavuosJDN + 2) % 7 == 6);
-        if (sevenSivanOnShabbos)
-        {
-            long firstShabbosAfter = NextShabbos(shavuosJDN + 1);
-            if (shabbosJDN >= firstShabbosAfter)
-                weeksDiff--;
-        }
+        // 7 Sivan = shavuosJDN+1; Shabbos when (shavuosJDN+2)%7==6
+        sevenSivanOnShabbos = ((shavuosJDN + 2) % 7 == 6);
     }
 
     if (weeksDiff < 0)
@@ -873,8 +869,15 @@ ParashaInfo GetParasha(const HebrewDate& h, bool isIsrael)
     schedule.push_back(35);
     schedule.push_back(36);
     schedule.push_back(37);
-    schedule.push_back(38); // Chukas
-    schedule.push_back(39); // Balak
+    // Chukas-Balak: combined in diaspora when 7 Sivan falls on Shabbos
+    // (diaspora missed a reading that week and catches up here)
+    if (sevenSivanOnShabbos)
+        schedule.push_back(38); // Chukas-Balak combined (next entry 40 → jump=2)
+    else
+    {
+        schedule.push_back(38); // Chukas
+        schedule.push_back(39); // Balak
+    }
     schedule.push_back(40); // Pinchas
 
     // Matos-Masei: combined in most years

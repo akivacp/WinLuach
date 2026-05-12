@@ -1657,6 +1657,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_CAL_PRINT_ZMANIM,  &CMainFrame::OnCalPrintZmanim)
     ON_COMMAND(ID_SIDEBAR_TOGGLE,    &CMainFrame::OnSidebarToggle)
     ON_COMMAND(ID_HEB_CIVIL_TOGGLE,  &CMainFrame::OnHebCivilToggle)
+    ON_COMMAND(ID_FILE_PRINT_EVENTS, &CMainFrame::OnFilePrintEvents)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -1703,6 +1704,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_EXPORT_EVT,  L"Export &Events...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_IMPORT_EVT,  L"&Import Events...");
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_PRINT_EVENTS, L"Print Events &List...");
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_APP_EXIT,         L"E&xit");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)fileMenu.Detach(), L"&File");
@@ -2409,9 +2411,12 @@ void CMainFrame::RefreshZmanim()
 
 void CMainFrame::ApplySettings(const AppSettings& s)
 {
-    m_location = s.ToLocation();
-    m_use24hr  = s.use24Hour;
-    m_isIsrael = s.isIsrael;
+    m_location    = s.ToLocation();
+    m_use24hr     = s.use24Hour;
+    m_isIsrael    = s.isIsrael;
+    m_alotShita   = s.alotShita;
+    m_tzeitShita  = s.tzeitShita;
+    m_zmanimShita = s.zmanimShita;
 
     // Restore persisted layout
     if (s.sidebarWidth > 0)  m_sidebarW = s.sidebarWidth;
@@ -2729,6 +2734,11 @@ void CMainFrame::OnFileImportEvents()
     } else {
         MessageBox(L"No events found in that file.", L"WinLuach", MB_OK|MB_ICONWARNING);
     }
+}
+
+void CMainFrame::OnFilePrintEvents()
+{
+    DoPrintEventsList(this);
 }
 
 void CMainFrame::ShowEventNotification(const std::wstring& title,
