@@ -42,7 +42,7 @@ bool OptionsDialog::Show(HWND              parent,
     } dlgData = {};
 
     dlgData.tmpl.style = WS_POPUP | WS_CAPTION | WS_SYSMENU
-        | DS_MODALFRAME | DS_CENTER;
+        | WS_THICKFRAME | DS_CENTER;
     dlgData.tmpl.dwExtendedStyle = 0;
     dlgData.tmpl.cdit = 0;
     dlgData.tmpl.x = 0;

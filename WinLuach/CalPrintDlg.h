@@ -40,13 +40,14 @@ struct CalPrintOptions
 
     Range range         = RANGE_MONTH;
     bool  landscape     = true;
-    float mTop          = 0.75f;
-    float mBot          = 0.75f;
+    float mTop          = 0.50f;
+    float mBot          = 0.50f;
     float mLeft         = 0.50f;
     float mRight        = 0.50f;
     bool     includeZmanim  = false;
     uint32_t zmanimColumns  = 0x7FFF;  // bitmask: which of 15 columns to include
     bool     showFooter     = true;
+    bool     use24hr        = false;
 };
 
 // Render function type for single-page prints: DC, page rect, showFooter.
@@ -90,6 +91,9 @@ bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame,
 // Shows CPrintDialog and prints a single day detail page.
 bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame);
 
+// Shows CPrintDialog and prints day details for each selected day.
+bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame);
+
 // Renders a list of events for a year to any DC (portrait, multi-page aware via pageIndex/totalPages).
 void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
                         const std::vector<UserEventEntry>& events,
@@ -127,6 +131,7 @@ private:
     CButton m_btnPreview;
     CButton m_chkCol[15];
     CButton m_chkShowFooter;
+    CButton m_chk24hr;
 
     enum {
         IDC_PD_RAD_MONTH   = 200,
@@ -142,6 +147,7 @@ private:
         IDC_PD_CHK_ZMANIM  = 211,
         IDC_PD_COL_0       = 212,   // first of 15 column checkboxes (212..226)
         IDC_PD_CHK_FOOTER  = 227,
+        IDC_PD_CHK_24HR    = 228,
     };
 
     void ReadControls();

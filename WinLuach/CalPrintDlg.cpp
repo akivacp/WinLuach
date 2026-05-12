@@ -14,6 +14,96 @@
 #include <afxdlgs.h>
 #include <functional>
 
+static void DrawTextFit(CDC* pDC, const wchar_t* text, const CRect& rc, UINT format)
+{
+    if (!text || !*text || rc.Width() <= 1 || rc.Height() <= 1)
+        return;
+
+    CFont* pCurrent = pDC->GetCurrentFont();
+    LOGFONT lf = {};
+    if (!pCurrent || pCurrent->GetLogFont(&lf) == 0)
+    {
+        CRect drawRc(rc);
+        pDC->DrawText(text, -1, drawRc, format);
+        return;
+    }
+
+    int fitWidth = max(1, rc.Width() - 2);
+    int fitHeight = max(1, rc.Height());
+
+    CSize sz = pDC->GetTextExtent(text);
+    TEXTMETRIC tm = {};
+    pDC->GetTextMetrics(&tm);
+    if (sz.cx <= fitWidth && tm.tmHeight <= fitHeight)
+    {
+        CRect drawRc(rc);
+        pDC->DrawText(text, -1, drawRc, format);
+        return;
+    }
+
+    int originalHeight = abs(lf.lfHeight);
+    if (originalHeight <= 0)
+    {
+        CRect drawRc(rc);
+        pDC->DrawText(text, -1, drawRc, format);
+        return;
+    }
+
+    int maxHeight = min(originalHeight, fitHeight);
+    int minHeight = min(maxHeight, 3);
+    int low = minHeight, high = maxHeight, best = 0;
+    CFont* pOld = pCurrent;
+
+    while (low <= high)
+    {
+        int mid = (low + high) / 2;
+        LOGFONT trial = lf;
+        trial.lfHeight = (lf.lfHeight < 0) ? -mid : mid;
+
+        CFont fontTrial;
+        fontTrial.CreateFontIndirect(&trial);
+        CFont* pPrev = pDC->SelectObject(&fontTrial);
+        CSize trialSize = pDC->GetTextExtent(text);
+        TEXTMETRIC trialTm = {};
+        pDC->GetTextMetrics(&trialTm);
+        bool fits = trialSize.cx <= fitWidth && trialTm.tmHeight <= fitHeight;
+        pDC->SelectObject(pPrev);
+
+        if (fits)
+        {
+            best = mid;
+            low = mid + 1;
+        }
+        else
+        {
+            high = mid - 1;
+        }
+    }
+
+    LOGFONT finalLf = lf;
+    finalLf.lfHeight = (lf.lfHeight < 0)
+        ? -(best > 0 ? best : minHeight)
+        :  (best > 0 ? best : minHeight);
+
+    CFont fontFit;
+    fontFit.CreateFontIndirect(&finalLf);
+    pDC->SelectObject(&fontFit);
+    UINT drawFormat = (best > 0) ? format : (format | DT_END_ELLIPSIS);
+    CRect drawRc(rc);
+    pDC->DrawText(text, -1, drawRc, drawFormat);
+    pDC->SelectObject(pOld);
+}
+
+static void DrawTextFit(CDC* pDC, const CString& text, const CRect& rc, UINT format)
+{
+    DrawTextFit(pDC, (LPCWSTR)text, rc, format);
+}
+
+static void DrawTextFit(CDC* pDC, const std::wstring& text, const CRect& rc, UINT format)
+{
+    DrawTextFit(pDC, text.c_str(), rc, format);
+}
+
 // =============================================================================
 // DRAW CAL MONTH PAGE
 // Renders a complete calendar month into rcPage (device units of pDC).
@@ -74,8 +164,8 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
 
     CRect rcG(x0 + W/20, y0, x0 + W * 45/100, y0 + titleH);
     CRect rcH(x0 + W * 55/100, y0, x0 + W - W/20, y0 + titleH);
-    pDC->DrawText(gregStr, rcG, DT_LEFT  | DT_VCENTER | DT_SINGLELINE);
-    pDC->DrawText(hebStr,  rcH, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextFit(pDC, gregStr, rcG, DT_LEFT  | DT_VCENTER | DT_SINGLELINE);
+    DrawTextFit(pDC, hebStr,  rcH, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
     // === Day-of-week header row (5% of height) ==============================
     int dayHdrH = H * 5 / 100;
@@ -100,7 +190,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     for (int c = 0; c < 7; c++)
     {
         CRect rDN(colX[c], dayHdrY, colX[c + 1], dayHdrY + dayHdrH);
-        pDC->DrawText(kDays[c], -1, rDN, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextFit(pDC, kDays[c], rDN, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // === Footer height (computed early so cells don't overlap it) ===========
@@ -111,6 +201,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     int gridTop  = dayHdrY + dayHdrH;
     int availH   = H - (gridTop - y0) - footH;
     int gridH    = opts.includeZmanim ? (availH * 56 / 100) : availH;
+    int contentBottom = y0 + H - footH;
 
     DayOfWeek dow0     = GetDayOfWeek(gFirst);
     long      jdn0     = GregorianToJDN(gFirst) - (int)dow0;
@@ -167,7 +258,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         CString dn; dn.Format(L"%d", g.day);
         CRect rGD(rCell.left + mg, rCell.top + mg,
                   rCell.left + mg + cellH / 3, rCell.top + mg - fDay + 2);
-        pDC->DrawText(dn, rGD, DT_LEFT | DT_TOP);
+        DrawTextFit(pDC, dn, rGD, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
         // --- Hebrew date (top-right, small blue) ---
         bool leap = IsHebrewLeapYear(h.year);
@@ -177,7 +268,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->SetTextColor(cur ? CLR_HEBREW_TXT : RGB(180, 180, 200));
         CRect rHD(rCell.left + mg, rCell.top + mg,
                   rCell.right - mg, rCell.top + mg + lineH);
-        pDC->DrawText(hDay.c_str(), -1, rHD, DT_RIGHT | DT_TOP);
+        DrawTextFit(pDC, hDay, rHD, DT_RIGHT | DT_TOP | DT_SINGLELINE);
 
         // --- Holidays, parasha, omer ---
         if (cur)
@@ -198,7 +289,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                     if (!ho.subtitle.empty()) txt += L" - " + ho.subtitle;
                     pDC->SetTextColor(CLR_HOLIDAY_TXT);
                     CRect rHol(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                    pDC->DrawText(txt.c_str(), -1, rHol,
+                    DrawTextFit(pDC, txt, rHol,
                         DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
                     yOff += lineH; lines++;
                 }
@@ -213,7 +304,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                         pt += L" - " + par.name2;
                     pDC->SetTextColor(RGB(30, 80, 160));
                     CRect rP(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                    pDC->DrawText(pt.c_str(), -1, rP,
+                    DrawTextFit(pDC, pt, rP,
                         DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
                     yOff += lineH; lines++;
                 }
@@ -223,7 +314,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 CString ot; ot.Format(L"Day %d Omer", omer.day);
                 pDC->SetTextColor(RGB(100, 80, 150));
                 CRect rO(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                pDC->DrawText(ot, rO, DT_LEFT | DT_TOP | DT_SINGLELINE);
+                DrawTextFit(pDC, ot, rO, DT_LEFT | DT_TOP | DT_SINGLELINE);
                 yOff += lineH; lines++;
             }
 
@@ -236,7 +327,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                     if (lines >= maxLn) break;
                     pDC->SetTextColor(RGB(120, 30, 120));
                     CRect rEv(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                    pDC->DrawText(ev.c_str(), -1, rEv,
+                    DrawTextFit(pDC, ev, rEv,
                         DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
                     yOff += lineH; lines++;
                 }
@@ -250,7 +341,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 {
                     pDC->SetTextColor(RGB(180, 80, 0));
                     CRect rZ(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                    pDC->DrawText(candleStr.c_str(), -1, rZ,
+                    DrawTextFit(pDC, candleStr, rZ,
                         DT_LEFT | DT_TOP | DT_SINGLELINE);
                     yOff += lineH; lines++;
                 }
@@ -258,7 +349,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 {
                     pDC->SetTextColor(RGB(0, 80, 160));
                     CRect rZ(rCell.left + mg, yOff, rCell.right - mg, yOff + lineH);
-                    pDC->DrawText(motzStr.c_str(), -1, rZ,
+                    DrawTextFit(pDC, motzStr, rZ,
                         DT_LEFT | DT_TOP | DT_SINGLELINE);
                 }
             }
@@ -286,7 +377,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     if (opts.includeZmanim && pFrame)
     {
         int tblTop = gridTop + numRows * cellH;
-        int tblH   = y0 + H - tblTop;
+        int tblH   = contentBottom - tblTop;
 
         if (tblH >= 40)
         {
@@ -330,7 +421,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             pDC->SetBkMode(TRANSPARENT);
             pDC->SetTextColor(RGB(255,255,255));
             pDC->SelectObject(&fontTblB);
-            pDC->DrawText(L"Weekly Zmanim",
+            DrawTextFit(pDC, L"Weekly Zmanim",
                 CRect(x0+4, tblTop, x0+W, tblTop+titleRowH),
                 DT_LEFT|DT_VCENTER|DT_SINGLELINE);
 
@@ -341,14 +432,14 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             pDC->SetTextColor(RGB(255,255,255));
             pDC->SelectObject(&fontTbl);
             // Label column header
-            pDC->DrawText(L"Week / Parasha", -1,
+            DrawTextFit(pDC, L"Week / Parasha",
                 CRect(tblColX[0]+2, hdrRowY, tblColX[1], hdrRowY+hdrRowH),
                 DT_LEFT|DT_VCENTER|DT_SINGLELINE);
             // Data column headers (only visible columns)
             for (int v = 0; v < numDataCols; v++)
             {
                 int cx = tblColX[v+1], cw = tblColX[v+2] - tblColX[v+1];
-                pDC->DrawText(kAllColHdr[visIdx[v]], -1, CRect(cx, hdrRowY, cx+cw, hdrRowY+hdrRowH),
+                DrawTextFit(pDC, kAllColHdr[visIdx[v]], CRect(cx, hdrRowY, cx+cw, hdrRowY+hdrRowH),
                     DT_CENTER|DT_VCENTER|DT_SINGLELINE);
             }
 
@@ -360,7 +451,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 GregorianDate ts = JDNToGregorian(jdn0 + w * 7 + 6);
                 if (ts.year == year && ts.month == month) numShabRows++;
             }
-            int dataRowH = max(4, (y0 + H - dataY) / max(1, numShabRows));
+            int dataRowH = max(4, (contentBottom - dataY) / max(1, numShabRows));
 
             int drawnRows = 0;
             for (int w = 0; w < numRows; w++)
@@ -391,7 +482,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                 }
                 pDC->SelectObject(&fontTbl);
                 pDC->SetTextColor(RGB(30,30,80));
-                pDC->DrawText(lbl,
+                DrawTextFit(pDC, lbl,
                     CRect(x0+2, ry, x0+lblW-2, ry+dataRowH),
                     DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
 
@@ -424,14 +515,14 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
                         if (z.shaahZmanit_GRA > 0.0) {
                             int szMin = (int)round(z.shaahZmanit_GRA);
                             CString szs; szs.Format(L"%d:%02d", szMin/60, szMin%60);
-                            pDC->DrawText(szs, CRect(cx, ry, cx+cw, ry+dataRowH),
+                            DrawTextFit(pDC, szs, CRect(cx, ry, cx+cw, ry+dataRowH),
                                 DT_CENTER|DT_VCENTER|DT_SINGLELINE);
                         }
                     }
                     else if (kAllT[orig] && kAllT[orig]->IsValid())
                     {
-                        std::wstring ts = FormatTime(*kAllT[orig], true);
-                        pDC->DrawText(ts.c_str(), -1, CRect(cx, ry, cx+cw, ry+dataRowH),
+                        std::wstring ts = FormatTime(*kAllT[orig], opts.use24hr);
+                        DrawTextFit(pDC, ts, CRect(cx, ry, cx+cw, ry+dataRowH),
                             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
                     }
                 }
@@ -465,7 +556,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->SetTextColor(RGB(140,140,140));
         pDC->SetBkMode(TRANSPARENT);
         pDC->FillSolidRect(CRect(x0, y0+H-footH, x0+W, y0+H), RGB(245, 245, 245));
-        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+        DrawTextFit(pDC, L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
             CRect(x0, y0+H-footH, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
     }
 }
@@ -625,9 +716,9 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
 
     std::wstring locName = pFrame ? pFrame->m_location.name : L"";
 
-    pDC->DrawText(gregStr, CRect(x0+8, y0, x0+W*40/100, y0+titleH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
-    pDC->DrawText(hebStr,  CRect(x0+W*40/100, y0, x0+W*72/100, y0+titleH), DT_CENTER|DT_VCENTER|DT_SINGLELINE);
-    pDC->DrawText(locName.c_str(), -1, CRect(x0+W*72/100, y0, x0+W-8, y0+titleH), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, gregStr, CRect(x0+8, y0, x0+W*40/100, y0+titleH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, hebStr,  CRect(x0+W*40/100, y0, x0+W*72/100, y0+titleH), DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, locName, CRect(x0+W*72/100, y0, x0+W-8, y0+titleH), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
 
     // ── Build active column list from bitmask ─────────────────────────────────
     static const wchar_t* kColHdr[15] = {
@@ -667,7 +758,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
     pDC->SelectObject(&fontHdr);
 
     auto drawHdr = [&](int ci, const wchar_t* txt) {
-        pDC->DrawText(txt, -1, CRect(colX[ci], hdrY, colX[ci+1], hdrY+hdrH),
+        DrawTextFit(pDC, txt, CRect(colX[ci], hdrY, colX[ci+1], hdrY+hdrH),
             DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
     };
     drawHdr(0, L"Date");
@@ -741,11 +832,11 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         // Date
         CString ds; ds.Format(L"%d/%d", month, d);
         pDC->SetTextColor(RGB(30,30,30));
-        pDC->DrawText(ds, CRect(colX[0], ry, colX[1], ry+rowH), DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        DrawTextFit(pDC, ds, CRect(colX[0], ry, colX[1], ry+rowH), DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 
         // Day of week
         pDC->SetTextColor(dow == SHABBAT ? RGB(0,120,0) : RGB(50,50,100));
-        pDC->DrawText(kDayAbbr[(int)dow], -1, CRect(colX[1], ry, colX[2], ry+rowH),
+        DrawTextFit(pDC, kDayAbbr[(int)dow], CRect(colX[1], ry, colX[2], ry+rowH),
             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 
         // Hebrew date
@@ -753,7 +844,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         std::wstring hebDayStr = std::to_wstring(h.day) + L" " +
             HebrewMonthName(h.month, leap).substr(0, 4);
         pDC->SetTextColor(RGB(20,20,160));
-        pDC->DrawText(hebDayStr.c_str(), -1, CRect(colX[2], ry, colX[3], ry+rowH),
+        DrawTextFit(pDC, hebDayStr, CRect(colX[2], ry, colX[3], ry+rowH),
             DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
 
         // Sedra column: parasha on Shabbos; holiday names on other days per sedraHolMask
@@ -787,7 +878,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
             }
             if (!sedraText.empty()) {
                 pDC->SetTextColor(sedraColor);
-                pDC->DrawText(sedraText.c_str(), -1, CRect(colX[3], ry, colX[4], ry+rowH),
+                DrawTextFit(pDC, sedraText, CRect(colX[3], ry, colX[4], ry+rowH),
                     DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
             }
         }
@@ -819,7 +910,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                 ts = FormatTime(*kTimes[ci], use24hr);
             }
             if (!ts.empty())
-                pDC->DrawText(ts.c_str(), -1, CRect(colX[ftc+c], ry, colX[ftc+c+1], ry+rowH),
+                DrawTextFit(pDC, ts, CRect(colX[ftc+c], ry, colX[ftc+c+1], ry+rowH),
                     DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         }
     }
@@ -846,7 +937,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         pDC->SetTextColor(RGB(140,140,140));
         pDC->SetBkMode(TRANSPARENT);
         pDC->FillSolidRect(CRect(x0, y0+H-footHZ, x0+W, y0+H), RGB(245, 245, 245));
-        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+        DrawTextFit(pDC, L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
             CRect(x0, y0+H-footHZ, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
     }
 }
@@ -907,13 +998,13 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
     gregStr.Format(L"%s,  %s %d,  %d",
         kDow[(int)GetDayOfWeek(g)],
         GregorianMonthName(g.month).c_str(), g.day, g.year);
-    pDC->DrawText(gregStr, CRect(x0+8, y0, x0+W-8, y0+hdrH/2+4), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, gregStr, CRect(x0+8, y0, x0+W-8, y0+hdrH/2+4), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
 
     bool   leap   = IsHebrewLeapYear(h.year);
     CString hebStr;
     hebStr.Format(L"%d %s %d", h.day, HebrewMonthName(h.month, leap).c_str(), h.year);
     pDC->SetTextColor(RGB(200,220,255));
-    pDC->DrawText(hebStr, CRect(x0+8, y0+hdrH/2, x0+W-8, y0+hdrH-4), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, hebStr, CRect(x0+8, y0+hdrH/2, x0+W-8, y0+hdrH-4), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
 
     int y    = y0 + hdrH + 4;
     int rowH = -fRow + 4;
@@ -925,7 +1016,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         pDC->SetBkMode(TRANSPARENT);
         pDC->SetTextColor(RGB(30,50,110));
         pDC->SelectObject(&fontSec);
-        pDC->DrawText(lbl, CRect(x0+6, y, x0+W-4, y+secH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+        DrawTextFit(pDC, lbl, CRect(x0+6, y, x0+W-4, y+secH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
         y += secH + 1;
     };
     auto drawRow = [&](const wchar_t* lbl, const std::wstring& val, COLORREF clr) {
@@ -933,9 +1024,9 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         pDC->SetBkMode(TRANSPARENT);
         pDC->SelectObject(&fontRow);
         pDC->SetTextColor(RGB(110,110,110));
-        pDC->DrawText(lbl, CRect(x0+8, y, x0+8+lblW, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, lbl, CRect(x0+8, y, x0+8+lblW, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
         pDC->SetTextColor(clr);
-        pDC->DrawText(val.c_str(), -1, CRect(x0+8+lblW, y, x0+W-8, y+rowH),
+        DrawTextFit(pDC, val, CRect(x0+8+lblW, y, x0+W-8, y+rowH),
             DT_LEFT|DT_TOP|DT_SINGLELINE|DT_END_ELLIPSIS);
         y += rowH;
     };
@@ -1059,7 +1150,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         pDC->SetBkMode(TRANSPARENT);
         int footH3 = -fFoot3 + 2;
         pDC->FillSolidRect(CRect(x0, y0+H-footH3, x0+W, y0+H), RGB(245, 245, 245));
-        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+        DrawTextFit(pDC, L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
             CRect(x0, y0+H-footH3, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
     }
 }
@@ -1219,7 +1310,7 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
     pDC->SetTextColor(RGB(255, 255, 255));
     pDC->SelectObject(&fontTitle);
     CString title; title.Format(L"Events for %d", gregYear);
-    pDC->DrawText(title, CRect(x0+8, y0, x0+W-8, y0+hdrH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, title, CRect(x0+8, y0, x0+W-8, y0+hdrH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
 
     // Column layout: Greg date | Heb date | Type | Name
     int colGreg  = x0 + 4;
@@ -1237,10 +1328,10 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
     pDC->FillSolidRect(CRect(x0, y, x0+W, y+rowH+2), RGB(200, 212, 240));
     pDC->SetTextColor(RGB(30, 50, 110));
     pDC->SelectObject(&fontHdr);
-    pDC->DrawText(L"Date",     CRect(colGreg, y, colGreg+wGreg,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
-    pDC->DrawText(L"Hebrew",   CRect(colHeb,  y, colHeb +wHeb,    y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
-    pDC->DrawText(L"Type",     CRect(colType, y, colType+wType,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
-    pDC->DrawText(L"Event",    CRect(colName, y, colName+wName,   y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, L"Date",   CRect(colGreg, y, colGreg+wGreg, y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, L"Hebrew", CRect(colHeb,  y, colHeb +wHeb,  y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, L"Type",   CRect(colType, y, colType+wType, y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    DrawTextFit(pDC, L"Event",  CRect(colName, y, colName+wName, y+rowH+2), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
     y += rowH + 4;
 
     // Build rows for this year, calculate which ones fall on this page
@@ -1266,22 +1357,22 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
         CString gs; gs.Format(L"%s %d, %d",
             GregorianMonthName(r.greg.month).c_str(), r.greg.day, r.greg.year);
         pDC->SetTextColor(RGB(50, 50, 50));
-        pDC->DrawText(gs, CRect(colGreg, y, colGreg+wGreg, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, gs, CRect(colGreg, y, colGreg+wGreg, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
 
         // Hebrew date
         bool leap = IsHebrewLeapYear(r.heb.year);
         CString hs; hs.Format(L"%d %s %d",
             r.heb.day, HebrewMonthName(r.heb.month, leap).c_str(), r.heb.year);
         pDC->SetTextColor(RGB(30, 30, 180));
-        pDC->DrawText(hs, CRect(colHeb, y, colHeb+wHeb, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, hs, CRect(colHeb, y, colHeb+wHeb, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
 
         // Type
         pDC->SetTextColor(RGB(100, 60, 140));
-        pDC->DrawText(r.typeStr.c_str(), -1, CRect(colType, y, colType+wType, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, r.typeStr, CRect(colType, y, colType+wType, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
 
         // Name
         pDC->SetTextColor(RGB(20, 20, 20));
-        pDC->DrawText(r.name.c_str(), -1, CRect(colName, y, colName+wName, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE|DT_END_ELLIPSIS);
+        DrawTextFit(pDC, r.name, CRect(colName, y, colName+wName, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE|DT_END_ELLIPSIS);
 
         y += rowH + 2;
         altRow = !altRow;
@@ -1308,8 +1399,8 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
         pDC->SelectObject(&fontFoot);
         pDC->SetTextColor(RGB(120,120,120));
         CString pg; pg.Format(L"Page %d of %d", pageIndex+1, totalPages);
-        pDC->DrawText(L"WinLuach - Hebrew Calendar", CRect(x0, fy, x0+W, y0+H), DT_LEFT|DT_TOP|DT_SINGLELINE);
-        pDC->DrawText(pg, CRect(x0, fy, x0+W-4, y0+H), DT_RIGHT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, L"WinLuach - Hebrew Calendar", CRect(x0, fy, x0+W, y0+H), DT_LEFT|DT_TOP|DT_SINGLELINE);
+        DrawTextFit(pDC, pg, CRect(x0, fy, x0+W-4, y0+H), DT_RIGHT|DT_TOP|DT_SINGLELINE);
     }
 }
 
@@ -1331,7 +1422,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             INT_PTR DoModal() override
             {
                 struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[24]; } b = {};
-                b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+                b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
                 b.t.cx = 140; b.t.cy = 60;
                 wcscpy_s(b.title, L"Choose Year");
                 if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
@@ -1415,7 +1506,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
         INT_PTR DoModal() override
         {
             struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[32]; } b = {};
-            b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+            b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
             b.t.cx = 220; b.t.cy = 180;
             wcscpy_s(b.title, L"Print Events List");
             if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
@@ -1584,6 +1675,71 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
     return true;
 }
 
+bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
+{
+    if (dates.empty())
+        return false;
+
+    std::vector<GregorianDate> pages = dates;
+    std::sort(pages.begin(), pages.end(), [](const GregorianDate& a, const GregorianDate& b) {
+        return GregorianToJDN(a) < GregorianToJDN(b);
+    });
+    pages.erase(std::unique(pages.begin(), pages.end(), [](const GregorianDate& a, const GregorianDate& b) {
+        return a.year == b.year && a.month == b.month && a.day == b.day;
+    }), pages.end());
+
+    CPrintDialog pd(FALSE);
+    pd.m_pd.Flags |= PD_RETURNDC | PD_NOPAGENUMS | PD_NOCURRENTPAGE;
+
+    HGLOBAL hDM = GlobalAlloc(GHND, sizeof(DEVMODE));
+    if (hDM)
+    {
+        DEVMODE* dm = (DEVMODE*)GlobalLock(hDM);
+        if (dm)
+        {
+            ZeroMemory(dm, sizeof(DEVMODE));
+            dm->dmSize = sizeof(DEVMODE);
+            dm->dmFields = DM_ORIENTATION;
+            dm->dmOrientation = DMORIENT_PORTRAIT;
+            GlobalUnlock(hDM);
+        }
+        pd.m_pd.hDevMode = hDM;
+    }
+    if (pd.DoModal() != IDOK)
+    {
+        if (hDM) GlobalFree(hDM);
+        return false;
+    }
+
+    HDC hDC = pd.GetPrinterDC();
+    if (!hDC)
+    {
+        if (hDM) GlobalFree(hDM);
+        return false;
+    }
+
+    CDC dc;
+    dc.Attach(hDC);
+    int pageW = dc.GetDeviceCaps(HORZRES);
+    int pageH = dc.GetDeviceCaps(VERTRES);
+    CRect rcPage(0, 0, pageW, pageH);
+
+    DOCINFO di = { sizeof(DOCINFO) };
+    di.lpszDocName = L"WinLuach Selected Day Details";
+    dc.StartDoc(&di);
+    for (const auto& g : pages)
+    {
+        dc.StartPage();
+        DrawDayPage(&dc, rcPage, g, pFrame, true);
+        dc.EndPage();
+    }
+    dc.EndDoc();
+    dc.Detach();
+    ::DeleteDC(hDC);
+    if (hDM) GlobalFree(hDM);
+    return true;
+}
+
 // =============================================================================
 // CSimplePageSetupDlg — orientation + margins + preview/print for day/zmanim
 // =============================================================================
@@ -1605,7 +1761,7 @@ CSimplePageSetupDlg::CSimplePageSetupDlg(
 INT_PTR CSimplePageSetupDlg::DoModal()
 {
     struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-    b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
+    b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
     b.t.cx = 310; b.t.cy = 220;
     wcscpy_s(b.title, L"Page Setup");
     if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -1868,10 +2024,10 @@ INT_PTR CCalPrintDlg::DoModal()
         WORD menu; WORD cls;
         wchar_t title[32];
     } buf = {};
-    buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+    buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
-    buf.t.cy     = 376;
+    buf.t.cy     = 420;
     wcscpy_s(buf.title, L"Print Calendar");
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -1898,6 +2054,7 @@ BOOL CCalPrintDlg::OnInitDialog()
         m_opts.includeZmanim  = ps.printWeeklyZmanim;
         m_opts.zmanimColumns  = ps.printZmanimColMask;
         m_opts.showFooter     = ps.printShowFooter;
+        m_opts.use24hr        = ps.use24Hour;
     }
 
     CRect rcClient;
@@ -1988,6 +2145,13 @@ BOOL CCalPrintDlg::OnInitDialog()
     m_chkZmanim.SetCheck(m_opts.includeZmanim ? BST_CHECKED : BST_UNCHECKED);
     y += 24;
 
+    m_chk24hr.Create(L"Use 24-hour time for printed zmanim",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_24HR);
+    m_chk24hr.SetFont(pF);
+    m_chk24hr.SetCheck(m_opts.use24hr ? BST_CHECKED : BST_UNCHECKED);
+    y += 24;
+
     // ── Zmanim column selection ──────────────────────────────────────────────
     static const wchar_t* kColNames[15] = {
         L"Alos", L"Misheyakir", L"Netz",
@@ -2064,16 +2228,17 @@ void CCalPrintDlg::ReadControls()
             m_opts.zmanimColumns |= (1u << i);
 
     m_opts.showFooter = (m_chkShowFooter.GetCheck() == BST_CHECKED);
+    m_opts.use24hr    = (m_chk24hr.GetCheck() == BST_CHECKED);
 
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
         float v = (float)_wtof(s);
         return (v >= 0.0f && v < 5.0f) ? v : def;
     };
-    m_opts.mTop   = getFloat(m_editTop,   0.0f);
-    m_opts.mBot   = getFloat(m_editBot,   0.0f);
-    m_opts.mLeft  = getFloat(m_editLeft,  0.0f);
-    m_opts.mRight = getFloat(m_editRight, 0.0f);
+    m_opts.mTop   = getFloat(m_editTop,   0.5f);
+    m_opts.mBot   = getFloat(m_editBot,   0.5f);
+    m_opts.mLeft  = getFloat(m_editLeft,  0.5f);
+    m_opts.mRight = getFloat(m_editRight, 0.5f);
 }
 
 // =============================================================================
@@ -2092,6 +2257,7 @@ static void SavePrintOptsToSettings(const CalPrintOptions& opts)
     ps.printWeeklyZmanim  = opts.includeZmanim;
     ps.printZmanimColMask = opts.zmanimColumns;
     ps.printShowFooter    = opts.showFooter;
+    ps.use24Hour          = opts.use24hr;
     SaveSettings(ps);
 }
 

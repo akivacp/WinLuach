@@ -227,7 +227,7 @@ public:
     virtual INT_PTR DoModal() override
     {
         struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
-        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         buf.t.cx = 380; buf.t.cy = 240;
         wcscpy_s(buf.title, L"Lookup Address");
         if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
@@ -401,7 +401,7 @@ public:
     virtual INT_PTR DoModal() override
     {
         struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
-        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         buf.t.cx = 320; buf.t.cy = 252;
         wcscpy_s(buf.title, m_isEdit ? L"Edit Location" : L"Add Custom Location");
         if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
@@ -626,7 +626,7 @@ INT_PTR CLocationDlg::DoModal()
     } buf = {};
 
     buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU |
-        DS_MODALFRAME | DS_CENTER;
+        WS_THICKFRAME | DS_CENTER;
     buf.t.dwExtendedStyle = 0;
     buf.t.cdit = 0;
     buf.t.x = 0;

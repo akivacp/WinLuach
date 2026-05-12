@@ -17,6 +17,11 @@
 #include "CalendarView.h"
 #include "CalPrintDlg.h"
 
+static long CalendarDateKey(const GregorianDate& g)
+{
+    return GregorianToJDN(g);
+}
+
 BEGIN_MESSAGE_MAP(CCalendarView, CWnd)
     ON_WM_PAINT()
     ON_WM_LBUTTONDOWN()
@@ -145,7 +150,7 @@ void CCalendarView::OnPaint()
     bmp.CreateCompatibleBitmap(&dcScreen, cx, cy);
     CBitmap* pOldBmp = memDC.SelectObject(&bmp);
 
-    memDC.FillSolidRect(rcClient, CLR_NORMAL);
+    memDC.FillSolidRect(rcClient, m_pFrame ? m_pFrame->m_colorNormalCell : CLR_NORMAL);
 
     if (m_cells.empty()) RebuildCells();
 
@@ -154,10 +159,7 @@ void CCalendarView::OnPaint()
     // Draw each cell
     for (int i = 0; i < 42 && i < (int)m_cells.size(); i++)
     {
-        bool isSelected =
-            (m_cells[i].greg.year == m_pFrame->m_selectedDate.year &&
-                m_cells[i].greg.month == m_pFrame->m_selectedDate.month &&
-                m_cells[i].greg.day == m_pFrame->m_selectedDate.day);
+        bool isSelected = IsSelectedDate(m_cells[i].greg);
 
         CRect rcCell = GetCellRect(i);
         DrawCell(&memDC, rcCell, m_cells[i], isSelected);
@@ -219,7 +221,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
     int margin = 3;
 
     // Gregorian day number (top-left, bold)
-    COLORREF clrGreg = cell.isCurrentMonth ? CLR_GREG_TXT : RGB(180, 180, 180);
+    COLORREF clrGreg = cell.isCurrentMonth ? m_pFrame->m_colorGregorianText : RGB(180, 180, 180);
     pDC->SelectObject(&m_pFrame->m_fontBold);
     pDC->SetTextColor(clrGreg);
 
@@ -234,7 +236,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
     std::wstring hebDay = std::to_wstring(cell.hebrew.day)
         + L" " + HebrewMonthName(cell.hebrew.month, leap);
     pDC->SelectObject(&m_pFrame->m_fontSmall);
-    pDC->SetTextColor(cell.isCurrentMonth ? CLR_HEBREW_TXT : RGB(180, 180, 200));
+    pDC->SetTextColor(cell.isCurrentMonth ? m_pFrame->m_colorHebrewText : RGB(180, 180, 200));
     CRect rcHeb(rc.left + margin, rc.top + margin,
         rc.right - margin, rc.top + margin + 14);
     pDC->DrawText(hebDay.c_str(), -1, rcHeb, DT_RIGHT | DT_TOP);
@@ -247,7 +249,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
         int lines = 0;
 
         pDC->SelectObject(&m_pFrame->m_fontSmall);
-        pDC->SetTextColor(CLR_HOLIDAY_TXT);
+        pDC->SetTextColor(m_pFrame->m_colorHolidayText);
 
         if (m_pFrame->m_showMoadim)
         {
@@ -282,7 +284,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
 
                 CRect rcPar(rc.left + margin, yOff,
                     rc.right - margin, yOff + 13);
-                pDC->SetTextColor(RGB(30, 80, 160));
+                pDC->SetTextColor(m_pFrame->m_colorParshaText);
                 pDC->DrawText(parTxt.c_str(), -1, rcPar,
                     DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
                 yOff += 13;
@@ -290,14 +292,17 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
             }
         }
 
-        auto userEvents = m_pFrame->GetUserEventsForDate(cell.greg);
-        for (const auto& eventTitle : userEvents)
+        auto userEvents = m_pFrame->GetCalendarEventLinesForDate(cell.greg);
+        for (const auto& eventLine : userEvents)
         {
             if (lines >= maxLines) break;
             CRect rcEvent(rc.left + margin, yOff,
                 rc.right - margin, yOff + 13);
-            pDC->SetTextColor(RGB(120, 30, 120));
-            pDC->DrawText(eventTitle.c_str(), -1, rcEvent,
+            COLORREF evColor = eventLine.isHebrew
+                ? m_pFrame->m_colorHebrewEventText
+                : m_pFrame->m_colorCivilEventText;
+            pDC->SetTextColor(evColor);
+            pDC->DrawText(eventLine.title.c_str(), -1, rcEvent,
                 DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
             yOff += 13;
             lines++;
@@ -309,7 +314,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
             omerTxt.Format(L"Day %d Omer", cell.omer.day);
             CRect rcOmer(rc.left + margin, yOff,
                 rc.right - margin, yOff + 13);
-            pDC->SetTextColor(RGB(100, 80, 150));
+            pDC->SetTextColor(m_pFrame->m_colorOmerText);
             pDC->DrawText(omerTxt, rcOmer,
                 DT_LEFT | DT_TOP | DT_SINGLELINE);
             yOff += 13; lines++;
@@ -325,17 +330,17 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
                     DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
                 yOff += 13; lines++;
             };
-            tryLearn(m_pFrame->m_showDafYomi,      cell.learning.dafYomi,      RGB(0,  90, 180));
-            tryLearn(m_pFrame->m_showYerushalmi,   cell.learning.yerushalmi,   RGB(0, 120, 120));
-            tryLearn(m_pFrame->m_showHalachaYomit, cell.learning.halachaYomit, RGB(100, 50,  0));
-            tryLearn(m_pFrame->m_showMishnaYomit,  cell.learning.mishnaYomit,  RGB(0, 100,  0));
-            tryLearn(m_pFrame->m_showTanachYomi,   cell.learning.tanachYomi,   RGB(80,   0, 80));
+            tryLearn(m_pFrame->m_showDafYomi,      cell.learning.dafYomi,      m_pFrame->m_colorLearningText);
+            tryLearn(m_pFrame->m_showYerushalmi,   cell.learning.yerushalmi,   m_pFrame->m_colorLearningText);
+            tryLearn(m_pFrame->m_showHalachaYomit, cell.learning.halachaYomit, m_pFrame->m_colorLearningText);
+            tryLearn(m_pFrame->m_showMishnaYomit,  cell.learning.mishnaYomit,  m_pFrame->m_colorLearningText);
+            tryLearn(m_pFrame->m_showTanachYomi,   cell.learning.tanachYomi,   m_pFrame->m_colorLearningText);
         }
 
         if (!cell.candleStr.empty() && lines < maxLines)
         {
             CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
-            pDC->SetTextColor(RGB(180, 80, 0));
+            pDC->SetTextColor(m_pFrame->m_colorCandleText);
             pDC->DrawText(cell.candleStr.c_str(), -1, rcZ,
                 DT_LEFT | DT_TOP | DT_SINGLELINE);
             yOff += 13; lines++;
@@ -343,7 +348,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
         if (!cell.motzStr.empty() && lines < maxLines)
         {
             CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
-            pDC->SetTextColor(RGB(0, 80, 160));
+            pDC->SetTextColor(m_pFrame->m_colorMotzText);
             pDC->DrawText(cell.motzStr.c_str(), -1, rcZ,
                 DT_LEFT | DT_TOP | DT_SINGLELINE);
         }
@@ -358,25 +363,25 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
 COLORREF CCalendarView::GetCellColor(const CalCellData& cell,
     bool isSelected) const
 {
-    if (!cell.isCurrentMonth) return CLR_OTHER_MONTH;
+    if (!cell.isCurrentMonth) return m_pFrame->m_colorOtherMonthCell;
 
     const GregorianDate& g = cell.greg;
     bool isToday = (g.year == m_pFrame->m_today.year &&
         g.month == m_pFrame->m_today.month &&
         g.day == m_pFrame->m_today.day);
-    if (isToday) return CLR_TODAY;
+    if (isToday) return m_pFrame->m_colorTodayCell;
 
     for (const auto& h : cell.holidays)
-        if (h.flags & HOLIDAY_YOM_TOV)     return CLR_YOM_TOV;
+        if (h.flags & HOLIDAY_YOM_TOV)     return m_pFrame->m_colorYomTovCell;
     for (const auto& h : cell.holidays)
-        if (h.flags & HOLIDAY_ROSH_CHODESH) return CLR_ROSH_CHODESH;
+        if (h.flags & HOLIDAY_ROSH_CHODESH) return m_pFrame->m_colorRoshChodeshCell;
     for (const auto& h : cell.holidays)
-        if (h.flags & HOLIDAY_CHOL_HAMOED)  return CLR_CHOL_HAMOED;
+        if (h.flags & HOLIDAY_CHOL_HAMOED)  return m_pFrame->m_colorCholHamoedCell;
     for (const auto& h : cell.holidays)
-        if (h.flags & HOLIDAY_FAST)         return CLR_FAST_DAY;
+        if (h.flags & HOLIDAY_FAST)         return m_pFrame->m_colorFastDayCell;
 
-    if (GetDayOfWeek(g) == SHABBAT) return CLR_SHABBOS;
-    return CLR_NORMAL;
+    if (GetDayOfWeek(g) == SHABBAT) return m_pFrame->m_colorShabbosCell;
+    return m_pFrame->m_colorNormalCell;
 }
 
 // =============================================================================
@@ -411,6 +416,96 @@ CRect CCalendarView::GetCellRect(int idx) const
         m_colX[col + 1], gridTop + (row + 1) * m_cellH);
 }
 
+bool CCalendarView::IsSelectedDate(const GregorianDate& g) const
+{
+    if (!m_selectedJdns.empty())
+        return IsExplicitlySelected(g);
+    return m_pFrame &&
+        g.year == m_pFrame->m_selectedDate.year &&
+        g.month == m_pFrame->m_selectedDate.month &&
+        g.day == m_pFrame->m_selectedDate.day;
+}
+
+bool CCalendarView::IsExplicitlySelected(const GregorianDate& g) const
+{
+    long key = CalendarDateKey(g);
+    return std::find(m_selectedJdns.begin(), m_selectedJdns.end(), key) != m_selectedJdns.end();
+}
+
+std::vector<GregorianDate> CCalendarView::GetSelectedDates() const
+{
+    std::vector<GregorianDate> dates;
+    if (m_selectedJdns.empty())
+    {
+        if (m_pFrame)
+            dates.push_back(m_pFrame->m_selectedDate);
+        return dates;
+    }
+
+    std::vector<long> keys = m_selectedJdns;
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    for (long key : keys)
+        dates.push_back(JDNToGregorian(key));
+    return dates;
+}
+
+void CCalendarView::ClearMultiSelection()
+{
+    m_selectedJdns.clear();
+}
+
+int CCalendarView::FindSelectedCellIndex() const
+{
+    if (!m_pFrame)
+        return -1;
+    for (int i = 0; i < (int)m_cells.size(); ++i)
+        if (m_cells[i].greg.year == m_pFrame->m_selectedDate.year &&
+            m_cells[i].greg.month == m_pFrame->m_selectedDate.month &&
+            m_cells[i].greg.day == m_pFrame->m_selectedDate.day)
+            return i;
+    return -1;
+}
+
+void CCalendarView::ToggleSelectedCell(int idx)
+{
+    if (idx < 0 || idx >= (int)m_cells.size())
+        return;
+
+    if (m_selectedJdns.empty() && m_pFrame)
+        m_selectedJdns.push_back(CalendarDateKey(m_pFrame->m_selectedDate));
+
+    long key = CalendarDateKey(m_cells[idx].greg);
+    auto it = std::find(m_selectedJdns.begin(), m_selectedJdns.end(), key);
+    if (it != m_selectedJdns.end())
+    {
+        if (m_selectedJdns.size() > 1)
+            m_selectedJdns.erase(it);
+    }
+    else
+    {
+        m_selectedJdns.push_back(key);
+    }
+    m_anchorIndex = idx;
+}
+
+void CCalendarView::SelectRangeToCell(int idx)
+{
+    if (idx < 0 || idx >= (int)m_cells.size())
+        return;
+
+    if (m_anchorIndex < 0 || m_anchorIndex >= (int)m_cells.size())
+        m_anchorIndex = FindSelectedCellIndex();
+    if (m_anchorIndex < 0)
+        m_anchorIndex = idx;
+
+    int first = min(m_anchorIndex, idx);
+    int last  = max(m_anchorIndex, idx);
+    m_selectedJdns.clear();
+    for (int i = first; i <= last; ++i)
+        m_selectedJdns.push_back(CalendarDateKey(m_cells[i].greg));
+}
+
 // =============================================================================
 // MOUSE HANDLING
 // =============================================================================
@@ -422,7 +517,21 @@ void CCalendarView::OnLButtonDown(UINT nFlags, CPoint pt)
     if (idx >= 0 && idx < (int)m_cells.size())
     {
         SetFocus();
+        bool ctrl = (nFlags & MK_CONTROL) != 0 || (::GetKeyState(VK_CONTROL) & 0x8000);
+        bool shift = (nFlags & MK_SHIFT) != 0 || (::GetKeyState(VK_SHIFT) & 0x8000);
+
+        if (shift)
+            SelectRangeToCell(idx);
+        else if (ctrl)
+            ToggleSelectedCell(idx);
+        else
+        {
+            ClearMultiSelection();
+            m_anchorIndex = idx;
+        }
+
         m_pFrame->SelectDate(m_cells[idx].greg);
+        Invalidate(FALSE);
     }
     CWnd::OnLButtonDown(nFlags, pt);
 }
@@ -434,6 +543,8 @@ void CCalendarView::OnLButtonDblClk(UINT nFlags, CPoint pt)
     if (idx >= 0 && idx < (int)m_cells.size())
     {
         SetFocus();
+        ClearMultiSelection();
+        m_anchorIndex = idx;
         m_pFrame->SelectDate(m_cells[idx].greg);
         m_pFrame->OpenDayViewForDate(m_cells[idx].greg);
     }
@@ -461,15 +572,27 @@ void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
     }
     SetFocus();
     const GregorianDate& g = m_cells[idx].greg;
+    std::vector<GregorianDate> selectedDates = GetSelectedDates();
+    bool clickedInMultiSelection = selectedDates.size() > 1 && IsExplicitlySelected(g);
+    if (!clickedInMultiSelection)
+    {
+        ClearMultiSelection();
+        m_anchorIndex = idx;
+        selectedDates.clear();
+        selectedDates.push_back(g);
+    }
     m_pFrame->SelectDate(g);
 
     wchar_t addLabel[80];
     swprintf_s(addLabel, L"Add Event on %d/%d/%d...", g.month, g.day, g.year);
+    bool printSelected = selectedDates.size() > 1;
 
     CMenu menu;
     menu.CreatePopupMenu();
     menu.AppendMenu(MF_STRING, 1, addLabel);
-    menu.AppendMenu(MF_STRING, 2, L"Print Day Details");
+    menu.AppendMenu(MF_STRING, 2, printSelected
+        ? L"Print Day Details for Selected Days"
+        : L"Print Day Details");
     menu.AppendMenu(MF_SEPARATOR);
     menu.AppendMenu(MF_STRING, 3, L"Jump to Bar Mitzvah from this date");
     menu.AppendMenu(MF_STRING, 4, L"Jump to Bat Mitzvah from this date");
@@ -483,9 +606,16 @@ void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
     if (cmd == 1)
         m_pFrame->AddEventForDate(g);
     else if (cmd == 2)
-        DoPrintDay(g, m_pFrame);
+    {
+        if (printSelected)
+            DoPrintDays(selectedDates, m_pFrame);
+        else
+            DoPrintDay(g, m_pFrame);
+    }
     else if (cmd == 3 || cmd == 4)
     {
+        ClearMultiSelection();
+        m_anchorIndex = idx;
         int years = (cmd == 3) ? 13 : 12;
         HebrewDate target = AddHebrewYears(GregorianToHebrew(g), years);
         m_pFrame->SelectDate(HebrewToGregorian(target));
@@ -504,16 +634,20 @@ void CCalendarView::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
     if (!m_pFrame) return;
 
     long jdn = HebrewToJDN(m_pFrame->m_selectedHebrew);
+    auto clearKeyboardSelection = [&]() {
+        ClearMultiSelection();
+        m_anchorIndex = -1;
+    };
 
     switch (nChar)
     {
-    case VK_LEFT:  m_pFrame->SelectDate(JDNToGregorian(jdn - 1)); break;
-    case VK_RIGHT: m_pFrame->SelectDate(JDNToGregorian(jdn + 1)); break;
-    case VK_UP:    m_pFrame->SelectDate(JDNToGregorian(jdn - 7)); break;
-    case VK_DOWN:  m_pFrame->SelectDate(JDNToGregorian(jdn + 7)); break;
-    case VK_PRIOR: m_pFrame->PrevMonth(); break;
-    case VK_NEXT:  m_pFrame->NextMonth(); break;
-    case VK_HOME:  m_pFrame->GoToToday(); break;
+    case VK_LEFT:  clearKeyboardSelection(); m_pFrame->SelectDate(JDNToGregorian(jdn - 1)); break;
+    case VK_RIGHT: clearKeyboardSelection(); m_pFrame->SelectDate(JDNToGregorian(jdn + 1)); break;
+    case VK_UP:    clearKeyboardSelection(); m_pFrame->SelectDate(JDNToGregorian(jdn - 7)); break;
+    case VK_DOWN:  clearKeyboardSelection(); m_pFrame->SelectDate(JDNToGregorian(jdn + 7)); break;
+    case VK_PRIOR: clearKeyboardSelection(); m_pFrame->PrevMonth(); break;
+    case VK_NEXT:  clearKeyboardSelection(); m_pFrame->NextMonth(); break;
+    case VK_HOME:  clearKeyboardSelection(); m_pFrame->GoToToday(); break;
     default:
         CWnd::OnKeyDown(nChar, nRepCnt, nFlags);
         break;

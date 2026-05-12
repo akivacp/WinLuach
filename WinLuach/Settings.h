@@ -68,11 +68,11 @@ struct AppSettings
     bool         showParshios = true;
     bool         showMoadim = true;
     bool         showUserEvents = true;
-    bool         showDafYomi = true;
+    bool         showDafYomi = false;
     bool         showYerushalmi = false;
-    bool         showHalachaYomit = true;
-    bool         showMishnaYomit = true;
-    bool         showTanachYomi = true;
+    bool         showHalachaYomit = false;
+    bool         showMishnaYomit = false;
+    bool         showTanachYomi = false;
     int          haftarahShita = 0;   // 0=Ashkenazi, 1=Eidot Mizrach, 2=Italian, 3=Yemenite
     int          fontSize = 1;        // 0=Small, 1=Medium, 2=Big
     int          language = 0;        // 0=English, future use
@@ -102,10 +102,10 @@ struct AppSettings
     // --- Print options (persisted across sessions) ---
     bool         printLandscape    = true;
     int          printRange        = 0;     // 0=month, 1=year, 2=next12
-    float        printMarginTop    = 0.0f;
-    float        printMarginBot    = 0.0f;
-    float        printMarginLeft   = 0.0f;
-    float        printMarginRight  = 0.0f;
+    float        printMarginTop    = 0.5f;
+    float        printMarginBot    = 0.5f;
+    float        printMarginLeft   = 0.5f;
+    float        printMarginRight  = 0.5f;
     uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
     bool         printShowFooter   = true;
 
@@ -119,6 +119,30 @@ struct AppSettings
 
     // --- Zmanim display ---
     bool         showChatzosOnFasts = false; // show chatzos on public fast day cells
+    int          customAlotMode = 0;         // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
+    double       customAlotValue = 16.1;
+    int          customTzeitMode = 0;        // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
+    double       customTzeitValue = 8.5;
+
+    // --- Calendar colors ---
+    int          colorNormalCell       = 0x00FFFFFF; // RGB(255,255,255)
+    int          colorOtherMonthCell   = 0x00F0F0F0; // RGB(240,240,240)
+    int          colorTodayCell        = 0x0096FFFF; // RGB(255,255,150)
+    int          colorShabbosCell      = 0x00B4E6B4; // RGB(180,230,180)
+    int          colorYomTovCell       = 0x0082C8FF; // RGB(255,200,130)
+    int          colorRoshChodeshCell  = 0x00FFD2B4; // RGB(180,210,255)
+    int          colorCholHamoedCell   = 0x00B4E6FF; // RGB(255,230,180)
+    int          colorFastDayCell      = 0x00DCC8DC; // RGB(220,200,220)
+    int          colorGregorianText    = 0x00323232; // RGB(50,50,50)
+    int          colorHebrewText       = 0x00B41E1E; // RGB(30,30,180)
+    int          colorHolidayText      = 0x001E1EB4; // RGB(180,30,30)
+    int          colorParshaText       = 0x00A0501E; // RGB(30,80,160)
+    int          colorCivilEventText   = 0x00781E78; // RGB(120,30,120)
+    int          colorHebrewEventText  = 0x00506E00; // RGB(0,110,80)
+    int          colorOmerText         = 0x00965064; // RGB(100,80,150)
+    int          colorLearningText     = 0x00B45A00; // RGB(0,90,180)
+    int          colorCandleText       = 0x000050B4; // RGB(180,80,0)
+    int          colorMotzText         = 0x00A05000; // RGB(0,80,160)
 
     // --- Layout (splitters) ---
     int          sidebarWidth     = 190;   // persisted splitter position
