@@ -550,7 +550,7 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame)
 
 void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                          int year, int month, CMainFrame* pFrame,
-                         uint32_t colMask, bool use24hr)
+                         uint32_t colMask, bool use24hr, bool showFooter)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -766,13 +766,15 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
     int fFoot2 = -(H * 16 / 1000); if (fFoot2 > -4) fFoot2 = -4;
     CFont fontFoot2;
     fontFoot2.CreateFont(fFoot2,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-    pDC->SelectObject(&fontFoot2);
-    pDC->SetTextColor(RGB(140,140,140));
-    pDC->SetBkMode(TRANSPARENT);
-    int footH2 = -fFoot2 + 2;
-    pDC->FillSolidRect(CRect(x0, y0+H-footH2, x0+W, y0+H), RGB(245, 245, 245));
-    pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
-        CRect(x0, y0+H-footH2, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    if (showFooter) {
+        pDC->SelectObject(&fontFoot2);
+        pDC->SetTextColor(RGB(140,140,140));
+        pDC->SetBkMode(TRANSPARENT);
+        int footH2 = -fFoot2 + 2;
+        pDC->FillSolidRect(CRect(x0, y0+H-footH2, x0+W, y0+H), RGB(245, 245, 245));
+        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+            CRect(x0, y0+H-footH2, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    }
 }
 
 // =============================================================================
@@ -781,7 +783,7 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
 // =============================================================================
 
 void DrawDayPage(CDC* pDC, const CRect& rcPage,
-                 const GregorianDate& g, CMainFrame* pFrame)
+                 const GregorianDate& g, CMainFrame* pFrame, bool showFooter)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -923,17 +925,18 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         drawRow(L"Sha'a Zmanit:", (LPCWSTR)ss, RGB(20,60,20));
     }
 
-    // Footer
-    int fFoot3 = -(H * 16 / 1000); if (fFoot3 > -4) fFoot3 = -4;
-    CFont fontFoot3;
-    fontFoot3.CreateFont(fFoot3,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-    pDC->SelectObject(&fontFoot3);
-    pDC->SetTextColor(RGB(140,140,140));
-    pDC->SetBkMode(TRANSPARENT);
-    int footH3 = -fFoot3 + 2;
-    pDC->FillSolidRect(CRect(x0, y0+H-footH3, x0+W, y0+H), RGB(245, 245, 245));
-    pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
-        CRect(x0, y0+H-footH3, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    if (showFooter) {
+        int fFoot3 = -(H * 16 / 1000); if (fFoot3 > -4) fFoot3 = -4;
+        CFont fontFoot3;
+        fontFoot3.CreateFont(fFoot3,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
+        pDC->SelectObject(&fontFoot3);
+        pDC->SetTextColor(RGB(140,140,140));
+        pDC->SetBkMode(TRANSPARENT);
+        int footH3 = -fFoot3 + 2;
+        pDC->FillSolidRect(CRect(x0, y0+H-footH3, x0+W, y0+H), RGB(245, 245, 245));
+        pDC->DrawText(L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+            CRect(x0, y0+H-footH3, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
+    }
 }
 
 // =============================================================================
@@ -941,7 +944,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
 // =============================================================================
 
 bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
-    std::function<void(CDC*, const CRect&)> render)
+    PageRenderFn render, bool showFooter)
 {
     CPrintDialog pd(FALSE);
     pd.m_pd.Flags |= PD_RETURNDC | PD_NOPAGENUMS | PD_NOCURRENTPAGE;
@@ -977,7 +980,7 @@ bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
     di.lpszDocName = docName;
     dc.StartDoc(&di);
     dc.StartPage();
-    render(&dc, rcContent);
+    render(&dc, rcContent, showFooter);
     dc.EndPage();
     dc.EndDoc();
     dc.Detach(); ::DeleteDC(hDC);
@@ -989,7 +992,7 @@ bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame, uint32_t colMas
 {
     bool u24 = pFrame ? pFrame->m_use24hr : true;
     CSimplePageSetupDlg dlg(
-        [=](CDC* pDC, const CRect& rc){ DrawZmanimMonthPage(pDC, rc, year, month, pFrame, colMask, u24); },
+        [=](CDC* pDC, const CRect& rc, bool sf){ DrawZmanimMonthPage(pDC, rc, year, month, pFrame, colMask, u24, sf); },
         L"WinLuach Zmanim", true /* defaultLandscape */, pFrame);
     dlg.DoModal();
     return true;
@@ -998,7 +1001,7 @@ bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame, uint32_t colMas
 bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
 {
     CSimplePageSetupDlg dlg(
-        [=](CDC* pDC, const CRect& rc){ DrawDayPage(pDC, rc, g, pFrame); },
+        [=](CDC* pDC, const CRect& rc, bool sf){ DrawDayPage(pDC, rc, g, pFrame, sf); },
         L"WinLuach Day Details", false /* defaultLandscape */, pFrame);
     dlg.DoModal();
     return true;
@@ -1014,7 +1017,7 @@ BEGIN_MESSAGE_MAP(CSimplePageSetupDlg, CDialog)
 END_MESSAGE_MAP()
 
 CSimplePageSetupDlg::CSimplePageSetupDlg(
-    std::function<void(CDC*, const CRect&)> render,
+    PageRenderFn render,
     const wchar_t* docName, bool defaultLandscape, CWnd* pParent)
     : CDialog(), m_render(std::move(render)), m_docName(docName)
 {
@@ -1080,6 +1083,13 @@ BOOL CSimplePageSetupDlg::OnInitDialog()
     mkEdit(m_editRight,  IDC_SPS_EDT_RIGHT, fmtM(m_opts.mRight), 168, y, 50);
     y += 30;
 
+    // Show Footer checkbox
+    m_chkFooter.Create(L"Show footer", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+        CRect(8, y, 200, y+18), this, IDC_SPS_CHK_FOOTER);
+    m_chkFooter.SetFont(pF);
+    m_chkFooter.SetCheck(BST_CHECKED);
+    y += 26;
+
     int btnY = H - 36;
     m_btnPreview.Create(L"Preview",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|WS_GROUP,
@@ -1118,14 +1128,16 @@ void CSimplePageSetupDlg::ReadControls()
 void CSimplePageSetupDlg::OnPreview()
 {
     ReadControls();
-    CSimplePreviewDlg prev(m_render, m_docName.c_str(), !m_opts.landscape, this);
+    bool sf = (!m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED);
+    CSimplePreviewDlg prev(m_render, m_docName.c_str(), !m_opts.landscape, sf, this);
     prev.DoModal();
 }
 
 void CSimplePageSetupDlg::OnPrint()
 {
     ReadControls();
-    SimplePrint(m_docName.c_str(), m_opts, m_render);
+    bool sf = (!m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED);
+    SimplePrint(m_docName.c_str(), m_opts, m_render, sf);
     CDialog::OnOK();
 }
 
@@ -1141,9 +1153,10 @@ BEGIN_MESSAGE_MAP(CSimplePreviewDlg, CDialog)
 END_MESSAGE_MAP()
 
 CSimplePreviewDlg::CSimplePreviewDlg(
-    std::function<void(CDC*, const CRect&)> render,
-    const wchar_t* docName, bool portrait, CWnd* pParent)
-    : CDialog(), m_render(std::move(render)), m_docName(docName), m_portrait(portrait)
+    PageRenderFn render,
+    const wchar_t* docName, bool portrait, bool showFooter, CWnd* pParent)
+    : CDialog(), m_render(std::move(render)), m_docName(docName),
+      m_portrait(portrait), m_showFooter(showFooter)
 {
     m_pParentWnd = pParent;
 }
@@ -1211,7 +1224,7 @@ void CSimplePreviewDlg::OnPaint()
     int marg = max(6, pageW / 25);
     CRect rcContent = rcPage;
     rcContent.DeflateRect(marg, marg);
-    m_render(&dc, rcContent);
+    m_render(&dc, rcContent, m_showFooter);
 
     // Button strip background
     CRect btnRc(0, rc.bottom - BTN_STRIP, rc.right, rc.bottom);
@@ -1224,7 +1237,7 @@ void CSimplePreviewDlg::OnPrint()
 {
     SimplePageOpts opts;
     opts.landscape = !m_portrait;
-    SimplePrint(m_docName.c_str(), opts, m_render);
+    SimplePrint(m_docName.c_str(), opts, m_render, m_showFooter);
 }
 
 void CSimplePreviewDlg::OnSize(UINT nType, int cx, int cy)
