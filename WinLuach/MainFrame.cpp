@@ -1195,6 +1195,7 @@ protected:
             bool isLagBaOmer   = (m_h.month == IYAR    && m_h.day == 18);
             bool isErevTishaBav= (m_h.month == AV      && m_h.day == 8 && !isShabbos);
             bool isTishaBav    = (m_h.month == AV      && m_h.day == 9 && !isShabbos);
+            bool is10Av        = (m_h.month == AV      && m_h.day == 10);
             bool isFriAfterPes = false, isShabbAfterPes = false;
             bool isFriAfterRH  = false, isShabbAfterRH  = false;
             {
@@ -1224,7 +1225,7 @@ protected:
             }
 
             bool anySpecial = isShabbos || (hasFast && !isShabbos) || isLagBaOmer
-                || isErevTishaBav || isTishaBav || isErevYK || isErevPesach
+                || isErevTishaBav || isTishaBav || is10Av || isErevYK || isErevPesach
                 || isFriAfterPes || isShabbAfterPes || isFriAfterRH || isShabbAfterRH;
 
             if (anySpecial) {
@@ -1263,6 +1264,8 @@ protected:
                     boldRow(L"Shkia (Fast Begins):", m_z.shkia, RGB(180, 0, 0));
                 if (isTishaBav && m_z.chatzot.IsValid())
                     boldRow(L"Chatzos:", m_z.chatzot, RGB(100, 50, 0));
+                if (is10Av && m_z.chatzot.IsValid())
+                    boldRow(L"Chatzos (Midday):", m_z.chatzot, RGB(100, 50, 0));
                 if (isErevYK) {
                     if (m_z.chatzot.IsValid())    boldRow(L"Chatzos:",         m_z.chatzot,          RGB(100, 50, 0));
                     if (m_z.shkia.IsValid())       boldRow(L"Shkia (Fast Beg.):", m_z.shkia,          RGB(180, 0, 0));
@@ -1347,7 +1350,7 @@ public:
     INT_PTR DoModal() override {
         struct Tmpl { DLGTEMPLATE t; WORD m, c; wchar_t title[30]; } b = {};
         b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_CENTER;
-        b.t.cx = 230; b.t.cy = 380;
+        b.t.cx = 230; b.t.cy = 440;
         wcscpy_s(b.title, L"Print Zmanim Month");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -1386,10 +1389,40 @@ protected:
         for (int i = 0; i < 15; i++) {
             m_chk[i].Create(kNames[i],
                 WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
-                CRect(tx+6, ty+4 + i*19, tx+tw-6, ty+4 + i*19+17), this, IDC_ZPD_CHK+i);
+                CRect(tx+6, ty+4 + i*17, tx+tw-6, ty+4 + i*17+15), this, IDC_ZPD_CHK+i);
             m_chk[i].SetFont(pF);
             m_chk[i].SetCheck((savedMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
         }
+        // Sedra column toggle + holiday sub-options
+        int sedY = ty + 4 + 15*17 + 4;
+        m_chkSedra.Create(L"Show weekly Sedra (Parasha) column",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(tx+6, sedY, tx+tw-6, sedY+15), this, IDC_ZPD_SEDRA);
+        m_chkSedra.SetFont(pF);
+        // "Also show in Sedra column:" label
+        CStatic* pLbl = new CStatic;
+        pLbl->Create(L"Also show in Sedra column:",
+            WS_CHILD|WS_VISIBLE|SS_LEFT,
+            CRect(tx+6, sedY+19, tx+tw-6, sedY+31), this, IDC_ZPD_SEDRA_LBL);
+        pLbl->SetFont(pF);
+        // 2×2 grid of holiday type checkboxes
+        int hcY1 = sedY + 33, hcY2 = sedY + 51, hcMid = tx + 6 + (tw-12)/2;
+        m_chkMajor.Create(L"Major Holidays",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(tx+6, hcY1, hcMid-2, hcY1+15), this, IDC_ZPD_HOL_MAJOR);
+        m_chkMajor.SetFont(pF); m_chkMajor.SetCheck(BST_CHECKED);
+        m_chkMinor.Create(L"Minor Holidays",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(hcMid+2, hcY1, tx+tw-6, hcY1+15), this, IDC_ZPD_HOL_MINOR);
+        m_chkMinor.SetFont(pF); m_chkMinor.SetCheck(BST_CHECKED);
+        m_chkFast.Create(L"Fast Days",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(tx+6, hcY2, hcMid-2, hcY2+15), this, IDC_ZPD_HOL_FAST);
+        m_chkFast.SetFont(pF); m_chkFast.SetCheck(BST_CHECKED);
+        m_chkIsrael.Create(L"Israeli National Days",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(hcMid+2, hcY2, tx+tw-6, hcY2+15), this, IDC_ZPD_HOL_ISRAEL);
+        m_chkIsrael.SetFont(pF); m_chkIsrael.SetCheck(BST_CHECKED);
 
         // --- Tab 1: Page setup ---
         int py = ty + 10;
@@ -1435,6 +1468,12 @@ protected:
         makeLabel(L"Bottom margin (in):", py); makeEdit(m_editBot,   0.75f, py+16); py += 40;
         makeLabel(L"Left margin (in):",   py); makeEdit(m_editLeft,  0.50f, py+16); py += 40;
         makeLabel(L"Right margin (in):",  py); makeEdit(m_editRight, 0.50f, py+16);
+        py += 40;
+        m_chkFooter.Create(L"Show footer",
+            WS_CHILD|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(tx+8, py, tx+tw-8, py+16), this, IDC_ZPD_FOOTER);
+        m_chkFooter.SetFont(pF);
+        m_chkFooter.SetCheck(BST_CHECKED);
 
         // Initially hide tab 1 controls
         m_radPortrait.ShowWindow(SW_HIDE);
@@ -1465,6 +1504,7 @@ protected:
         int sel = m_tab.GetCurSel();
         for (int i = 0; i < 15; i++)
             m_chk[i].ShowWindow(sel == 0 ? SW_SHOW : SW_HIDE);
+        int s0 = (sel == 0) ? SW_SHOW : SW_HIDE;
         int s1 = (sel == 1) ? SW_SHOW : SW_HIDE;
         m_radPortrait.ShowWindow(s1);
         m_radLandscape.ShowWindow(s1);
@@ -1474,18 +1514,27 @@ protected:
         m_editBot.ShowWindow(s1);
         m_editLeft.ShowWindow(s1);
         m_editRight.ShowWindow(s1);
+        m_chkFooter.ShowWindow(s1);
+        m_chkSedra.ShowWindow(s0);
+        m_chkMajor.ShowWindow(s0);
+        m_chkMinor.ShowWindow(s0);
+        m_chkFast.ShowWindow(s0);
+        m_chkIsrael.ShowWindow(s0);
+        if (CWnd* pL = GetDlgItem(IDC_ZPD_SEDRA_LBL)) pL->ShowWindow(s0);
         *pResult = 0;
     }
 
     afx_msg void OnPrint() {
         theApp.m_settings.printZmanimColMask = ReadColMask();
         SaveSettings(theApp.m_settings);
-        SimplePrint(L"WinLuach Zmanim", ReadPageOpts(), MakeRender(), true);
+        bool sf = !m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED;
+        SimplePrint(L"WinLuach Zmanim", ReadPageOpts(), MakeRender(), sf);
     }
 
     afx_msg void OnPreview() {
         SimplePageOpts opts = ReadPageOpts();
-        CSimplePreviewDlg prev(MakeRender(), L"WinLuach Zmanim", !opts.landscape, true, this);
+        bool sf = !m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED;
+        CSimplePreviewDlg prev(MakeRender(), L"WinLuach Zmanim", !opts.landscape, sf, this);
         prev.DoModal();
     }
 
@@ -1500,17 +1549,26 @@ private:
     CButton      m_rad12hr, m_rad24hr;
     CEdit        m_editTop, m_editBot, m_editLeft, m_editRight;
     CButton      m_btnPrint, m_btnPreview;
+    CButton      m_chkFooter, m_chkSedra;
+    CButton      m_chkMajor, m_chkMinor, m_chkFast, m_chkIsrael;
     bool         m_use24hr = true;
 
     enum {
-        IDC_ZPD_TAB     = 600,
-        IDC_ZPD_CHK     = 601,  // 601..615
-        IDC_ZPD_PORT    = 616,
-        IDC_ZPD_LAND    = 617,
-        IDC_ZPD_PRINT   = 618,
-        IDC_ZPD_PREVIEW = 619,
-        IDC_ZPD_12HR    = 620,
-        IDC_ZPD_24HR    = 621,
+        IDC_ZPD_TAB        = 600,
+        IDC_ZPD_CHK        = 601,  // 601..615
+        IDC_ZPD_PORT       = 616,
+        IDC_ZPD_LAND       = 617,
+        IDC_ZPD_PRINT      = 618,
+        IDC_ZPD_PREVIEW    = 619,
+        IDC_ZPD_12HR       = 620,
+        IDC_ZPD_24HR       = 621,
+        IDC_ZPD_FOOTER     = 622,
+        IDC_ZPD_SEDRA      = 623,
+        IDC_ZPD_HOL_MAJOR  = 624,
+        IDC_ZPD_HOL_MINOR  = 625,
+        IDC_ZPD_HOL_FAST   = 626,
+        IDC_ZPD_HOL_ISRAEL = 627,
+        IDC_ZPD_SEDRA_LBL  = 628,
     };
 
     uint32_t ReadColMask() {
@@ -1534,12 +1592,20 @@ private:
     }
 
     PageRenderFn MakeRender() {
-        uint32_t mask = ReadColMask();
-        bool u24 = (m_rad24hr.GetSafeHwnd() && m_rad24hr.GetCheck() == BST_CHECKED);
+        uint32_t mask  = ReadColMask();
+        bool u24       = (m_rad24hr.GetSafeHwnd()  && m_rad24hr.GetCheck()  == BST_CHECKED);
+        bool sedra     = (m_chkSedra.GetSafeHwnd() && m_chkSedra.GetCheck() == BST_CHECKED);
+        uint32_t holMask = 0;
+        if (sedra) {
+            if (m_chkMajor.GetSafeHwnd()  && m_chkMajor.GetCheck()  == BST_CHECKED) holMask |= HOLIDAY_YOM_TOV;
+            if (m_chkMinor.GetSafeHwnd()  && m_chkMinor.GetCheck()  == BST_CHECKED) holMask |= HOLIDAY_MINOR;
+            if (m_chkFast.GetSafeHwnd()   && m_chkFast.GetCheck()   == BST_CHECKED) holMask |= HOLIDAY_FAST;
+            if (m_chkIsrael.GetSafeHwnd() && m_chkIsrael.GetCheck() == BST_CHECKED) holMask |= HOLIDAY_MODERN;
+        }
         int yr = m_year, mo = m_month;
         CMainFrame* pF = m_pFrame;
         return [=](CDC* pDC, const CRect& rc, bool sf) {
-            DrawZmanimMonthPage(pDC, rc, yr, mo, pF, mask, u24, sf);
+            DrawZmanimMonthPage(pDC, rc, yr, mo, pF, mask, u24, sf, sedra, holMask);
         };
     }
 };
@@ -1720,7 +1786,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     calMenu.AppendMenu(MF_SEPARATOR);
     calMenu.AppendMenu(MF_STRING, ID_VIEW_TODAY,      L"&Today\tHome");
     calMenu.AppendMenu(MF_STRING, ID_CAL_GOTO,        L"&Go to Date...\tCtrl+G");
-    calMenu.AppendMenu(MF_STRING, ID_CAL_EVENTS,      L"&Events (Birthdays, Yahrzeits...)");
+    calMenu.AppendMenu(MF_STRING, ID_CAL_EVENTS,      L"&Events (Birthdays, Yahrzeits...)\tCtrl+E");
     calMenu.AppendMenu(MF_SEPARATOR);
     calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVMONTH,  L"&Previous Month\tPage Up");
     calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTMONTH,  L"&Next Month\tPage Down");
@@ -1742,7 +1808,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     CMenu optMenu;
     optMenu.CreatePopupMenu();
-    optMenu.AppendMenu(MF_STRING, ID_OPTIONS_LOCATION, L"&Location...");
+    optMenu.AppendMenu(MF_STRING, ID_OPTIONS_LOCATION, L"&Location...\tCtrl+L");
     optMenu.AppendMenu(MF_STRING, ID_OPTIONS_PREFS,    L"&Preferences...\tCtrl+,");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)optMenu.Detach(), L"&Options");
 
@@ -2161,21 +2227,11 @@ void CMainFrame::OnCalPrintZmanim()
 
 void CMainFrame::OnHebCivilToggle()
 {
-    // Sync the corresponding calendar before switching so the view month is preserved
-    if (m_hebrewMonthView)
-    {
-        // Switching from Hebrew to Civil: derive Gregorian month from current Hebrew view
-        GregorianDate g = HebrewToGregorian(HebrewDate(m_viewHebrewYear, m_viewHebrewMonth, 1));
-        m_viewYear  = g.year;
-        m_viewMonth = g.month;
-    }
-    else
-    {
-        // Switching from Civil to Hebrew: derive Hebrew month from current Gregorian view
-        HebrewDate h = GregorianToHebrew(GregorianDate(m_viewYear, m_viewMonth, 1));
-        m_viewHebrewYear  = h.year;
-        m_viewHebrewMonth = h.month;
-    }
+    // Sync both views to the currently selected day, then flip
+    m_viewYear        = m_selectedDate.year;
+    m_viewMonth       = m_selectedDate.month;
+    m_viewHebrewYear  = m_selectedHebrew.year;
+    m_viewHebrewMonth = m_selectedHebrew.month;
     m_hebrewMonthView = !m_hebrewMonthView;
     if (m_btnHebCivil.GetSafeHwnd())
         m_btnHebCivil.SetWindowText(m_hebrewMonthView ? L"Civil" : L"Heb");
@@ -3038,6 +3094,8 @@ std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
             motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Lag BaOmer
         else if (h.month == AV && h.day == 9 && z.chatzot.IsValid())
             motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Tisha B'Av
+        else if (h.month == AV && h.day == 10 && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // 10 Av (day after Tisha B'Av)
         else if (h.month == NISSAN && h.day == 14 && !m_isIsrael
                  && z.chatzot.IsValid())
             motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // Erev Pesach diaspora
@@ -3474,6 +3532,14 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
         (GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000))
     {
         OnCalGoTo();
+        return TRUE;
+    }
+
+    // Ctrl+E — events dialog
+    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == 'E' &&
+        (GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000))
+    {
+        OnCalEvents();
         return TRUE;
     }
 

@@ -263,9 +263,11 @@ void CSidebarPanel::OnPaint()
         bool isTishaBav2  = (hs.month == AV && hs.day == 9);
         bool isErevTB2    = (hs.month == AV && hs.day == 8);
         bool isErevPesach2= (hs.month == NISSAN && hs.day == 14);
+        bool isLagBaOmer2 = (hs.month == IYAR   && hs.day == 18);
+        bool is10Av2      = (hs.month == AV      && hs.day == 10);
 
         struct SpecTime { const wchar_t* label; TimeOfDay time; };
-        SpecTime stimes[8]; int nst = 0;
+        SpecTime stimes[12]; int nst = 0;
 
         if (isShab2 && zs.tzeitShabbat.IsValid())
             stimes[nst++] = { L"Tzeis Shabbos:", zs.tzeitShabbat };
@@ -275,8 +277,12 @@ void CSidebarPanel::OnPaint()
             stimes[nst++] = { L"Fast begins:", zs.shkia };
         if (isTishaBav2 && zs.chatzot.IsValid())
             stimes[nst++] = { L"Chatzos:", zs.chatzot };
+        if (is10Av2 && zs.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", zs.chatzot };
         if (isErevYK2 && zs.shkia.IsValid())
         {
+            if (zs.chatzot.IsValid())
+                stimes[nst++] = { L"Chatzos:", zs.chatzot };
             stimes[nst++] = { L"Fast begins:", zs.shkia };
             if (zs.candleLighting.IsValid())
                 stimes[nst++] = { L"Candle lighting:", zs.candleLighting };
@@ -287,7 +293,10 @@ void CSidebarPanel::OnPaint()
             TimeOfDay sofBiur   = AddMinutes(zs.hanetz, (int)(5.0 * zs.shaahZmanit_GRA));
             if (sofAchila.IsValid()) stimes[nst++] = { L"Eat chametz by:", sofAchila };
             if (sofBiur.IsValid())   stimes[nst++] = { L"Burn chametz by:", sofBiur };
+            if (zs.chatzot.IsValid()) stimes[nst++] = { L"Chatzos:", zs.chatzot };
         }
+        if (isLagBaOmer2 && zs.chatzot.IsValid())
+            stimes[nst++] = { L"Chatzos:", zs.chatzot };
 
         if (nst > 0 && yOff < cy - 20)
         {
@@ -317,6 +326,38 @@ void CSidebarPanel::OnPaint()
                 yOff += 18;
             }
         }
+    }
+
+    // Year details header — positioned at m_splitFrac or after day content
+    {
+        int splitY = (int)(m_splitFrac * cy);
+        yOff = max(yOff + 6, min(splitY, cy - 40));
+        m_yearHdrY = yOff;
+        if (yOff + 20 < cy)
+        {
+            CRect rcYHdr(0, yOff, cx - 1, yOff + 20);
+            memDC.FillSolidRect(rcYHdr, CLR_HEADER_BG);
+            memDC.SelectObject(&m_pFrame->m_fontBold);
+            memDC.SetTextColor(RGB(255, 255, 255));
+            CRect rcYTxt = rcYHdr; rcYTxt.left += 6;
+            memDC.DrawText(L"Year details", rcYTxt,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            yOff += 24;
+        }
+    }
+
+    // Year facts with alternating row shading
+    auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
+    memDC.SelectObject(&m_pFrame->m_fontSmall);
+    memDC.SetTextColor(RGB(60, 60, 60));
+    int rowIdx = 0;
+    for (const auto& fact : facts)
+    {
+        if (yOff > cy - 14) break;
+        COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
+        memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
+        rowIdx++;
+        yOff += drawWrapped(fact.c_str(), 48);
     }
 
     // Molad box
@@ -363,38 +404,6 @@ void CSidebarPanel::OnPaint()
         CRect rcMolad(x, yOff, x + w, yOff + 16);
         memDC.DrawText(moladStr, rcMolad, DT_LEFT | DT_TOP | DT_SINGLELINE);
         yOff += 20;
-    }
-
-    // Year details header — positioned at m_splitFrac or after day content
-    {
-        int splitY = (int)(m_splitFrac * cy);
-        yOff = max(yOff + 6, min(splitY, cy - 40));
-        m_yearHdrY = yOff;
-        if (yOff + 20 < cy)
-        {
-            CRect rcYHdr(0, yOff, cx - 1, yOff + 20);
-            memDC.FillSolidRect(rcYHdr, CLR_HEADER_BG);
-            memDC.SelectObject(&m_pFrame->m_fontBold);
-            memDC.SetTextColor(RGB(255, 255, 255));
-            CRect rcYTxt = rcYHdr; rcYTxt.left += 6;
-            memDC.DrawText(L"Year details", rcYTxt,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            yOff += 24;
-        }
-    }
-
-    // Year facts with alternating row shading
-    auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
-    memDC.SelectObject(&m_pFrame->m_fontSmall);
-    memDC.SetTextColor(RGB(60, 60, 60));
-    int rowIdx = 0;
-    for (const auto& fact : facts)
-    {
-        if (yOff > cy - 14) break;
-        COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
-        memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
-        rowIdx++;
-        yOff += drawWrapped(fact.c_str(), 48);
     }
 
     dcScreen.BitBlt(0, 0, cx, cy, &memDC, 0, 0, SRCCOPY);

@@ -75,7 +75,8 @@ bool SimplePrint(const wchar_t* docName, const SimplePageOpts& opts,
 void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
                          int year, int month, CMainFrame* pFrame,
                          uint32_t colMask = 0x7FFF, bool use24hr = true,
-                         bool showFooter = true);
+                         bool showFooter = true, bool showSedra = false,
+                         uint32_t sedraHolMask = 0);
 
 // Renders one day's details (holidays, learning, zmanim) to any DC.
 void DrawDayPage(CDC* pDC, const CRect& rcPage,
