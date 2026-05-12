@@ -94,6 +94,7 @@ struct AppSettings
     bool         minimizeToTray = false;
     int          minimizeTrayWhen = 0; // 0=minimized, 1=closed, 2=minimized or closed
     int          trayTextColor = 0x00FFFF; // COLORREF-style RGB, default yellow
+    uint32_t     trayTooltipZmanimMask = (1u << 2) | (1u << 9) | (1u << 10); // netz, shkiah, tzais
     bool         minimizeOnStartup = false;
     bool         startWithWindows = false;
     bool         desktopShortcut = false;
