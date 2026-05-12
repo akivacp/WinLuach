@@ -30,6 +30,7 @@ protected:
     virtual void OnOK() override;
     afx_msg void OnTrayTextColor();
     afx_msg void OnManageCals();
+    afx_msg void OnPreviewNotification();
 
     DECLARE_MESSAGE_MAP()
 
@@ -56,14 +57,17 @@ private:
     CButton m_chkHalacha;
     CButton m_chkMishna;
     CButton m_chkTanach;
+    CButton m_chkShowTrayIcon;
     CButton m_chkMinimizeToTray;
     CButton m_chkMinimizeOnStartup;
     CButton m_chkStartWithWindows;
     CButton m_chkDesktopShortcut;
     CButton m_btnTrayTextColor;
-    CComboBox m_cmbHaftarah;
     CComboBox m_cmbFontSize;
     CComboBox m_cmbTrayWhen;
     CComboBox m_cmbCandleMinutes;
-    CButton m_btnManageCals;
+    CButton   m_btnManageCals;
+    CButton   m_btnPreviewNotify;
+    CComboBox m_cmbNotifyPersonal;
+    CComboBox m_cmbNotifyWebCal;
 };

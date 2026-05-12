@@ -15,11 +15,13 @@
 
 #include "pch.h"
 #include "CalendarView.h"
+#include "CalPrintDlg.h"
 
 BEGIN_MESSAGE_MAP(CCalendarView, CWnd)
     ON_WM_PAINT()
     ON_WM_LBUTTONDOWN()
     ON_WM_LBUTTONDBLCLK()
+    ON_WM_RBUTTONDOWN()
     ON_WM_KEYDOWN()
     ON_WM_ERASEBKGND()
     ON_WM_SIZE()
@@ -252,7 +254,7 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
             for (const auto& hol : cell.holidays)
             {
                 if (lines >= maxLines) break;
-                if (hol.flags & (HOLIDAY_SHABBOS_MEVAR | HOLIDAY_SPECIAL_SHAB))
+                if (hol.flags & HOLIDAY_SHABBOS_MEVAR)
                     continue;
 
                 std::wstring txt = hol.name;
@@ -435,6 +437,41 @@ void CCalendarView::OnLButtonDblClk(UINT nFlags, CPoint pt)
         m_pFrame->SelectDate(m_cells[idx].greg);
         m_pFrame->OpenDayViewForDate(m_cells[idx].greg);
     }
+}
+
+// Right-click — show context menu: Add Event / Print Day Details.
+void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
+{
+    int idx = HitTest(pt);
+    if (idx < 0 || idx >= (int)m_cells.size())
+    {
+        CWnd::OnRButtonDown(nFlags, pt);
+        return;
+    }
+    SetFocus();
+    const GregorianDate& g = m_cells[idx].greg;
+    m_pFrame->SelectDate(g);
+
+    wchar_t addLabel[80];
+    swprintf_s(addLabel, L"Add Event on %d/%d/%d...", g.month, g.day, g.year);
+
+    CMenu menu;
+    menu.CreatePopupMenu();
+    menu.AppendMenu(MF_STRING, 1, addLabel);
+    menu.AppendMenu(MF_STRING, 2, L"Print Day Details");
+
+    CPoint screenPt = pt;
+    ClientToScreen(&screenPt);
+    int cmd = (int)menu.TrackPopupMenu(
+        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN,
+        screenPt.x, screenPt.y, this);
+
+    if (cmd == 1)
+        m_pFrame->AddEventForDate(g);
+    else if (cmd == 2)
+        DoPrintDay(g, m_pFrame);
+
+    CWnd::OnRButtonDown(nFlags, pt);
 }
 
 // =============================================================================

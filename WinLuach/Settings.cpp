@@ -117,6 +117,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"haftarahShita\": " << s.haftarahShita << L",\n";
     f << L"  \"fontSize\": " << s.fontSize << L",\n";
     f << L"  \"language\": " << s.language << L",\n";
+    f << L"  \"showTrayIcon\": "   << (s.showTrayIcon   ? L"true" : L"false") << L",\n";
     f << L"  \"minimizeToTray\": " << (s.minimizeToTray ? L"true" : L"false") << L",\n";
     f << L"  \"minimizeTrayWhen\": " << s.minimizeTrayWhen << L",\n";
     f << L"  \"trayTextColor\": " << s.trayTextColor << L",\n";
@@ -139,11 +140,20 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printMarginBot\": "   << s.printMarginBot   << L",\n";
     f << L"  \"printMarginLeft\": "  << s.printMarginLeft  << L",\n";
     f << L"  \"printMarginRight\": " << s.printMarginRight << L",\n";
+    f << L"  \"printZmanimColMask\": " << s.printZmanimColMask << L",\n";
+    f << L"  \"notifyPersonalEvents\": " << s.notifyPersonalEvents << L",\n";
+    f << L"  \"notifyWebCalEvents\": "   << s.notifyWebCalEvents   << L",\n";
+    f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
+    f << L"  \"zmanimHeight\": "     << s.zmanimHeight                              << L",\n";
+    f << L"  \"sidebarCollapsed\": " << (s.sidebarCollapsed ? L"true" : L"false")   << L",\n";
     f << L"  \"windowX\": " << s.windowX << L",\n";
     f << L"  \"windowY\": " << s.windowY << L",\n";
     f << L"  \"windowW\": " << s.windowW << L",\n";
     f << L"  \"windowH\": " << s.windowH << L"\n";
     f << L"}\n";
+
+    // Save personal events to separate file
+    SaveEvents(s.userEvents);
 
     return true;
 }
@@ -187,6 +197,7 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"haftarahShita\"") != std::wstring::npos) s.haftarahShita = (int)ParseJsonNumber(line);
         else if (line.find(L"\"fontSize\"") != std::wstring::npos) s.fontSize = (int)ParseJsonNumber(line);
         else if (line.find(L"\"language\"") != std::wstring::npos) s.language = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"showTrayIcon\"")   != std::wstring::npos) s.showTrayIcon   = ParseJsonBool(line);
         else if (line.find(L"\"minimizeToTray\"") != std::wstring::npos) s.minimizeToTray = ParseJsonBool(line);
         else if (line.find(L"\"minimizeTrayWhen\"") != std::wstring::npos) s.minimizeTrayWhen = (int)ParseJsonNumber(line);
         else if (line.find(L"\"trayTextColor\"") != std::wstring::npos) s.trayTextColor = (int)ParseJsonNumber(line);
@@ -216,13 +227,19 @@ bool LoadSettings(AppSettings& s)
                 s.webCalendars[idx].enabled = ParseJsonBool(line);
             }
         }
+        else if (line.find(L"\"notifyPersonalEvents\"") != std::wstring::npos) s.notifyPersonalEvents = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifyWebCalEvents\"")   != std::wstring::npos) s.notifyWebCalEvents   = (int)ParseJsonNumber(line);
         else if (line.find(L"\"zmanimShita\"")     != std::wstring::npos) s.zmanimShita     = (int)ParseJsonNumber(line);
         else if (line.find(L"\"printLandscape\"")  != std::wstring::npos) s.printLandscape  = ParseJsonBool(line);
         else if (line.find(L"\"printRange\"")      != std::wstring::npos) s.printRange      = (int)ParseJsonNumber(line);
         else if (line.find(L"\"printMarginTop\"")  != std::wstring::npos) s.printMarginTop  = (float)ParseJsonNumber(line);
         else if (line.find(L"\"printMarginBot\"")  != std::wstring::npos) s.printMarginBot  = (float)ParseJsonNumber(line);
         else if (line.find(L"\"printMarginLeft\"") != std::wstring::npos) s.printMarginLeft = (float)ParseJsonNumber(line);
-        else if (line.find(L"\"printMarginRight\"")!= std::wstring::npos) s.printMarginRight= (float)ParseJsonNumber(line);
+        else if (line.find(L"\"printMarginRight\"")  != std::wstring::npos) s.printMarginRight    = (float)ParseJsonNumber(line);
+        else if (line.find(L"\"printZmanimColMask\"")!= std::wstring::npos) s.printZmanimColMask = (uint32_t)ParseJsonNumber(line);
+        else if (line.find(L"\"sidebarWidth\"")     != std::wstring::npos) s.sidebarWidth     = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"zmanimHeight\"")     != std::wstring::npos) s.zmanimHeight     = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"sidebarCollapsed\"") != std::wstring::npos) s.sidebarCollapsed = ParseJsonBool(line);
         else if (line.find(L"\"windowX\"")         != std::wstring::npos) s.windowX         = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowY\"") != std::wstring::npos) s.windowY = (int)ParseJsonNumber(line);
         else if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
@@ -233,5 +250,115 @@ bool LoadSettings(AppSettings& s)
     if (s.webCalendars.empty() && !s.webCalendarUrl.empty())
         s.webCalendars.push_back({ s.webCalendarUrl, true });
 
+    // Load personal events from separate file
+    LoadEvents(s.userEvents);
+
     return true;
+}
+
+// =============================================================================
+// EVENTS FILE PATH
+// =============================================================================
+
+std::wstring GetEventsFilePath()
+{
+    wchar_t path[MAX_PATH] = {};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
+    {
+        std::wstring dir = std::wstring(path) + L"\\WinLuach";
+        CreateDirectoryW(dir.c_str(), nullptr);
+        return dir + L"\\events.json";
+    }
+    return L"events.json";
+}
+
+// =============================================================================
+// EVENTS SAVE / LOAD
+// =============================================================================
+
+static void WriteEvent(std::wofstream& f, const UserEventEntry& e, int i)
+{
+    f << L"  \"ev" << i << L"_name\": \""       << JsonEscape(e.name) << L"\",\n";
+    f << L"  \"ev" << i << L"_type\": "          << e.type            << L",\n";
+    f << L"  \"ev" << i << L"_gregMonth\": "     << e.gregMonth       << L",\n";
+    f << L"  \"ev" << i << L"_gregDay\": "       << e.gregDay         << L",\n";
+    f << L"  \"ev" << i << L"_hebMonth\": "      << e.hebMonth        << L",\n";
+    f << L"  \"ev" << i << L"_hebDay\": "        << e.hebDay          << L",\n";
+    f << L"  \"ev" << i << L"_afterSunset\": "   << (e.afterSunset ? L"true" : L"false") << L",\n";
+    f << L"  \"ev" << i << L"_gregYear\": "      << e.gregYear                           << L",\n";
+    f << L"  \"ev" << i << L"_hebYear\": "       << e.hebYear                            << L",\n";
+}
+
+bool SaveEvents(const std::vector<UserEventEntry>& events)
+{
+    return ExportEvents(events, GetEventsFilePath());
+}
+
+bool ExportEvents(const std::vector<UserEventEntry>& events, const std::wstring& path)
+{
+    std::wofstream f(path);
+    if (!f.is_open()) return false;
+    f << L"{\n";
+    f << L"  \"eventCount\": " << events.size() << L",\n";
+    for (int i = 0; i < (int)events.size(); i++)
+        WriteEvent(f, events[i], i);
+    f << L"  \"_end\": 0\n}\n";
+    return true;
+}
+
+static void ParseEventsFromStream(std::wifstream& f, std::vector<UserEventEntry>& events)
+{
+    int count = 0;
+    std::vector<std::wstring> lines;
+    std::wstring ln;
+    while (std::getline(f, ln)) lines.push_back(ln);
+
+    for (auto& line : lines)
+        if (line.find(L"\"eventCount\"") != std::wstring::npos)
+            count = (int)ParseJsonNumber(line);
+
+    events.resize(count);
+    for (auto& line : lines)
+    {
+        // Match "evN_field": value  — extract N and field
+        size_t q1 = line.find(L"\"ev");
+        if (q1 == std::wstring::npos) continue;
+        size_t start = q1 + 3;
+        size_t us    = line.find(L'_', start);
+        if (us == std::wstring::npos) continue;
+        int idx = 0;
+        try { idx = std::stoi(line.substr(start, us - start)); } catch (...) { continue; }
+        if (idx < 0 || idx >= count) continue;
+        std::wstring field = line.substr(us + 1);
+        field = field.substr(0, field.find(L'"'));
+
+        if      (field == L"name")        events[idx].name        = ParseJsonString(line);
+        else if (field == L"type")        events[idx].type        = (int)ParseJsonNumber(line);
+        else if (field == L"gregMonth")   events[idx].gregMonth   = (int)ParseJsonNumber(line);
+        else if (field == L"gregDay")     events[idx].gregDay     = (int)ParseJsonNumber(line);
+        else if (field == L"hebMonth")    events[idx].hebMonth    = (int)ParseJsonNumber(line);
+        else if (field == L"hebDay")      events[idx].hebDay      = (int)ParseJsonNumber(line);
+        else if (field == L"afterSunset") events[idx].afterSunset = ParseJsonBool(line);
+        else if (field == L"gregYear")    events[idx].gregYear    = (int)ParseJsonNumber(line);
+        else if (field == L"hebYear")     events[idx].hebYear     = (int)ParseJsonNumber(line);
+    }
+}
+
+bool LoadEvents(std::vector<UserEventEntry>& events)
+{
+    std::wifstream f(GetEventsFilePath());
+    if (!f.is_open()) return false;
+    ParseEventsFromStream(f, events);
+    return true;
+}
+
+int ImportEvents(std::vector<UserEventEntry>& events, const std::wstring& path)
+{
+    std::wifstream f(path);
+    if (!f.is_open()) return 0;
+    std::vector<UserEventEntry> imported;
+    ParseEventsFromStream(f, imported);
+    int added = (int)imported.size();
+    events.insert(events.end(), imported.begin(), imported.end());
+    return added;
 }
