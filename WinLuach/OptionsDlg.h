@@ -72,4 +72,5 @@ private:
     CComboBox m_cmbNotifyWebCal;
     CComboBox m_cmbAlotShita;
     CComboBox m_cmbTzeitShita;
+    CButton   m_chkChatzosOnFasts;
 };

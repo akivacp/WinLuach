@@ -25,10 +25,11 @@ class CMainFrame;
 struct SimplePageOpts
 {
     bool  landscape = false;
-    float mTop  = 0.75f;
-    float mBot  = 0.75f;
-    float mLeft = 0.50f;
-    float mRight= 0.50f;
+    float mTop  = 0.0f;
+    float mBot  = 0.0f;
+    float mLeft = 0.0f;
+    float mRight= 0.0f;
+    bool  use24hr = false;
 };
 
 // ── Print options ─────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ struct CalPrintOptions
     float mRight        = 0.50f;
     bool     includeZmanim  = false;
     uint32_t zmanimColumns  = 0x7FFF;  // bitmask: which of 15 columns to include
+    bool     showFooter     = true;
 };
 
 // Render function type for single-page prints: DC, page rect, showFooter.
@@ -123,6 +125,7 @@ private:
     CButton m_chkZmanim;
     CButton m_btnPreview;
     CButton m_chkCol[15];
+    CButton m_chkShowFooter;
 
     enum {
         IDC_PD_RAD_MONTH   = 200,
@@ -137,6 +140,7 @@ private:
         IDC_PD_BTN_PREVIEW = 210,
         IDC_PD_CHK_ZMANIM  = 211,
         IDC_PD_COL_0       = 212,   // first of 15 column checkboxes (212..226)
+        IDC_PD_CHK_FOOTER  = 227,
     };
 
     void ReadControls();
@@ -151,6 +155,10 @@ public:
                         const wchar_t* docName, bool defaultLandscape,
                         CWnd* pParent = nullptr);
     virtual INT_PTR DoModal() override;
+
+    // Optional: pass a shared_ptr<bool> to add a 12/24-hr checkbox to the dialog.
+    // ReadControls() will update *ptr before each render/print call.
+    void SetUse24HrPtr(std::shared_ptr<bool> p) { m_pUse24hr = std::move(p); }
 
 protected:
     BOOL OnInitDialog() override;
@@ -168,6 +176,8 @@ private:
     CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
     CButton m_btnPreview;
     CButton m_chkFooter;
+    CButton m_chk24hr;
+    std::shared_ptr<bool> m_pUse24hr;
 
     enum {
         IDC_SPS_RAD_PORT    = 240,
@@ -178,6 +188,7 @@ private:
         IDC_SPS_EDT_RIGHT   = 245,
         IDC_SPS_BTN_PREVIEW = 246,
         IDC_SPS_CHK_FOOTER  = 247,
+        IDC_SPS_CHK_24HR    = 248,
     };
 
     void ReadControls();
