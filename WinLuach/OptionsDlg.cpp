@@ -9,11 +9,18 @@
 // v0.1.1 - Fixed: use InitModalIndirect + in-memory template.
 // v0.1.2 - Fixed CreateEx call to use 10 arguments (removed 2 extra nullptrs).
 //          Moved DoModal() to public in header.
+// v0.8.0 - Added "Zmanim Bar" tab with one checkbox per kZmanimBarLabels
+//          entry; restructured "Zmanim" tab into a TCS sub-tab with pages
+//          for Alos, Misheyakir, Sof Zman MA, Sof Zman GRA, Mincha Gedola,
+//          Mincha Ketana, Plag, End of Fast, and Tzais.  "Zman Shitos" tab
+//          dropped from main tab list (absorbed into Zmanim sub-tabs).
 // =============================================================================
 
 #include "pch.h"
 #include "OptionsDlg.h"
 #include "MainFrame.h"
+#include "Resource.h"
+#include "ZmanimPanel.h"
 #include <cmath>
 #include <cwctype>
 #include <fstream>
@@ -93,7 +100,7 @@
 #define IDC_OPT_TRAY_BACK_ENABLED 377
 #define IDC_OPT_TRAY_BACK_COLOR   378
 #define IDC_OPT_TRAY_FONT         379
-#define IDC_OPT_NOTIFY_ZMAN_FIRST 380
+#define IDC_OPT_NOTIFY_ZMAN_FIRST 460
 #define IDC_OPT_TRAY_NUMBER       397
 #define IDC_OPT_TRAY_DEFAULTS     398
 #define IDC_OPT_NOTIFY_SEFIRAH_HOUR 399
@@ -173,7 +180,8 @@ static const wchar_t* kZmanCheckboxLabels[] = {
     L"Alos", L"Misheyakir", L"Netz (Hanetz)", L"Sof Shema (GRA)", L"Sof Tefilla (GRA)",
     L"Chatzos", L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah",
     L"Tzais", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz",
-    L"Sof Shema (MA)", L"Sof Tefilla (MA)"
+    L"Sof Shema (MA 72 prop.)", L"Sof Tefilla (MA 72 prop.)",
+    L"Sof Shema (MA 90 prop.)", L"Sof Tefilla (MA 90 prop.)"
 };
 
 static constexpr int kZmanCheckboxCount =
@@ -1023,7 +1031,8 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_PREVIEW_NOTIFY,  &COptionsDlg::OnPreviewNotification)
     ON_BN_CLICKED(IDC_OPT_ADV_REMINDERS,   &COptionsDlg::OnAdvancedReminders)
     ON_BN_CLICKED(IDC_OPT_APPLY,           &COptionsDlg::OnApply)
-    ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,  &COptionsDlg::OnTabChanged)
+    ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
+    ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_WM_SIZE()
 END_MESSAGE_MAP()
 
@@ -1132,19 +1141,43 @@ BOOL COptionsDlg::OnInitDialog()
     m_pageZmanim.clear();
     m_pageZmanShitos.clear();
     m_pageNotifications.clear();
+    // v0.8.0 sub-pages + zmanim bar page.
+    m_pageZmanimBar.clear();
+    m_subPageAlos.clear();
+    m_subPageMisheyakir.clear();
+    m_subPageSofMA.clear();
+    m_subPageSofGRA.clear();
+    m_subPageMinchaGedola.clear();
+    m_subPageMinchaKetana.clear();
+    m_subPagePlag.clear();
+    m_subPageEndFast.clear();
+    m_subPageTzais.clear();
+    m_zmanimBarChecks.clear();
+    m_radAlosPreset.clear();
+    m_radMisheyakirPreset.clear();
+    m_radSofMAPreset.clear();
+    m_radSofGRAPreset.clear();
+    m_radMinchaGedolaPreset.clear();
+    m_radMinchaKetanaPreset.clear();
+    m_radPlagPreset.clear();
+    m_radEndFastPreset.clear();
+    m_radTzaisPreset.clear();
 
     m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
         CRect(6, 6, W - 6, H - 48), this, IDC_OPT_TAB);
     m_tab.SetFont(pFont);
     TCITEM ti = {};
     ti.mask = TCIF_TEXT;
-    ti.pszText = const_cast<LPWSTR>(L"General");   m_tab.InsertItem(0, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Month View");m_tab.InsertItem(1, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Interface"); m_tab.InsertItem(2, &ti);
+    // v0.8.0 tab order: General, Month View, Interface, Tray Tooltip,
+    // Zmanim Bar, Colors, Zmanim, Notifications.  "Zman Shitos" merged
+    // into the Zmanim tab as sub-tabs.
+    ti.pszText = const_cast<LPWSTR>(L"General");      m_tab.InsertItem(0, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Month View");   m_tab.InsertItem(1, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Interface");    m_tab.InsertItem(2, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Tray Tooltip"); m_tab.InsertItem(3, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Colors");    m_tab.InsertItem(4, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Zmanim");    m_tab.InsertItem(5, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Zman Shitos"); m_tab.InsertItem(6, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Zmanim Bar");   m_tab.InsertItem(4, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Colors");       m_tab.InsertItem(5, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Zmanim");       m_tab.InsertItem(6, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(7, &ti);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
@@ -1231,7 +1264,7 @@ BOOL COptionsDlg::OnInitDialog()
     y = 38;
 
     mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 230); y += 20;
-    m_chkShowTrayIcon.Create(L"Always show tray icon", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+    m_chkShowTrayIcon.Create(L"Pin WinLuach to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 200, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
     m_chkMinimizeToTray.Create(L"Minimize to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 185, y + 20), this, IDC_OPT_MIN_TRAY); track(m_pageInterface, &m_chkMinimizeToTray);
@@ -1442,6 +1475,7 @@ BOOL COptionsDlg::OnInitDialog()
     FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
     SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
         m_current.notifySefirahTime, 21, 0);
+    y += 28;
     mkStatic(m_pageNotifications, L"offset:", 28, y, 48, 22);
     m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
         CRect(78, y, 118, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
@@ -1451,19 +1485,18 @@ BOOL COptionsDlg::OnInitDialog()
         off.Format(L"%d", max(0, m_current.notifySefirahOffsetMinutes));
         m_editNotifySefirahOffset.SetWindowText(off);
     }
-    y += 28;
-    mkStatic(m_pageNotifications, L"minutes", 28, y, 55, 22);
-    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 84, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
+    mkStatic(m_pageNotifications, L"minutes", 126, y, 55, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 184, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
         { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
-    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 164, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
+    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 264, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
         { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
     m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        CRect(256, y - 1, 420, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
+        CRect(356, y - 1, W - 28, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
     track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
     for (const wchar_t* label : kZmanCheckboxLabels)
         m_cmbNotifySefirahOtherZman.AddString(label);
     m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
-    y += 36;
+    y += 50;
 
     mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 168); y += 22;
     mkStatic(m_pageNotifications, L"Zmanim:", 28, y, 70, 22);
@@ -1540,6 +1573,230 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(28, y, 240, y + 26), this, IDC_OPT_ADV_REMINDERS);
     track(m_pageNotifications, &m_btnAdvancedReminders);
+
+    // =========================================================================
+    // v0.8.0 - Zmanim Bar tab: one checkbox per kZmanimBarLabels entry,
+    // backed by the bits in zmanimBarMask.
+    // =========================================================================
+    y = 38;
+    mkGroup(m_pageZmanimBar, L"Show in bottom Zmanim bar", 14, y, W - 28, 360); y += 24;
+    m_zmanimBarChecks.resize(kZmanimBarLabelCount, nullptr);
+    for (int i = 0; i < kZmanimBarLabelCount; ++i)
+    {
+        int col = i / 10;
+        int row = i % 10;
+        int x0 = 28 + col * 220;
+        int yy = y + row * 22;
+        CButton* chk = new CButton;
+        chk->Create(kZmanimBarLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(x0, yy, x0 + 210, yy + 20), this,
+            IDC_OPT_ZBAR_FIRST + i);
+        track(m_pageZmanimBar, chk);
+        chk->SetCheck((m_current.zmanimBarMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+        m_zmanimBarChecks[i] = chk;
+    }
+
+    // =========================================================================
+    // v0.8.0 - Zmanim tab sub-tab control + 9 sub-pages.  Each sub-page is a
+    // preset-radio list plus an optional custom value edit.  The original
+    // shaah-zmanis-aware sub-pages (Alos, Misheyakir, Sof MA, Sof GRA, Tzais)
+    // reuse the existing CButton/CEdit members from the legacy Zmanim tab.
+    // =========================================================================
+    int zmanPageTop    = 64;
+    int zmanPageBottom = H - 56;
+    m_zmanimSubTab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
+        CRect(20, 38, W - 20, zmanPageBottom), this, IDC_OPT_ZSUBTAB);
+    m_zmanimSubTab.SetFont(pFont);
+    {
+        TCITEM sti = {};
+        sti.mask = TCIF_TEXT;
+        const wchar_t* subNames[] = {
+            L"Alos", L"Misheyakir", L"Sof Zman MA", L"Sof Zman GRA",
+            L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"End of Fast", L"Tzais"
+        };
+        for (int i = 0; i < (int)(sizeof(subNames) / sizeof(subNames[0])); ++i)
+        {
+            sti.pszText = const_cast<LPWSTR>(subNames[i]);
+            m_zmanimSubTab.InsertItem(i, &sti);
+        }
+    }
+
+    // Helper for laying out a preset radio list + custom value edit on a
+    // single sub-page. Returns the next free Y position.
+    int subId = IDC_OPT_ZSUB_FIRST;
+    auto makePresetSubPage =
+        [&](std::vector<CWnd*>& page,
+            std::vector<CButton*>& radios,
+            std::initializer_list<const wchar_t*> presets,
+            int startY) -> int
+    {
+        int yy = startY + 14;
+        bool first = true;
+        for (const wchar_t* name : presets)
+        {
+            DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON;
+            if (first) { style |= WS_GROUP; first = false; }
+            CButton* r = new CButton;
+            r->Create(name, style,
+                CRect(40, yy, 360, yy + 20), this, subId++);
+            r->SetFont(pFont);
+            page.push_back(r);
+            radios.push_back(r);
+            yy += 24;
+        }
+        return yy;
+    };
+
+    auto attachCustomZmanControls =
+        [&](std::vector<CWnd*>& page,
+            CEdit& edit,
+            CButton& deg,
+            CButton& minutes,
+            CButton& zmanis,
+            int startY) -> int
+    {
+        int yy = startY + 12;
+        mkStatic(page, L"Custom value:", 40, yy, 100, 20);
+        edit.MoveWindow(142, yy, 62, 22);
+        deg.MoveWindow(216, yy, 76, 20);
+        minutes.MoveWindow(300, yy, 78, 20);
+        zmanis.MoveWindow(216, yy + 24, 180, 20);
+        page.push_back(&edit);
+        page.push_back(&deg);
+        page.push_back(&minutes);
+        page.push_back(&zmanis);
+        return yy + 50;
+    };
+
+    auto attachCustomNumber =
+        [&](std::vector<CWnd*>& page,
+            CEdit& edit,
+            const wchar_t* label,
+            double value,
+            int startY) -> int
+    {
+        int yy = startY + 12;
+        mkStatic(page, label, 40, yy, 168, 20);
+        setEdit(page, edit, 214, yy, 64, subId++, value);
+        return yy + 34;
+    };
+
+    // ----- Alos sub-page (reuses m_editCustomAlot + degrees/min/zmanis radios)
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageAlos, L"Preset method for Alos HaShachar:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageAlos, m_radAlosPreset,
+            { L"GRA (16.1 degrees)", L"Magen Avraham (72 min)",
+              L"Magen Avraham (90 min)", L"Custom" }, yy);
+        // pre-select from settings
+        int sel = max(0, min(3, m_current.customAlotPreset));
+        m_radAlosPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomZmanControls(m_subPageAlos, m_editCustomAlot,
+            m_radAlotDegrees, m_radAlotMinutes, m_radAlotZmanis, yy);
+    }
+
+    // ----- Misheyakir sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageMisheyakir, L"Preset method for Misheyakir:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageMisheyakir, m_radMisheyakirPreset,
+            { L"11.5 degrees", L"11 degrees", L"10.2 degrees", L"Custom" }, yy);
+        int sel = max(0, min(3, m_current.customMisheyakirPreset));
+        m_radMisheyakirPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomZmanControls(m_subPageMisheyakir, m_editCustomMisheyakir,
+            m_radMisheyakirDegrees, m_radMisheyakirMinutes, m_radMisheyakirZmanis, yy);
+    }
+
+    // ----- Sof Zman MA sub-page (Shma MA + Tfila MA)
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageSofMA, L"Preset method for Sof Zman Shema/Tefilla (MA):", 28, yy, 360, 20);
+        yy = makePresetSubPage(m_subPageSofMA, m_radSofMAPreset,
+            { L"90 minutes as degrees", L"Fixed 72 minutes",
+              L"72 minutes as 16.1 degrees", L"Custom" }, yy);
+        int sel = max(0, min(3, m_current.customSofZmanMaPreset));
+        m_radSofMAPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomZmanControls(m_subPageSofMA, m_editCustomSofZman,
+            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy);
+    }
+
+    // ----- Sof Zman GRA sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageSofGRA, L"Preset method for Sof Zman Shema/Tefilla (GRA):", 28, yy, 360, 20);
+        yy = makePresetSubPage(m_subPageSofGRA, m_radSofGRAPreset,
+            { L"90 minutes as degrees", L"Fixed 72 minutes",
+              L"72 minutes as 16.1 degrees", L"Custom" }, yy);
+        int sel = max(0, min(3, m_current.customSofZmanGraPreset));
+        m_radSofGRAPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomZmanControls(m_subPageSofGRA, m_editCustomSofZman,
+            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy);
+    }
+
+    // ----- Mincha Gedola sub-page (simple preset + 'Custom (minutes)')
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageMinchaGedola, L"Preset method for Mincha Gedola:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageMinchaGedola, m_radMinchaGedolaPreset,
+            { L"30 minutes", L"GRA (default)", L"MA (72 min)",
+              L"Custom (minutes)" }, yy);
+        int sel = max(0, min(3, m_current.customMinchaGedolaPreset));
+        m_radMinchaGedolaPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomNumber(m_subPageMinchaGedola, m_editCustomMinchaGedola,
+            L"Custom min after chatzos:", m_current.customMinchaGedolaValue, yy);
+    }
+
+    // ----- Mincha Ketana sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageMinchaKetana, L"Preset method for Mincha Ketana:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageMinchaKetana, m_radMinchaKetanaPreset,
+            { L"GRA", L"MA (72 min)", L"Custom (minutes)" }, yy);
+        int sel = max(0, min(2, m_current.customMinchaKetanaPreset));
+        m_radMinchaKetanaPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomNumber(m_subPageMinchaKetana, m_editCustomMinchaKetana,
+            L"Custom z-min after hanetz:", m_current.customMinchaKetanaValue, yy);
+    }
+
+    // ----- Plag HaMincha sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPagePlag, L"Preset method for Plag HaMincha:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPagePlag, m_radPlagPreset,
+            { L"GRA", L"MA (72 min)", L"Custom (minutes)" }, yy);
+        int sel = max(0, min(2, m_current.customPlagPreset));
+        m_radPlagPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomNumber(m_subPagePlag, m_editCustomPlag,
+            L"Custom z-min after hanetz:", m_current.customPlagValue, yy);
+    }
+
+    // ----- End of Fast sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageEndFast, L"Preset method for End of Fast:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageEndFast, m_radEndFastPreset,
+            { L"27 minutes (R' Tukaccinsky)",
+              L"R' Moshe Feinstein",
+              L"Custom (minutes)" }, yy);
+        int sel = max(0, min(2, m_current.customEndFastPreset));
+        m_radEndFastPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomNumber(m_subPageEndFast, m_editCustomEndFast,
+            L"Custom min after shkiah:", m_current.customEndFastValue, yy);
+    }
+
+    // ----- Tzais sub-page
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageTzais, L"Preset method for Tzais HaKochavim:", 28, yy, 320, 20);
+        yy = makePresetSubPage(m_subPageTzais, m_radTzaisPreset,
+            { L"42 minutes", L"50 minutes", L"60 minutes",
+              L"72 minutes", L"72 minutes as degrees", L"Custom" }, yy);
+        int sel = max(0, min(5, m_current.customTzeitPreset));
+        m_radTzaisPreset[sel]->SetCheck(BST_CHECKED);
+        attachCustomZmanControls(m_subPageTzais, m_editCustomTzeit,
+            m_radTzeitDegrees, m_radTzeitMinutes, m_radTzeitZmanis, yy);
+    }
 
     // OK / Cancel buttons
     m_btnOK.Create(L"OK",
@@ -1695,7 +1952,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_chkTanach,         L"Show the Tanach Yomi daily Tanach study");
 
     // Interface tab
-    m_tooltip.AddTool(&m_chkShowTrayIcon,   L"Always show the WinLuach icon in the system tray");
+    m_tooltip.AddTool(&m_chkShowTrayIcon,   L"Keep the WinLuach icon pinned in the system tray while the app is open");
     m_tooltip.AddTool(&m_chkMinimizeToTray, L"Send the window to the system tray when minimized or closed");
     m_tooltip.AddTool(&m_cmbTrayWhen,       L"Choose when the window minimizes to tray");
     m_tooltip.AddTool(&m_chkMinimizeOnStartup, L"Start the application minimized to the system tray");
@@ -1800,19 +2057,87 @@ void COptionsDlg::ShowOptionsPage(int page)
                 ctrl->ShowWindow(cmd);
     };
 
-    showPage(m_pageGeneral, 0);
-    showPage(m_pageMonth, 1);
-    showPage(m_pageInterface, 2);
-    showPage(m_pageTrayTooltip, 3);
-    showPage(m_pageColors, 4);
-    showPage(m_pageZmanim, 5);
-    showPage(m_pageZmanShitos, 6);
-    showPage(m_pageNotifications, 7);
+    // v0.8.0 tab order:
+    //   0=General  1=Month  2=Interface  3=TrayTooltip
+    //   4=ZmanimBar  5=Colors  6=Zmanim  7=Notifications
+    showPage(m_pageGeneral,      0);
+    showPage(m_pageMonth,        1);
+    showPage(m_pageInterface,    2);
+    showPage(m_pageTrayTooltip,  3);
+    showPage(m_pageZmanimBar,    4);
+    showPage(m_pageColors,       5);
+    showPage(m_pageNotifications,7);
+    // m_pageZmanim is the legacy flat Zmanim layout; in v0.8.0 it has been
+    // superseded by the Zmanim sub-tab so always hide it.
+    showPage(m_pageZmanim,      -1);
+    // Legacy ZmanShitos page is no longer exposed via a tab but kept in the
+    // vector for migration; always hide it before showing any reused controls
+    // inside the visible Zmanim sub-tabs.
+    showPage(m_pageZmanShitos, -1);
+
+    // Zmanim sub-tab + sub-pages: only visible when the Zmanim tab is active.
+    if (page == 6)
+    {
+        if (m_zmanimSubTab.GetSafeHwnd())
+            m_zmanimSubTab.ShowWindow(SW_SHOW);
+        ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
+    }
+    else
+    {
+        HideAllZmanimSubPages();
+    }
+}
+
+void COptionsDlg::HideAllZmanimSubPages()
+{
+    if (m_zmanimSubTab.GetSafeHwnd())
+        m_zmanimSubTab.ShowWindow(SW_HIDE);
+    auto hide = [](std::vector<CWnd*>& v) {
+        for (CWnd* c : v) if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
+    };
+    hide(m_subPageAlos);
+    hide(m_subPageMisheyakir);
+    hide(m_subPageSofMA);
+    hide(m_subPageSofGRA);
+    hide(m_subPageMinchaGedola);
+    hide(m_subPageMinchaKetana);
+    hide(m_subPagePlag);
+    hide(m_subPageEndFast);
+    hide(m_subPageTzais);
+}
+
+void COptionsDlg::ShowZmanimSubPage(int sub)
+{
+    std::vector<CWnd*>* pages[] = {
+        &m_subPageAlos, &m_subPageMisheyakir,
+        &m_subPageSofMA, &m_subPageSofGRA,
+        &m_subPageMinchaGedola, &m_subPageMinchaKetana,
+        &m_subPagePlag, &m_subPageEndFast, &m_subPageTzais
+    };
+    const int count = (int)(sizeof(pages) / sizeof(pages[0]));
+    for (int i = 0; i < count; ++i)
+    {
+        for (CWnd* c : *pages[i])
+            if (c && c->GetSafeHwnd())
+                c->ShowWindow(SW_HIDE);
+    }
+    if (sub < 0 || sub >= count)
+        return;
+    for (CWnd* c : *pages[sub])
+        if (c && c->GetSafeHwnd())
+            c->ShowWindow(SW_SHOW);
 }
 
 void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
 {
     ShowOptionsPage(max(0, m_tab.GetCurSel()));
+    *pResult = 0;
+}
+
+// v0.8.0 - Triggered when the user clicks a different Zmanim sub-tab.
+void COptionsDlg::OnZmanimSubTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
+{
+    ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
     *pResult = 0;
 }
 
@@ -2359,6 +2684,83 @@ void COptionsDlg::ReadControlsIntoResult()
     }
     m_result.notifyParshaOffsets = ReadOffsetControls(m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
     m_result.notifyPersonalOffsets = ReadOffsetControls(m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
+
+    // v0.8.0 - Zmanim bar mask: one bit per checkbox.
+    uint32_t mask = 0;
+    for (int i = 0; i < (int)m_zmanimBarChecks.size() && i < 32; ++i)
+        if (m_zmanimBarChecks[i] && m_zmanimBarChecks[i]->GetSafeHwnd() &&
+            m_zmanimBarChecks[i]->GetCheck() == BST_CHECKED)
+            mask |= (1u << i);
+    m_result.zmanimBarMask = mask;
+
+    // v0.8.0 - per-sub-tab preset (which radio is checked).  -1 fallback
+    // means the page wasn't created; keep the prior value in that case.
+    auto pickedIndex = [](const std::vector<CButton*>& radios) -> int {
+        for (int i = 0; i < (int)radios.size(); ++i)
+            if (radios[i] && radios[i]->GetSafeHwnd() &&
+                radios[i]->GetCheck() == BST_CHECKED)
+                return i;
+        return -1;
+    };
+    int v;
+    if ((v = pickedIndex(m_radAlosPreset)) >= 0)
+    {
+        m_result.customAlotPreset = v;
+        if (v == 0) { m_result.alotShita = 0; m_result.customAlotMode = 0; m_result.customAlotValue = 16.1; }
+        else if (v == 1) { m_result.alotShita = 1; m_result.customAlotMode = 1; m_result.customAlotValue = 72.0; }
+        else if (v == 2) { m_result.alotShita = 2; m_result.customAlotMode = 1; m_result.customAlotValue = 90.0; }
+    }
+    if ((v = pickedIndex(m_radMisheyakirPreset)) >= 0)
+    {
+        m_result.customMisheyakirPreset = v;
+        if (v == 0) { m_result.customMisheyakirMode = 0; m_result.customMisheyakirValue = 11.5; }
+        else if (v == 1) { m_result.customMisheyakirMode = 0; m_result.customMisheyakirValue = 11.0; }
+        else if (v == 2) { m_result.customMisheyakirMode = 0; m_result.customMisheyakirValue = 10.2; }
+    }
+    int sofMaPreset = pickedIndex(m_radSofMAPreset);
+    int sofGraPreset = pickedIndex(m_radSofGRAPreset);
+    if (sofMaPreset >= 0) m_result.customSofZmanMaPreset = sofMaPreset;
+    if (sofGraPreset >= 0) m_result.customSofZmanGraPreset = sofGraPreset;
+    v = (m_result.zmanimShita == 0) ? sofGraPreset : sofMaPreset;
+    if (v >= 0)
+    {
+        if (v == 0) { m_result.customSofZmanMode = 0; m_result.customSofZmanValue = 19.8; }
+        else if (v == 1) { m_result.customSofZmanMode = 1; m_result.customSofZmanValue = 72.0; }
+        else if (v == 2) { m_result.customSofZmanMode = 0; m_result.customSofZmanValue = 16.1; }
+    }
+    if ((v = pickedIndex(m_radMinchaGedolaPreset)) >= 0) m_result.customMinchaGedolaPreset = v;
+    if ((v = pickedIndex(m_radMinchaKetanaPreset)) >= 0) m_result.customMinchaKetanaPreset = v;
+    if ((v = pickedIndex(m_radPlagPreset))         >= 0) m_result.customPlagPreset         = v;
+    if ((v = pickedIndex(m_radEndFastPreset))      >= 0) m_result.customEndFastPreset      = v;
+    if (m_editCustomMinchaGedola.GetSafeHwnd())
+    {
+        m_editCustomMinchaGedola.GetWindowText(customValue);
+        m_result.customMinchaGedolaValue = max(0.0, _wtof(customValue));
+    }
+    if (m_editCustomMinchaKetana.GetSafeHwnd())
+    {
+        m_editCustomMinchaKetana.GetWindowText(customValue);
+        m_result.customMinchaKetanaValue = max(0.0, _wtof(customValue));
+    }
+    if (m_editCustomPlag.GetSafeHwnd())
+    {
+        m_editCustomPlag.GetWindowText(customValue);
+        m_result.customPlagValue = max(0.0, _wtof(customValue));
+    }
+    if (m_editCustomEndFast.GetSafeHwnd())
+    {
+        m_editCustomEndFast.GetWindowText(customValue);
+        m_result.customEndFastValue = max(0.0, _wtof(customValue));
+    }
+    if ((v = pickedIndex(m_radTzaisPreset)) >= 0)
+    {
+        m_result.customTzeitPreset = v;
+        if (v == 0) { m_result.customTzeitMode = 1; m_result.customTzeitValue = 42.0; }
+        else if (v == 1) { m_result.customTzeitMode = 1; m_result.customTzeitValue = 50.0; }
+        else if (v == 2) { m_result.customTzeitMode = 1; m_result.customTzeitValue = 60.0; }
+        else if (v == 3) { m_result.tzeitShita = 1; m_result.customTzeitMode = 1; m_result.customTzeitValue = 72.0; }
+        else if (v == 4) { m_result.customTzeitMode = 0; m_result.customTzeitValue = 16.1; }
+    }
 }
 
 bool COptionsDlg::ApplyToParent()

@@ -6,10 +6,38 @@
 //
 // CHANGELOG:
 // v0.1.0 - Initial implementation.
+// v0.8.0 - Bar entries driven by zmanimBarMask + kZmanimBarLabels.  Added
+//          Sof Shema MA (custom), Sof Tefilla MA (custom), and End of Fast.
 // =============================================================================
 
 #include "pch.h"
 #include "ZmanimPanel.h"
+
+// v0.8.0 - Public bit-index table used by both this panel and the Options
+// dialog "Zmanim Bar" tab. The bit index matches the column position.
+const wchar_t* const kZmanimBarLabels[] = {
+    L"Alos",                       //  0
+    L"Misheyakir",                 //  1
+    L"Hanetz",                     //  2
+    L"Sof Shema MA72 prop.",       //  3
+    L"Sof Shema MA90 prop.",       //  4
+    L"Sof Shema (GRA)",            //  5
+    L"Sof Shema MA (custom)",      //  6
+    L"Sof Tefilla MA72 prop.",     //  7
+    L"Sof Tefilla MA90 prop.",     //  8
+    L"Sof Tefilla (GRA)",          //  9
+    L"Sof Tefilla MA (custom)",    // 10
+    L"Chatzos",                    // 11
+    L"Mincha Gedola",              // 12
+    L"Mincha Ketana",              // 13
+    L"Plag HaMincha",              // 14
+    L"Shkiah",                     // 15
+    L"Tzeis",                      // 16
+    L"Candle Lighting",            // 17
+    L"Sha'a Zmanit",               // 18
+    L"End of Fast",                // 19
+};
+const int kZmanimBarLabelCount = (int)(sizeof(kZmanimBarLabels) / sizeof(kZmanimBarLabels[0]));
 
 BEGIN_MESSAGE_MAP(CZmanimPanel, CWnd)
     ON_WM_PAINT()
@@ -69,28 +97,58 @@ void CZmanimPanel::OnPaint()
     DisplayZmanimTimes d = m_pFrame->BuildDisplayZmanim(
         m_pFrame->m_selectedDate, z, m_pFrame->m_isDST);
 
-    // Include the common MA/GRA variants directly in the bottom bar.
-    struct ZmanEntry { std::wstring label; TimeOfDay time; };
-    ZmanEntry entries[] = {
-        { d.alotLabel,                  d.alot          },
-        { d.misheyakirLabel,            d.misheyakir    },
-        { L"Hanetz",                    z.hanetz        },
-        { L"Sof Shema (MA72)",          z.sofShema_MA72 },
-        { L"Sof Shema (MA90)",          z.sofShema_MA90 },
-        { L"Sof Shema (GRA)",           z.sofShema_GRA  },
-        { L"Sof Tefilla (MA72)",        z.sofTefilla_MA72 },
-        { L"Sof Tefilla (MA90)",        z.sofTefilla_MA90 },
-        { L"Sof Tefilla (GRA)",         z.sofTefilla_GRA },
-        { L"Chatzos",                   z.chatzot       },
-        { L"Mincha Gedola",             d.minchaGedola  },
-        { L"Mincha Ketana",             d.minchaKetana  },
-        { L"Plag HaMincha",             d.plagMincha    },
-        { L"Shkiah",                    z.shkia         },
-        { d.tzeitLabel,                 d.tzeit         },
-        { L"Candle Lighting",           z.candleLighting},
+    // v0.8.0 - Build the bar entries from kZmanimBarLabels + zmanimBarMask.
+    // Each bit decides whether the corresponding zman is visible.  The MA
+    // (custom) entries follow the user's selected MA shita (72 vs 90).
+    struct ZmanEntry { std::wstring label; TimeOfDay time; bool isSha = false; };
+    std::vector<ZmanEntry> entries;
+    entries.reserve(kZmanimBarLabelCount);
+
+    uint32_t mask = m_pFrame->m_zmanimBarMask;
+    int maShita = m_pFrame->m_zmanimShita; // 0=GRA,1=MA72,2=MA90
+    TimeOfDay sofShemaMaCustom  = (maShita == 2) ? z.sofShema_MA90  : z.sofShema_MA72;
+    TimeOfDay sofTefMaCustom    = (maShita == 2) ? z.sofTefilla_MA90 : z.sofTefilla_MA72;
+
+    // End-of-Fast time: shkia + 27 min for R' Tukaccinsky, or tzeit_MA72 for
+    // R' Moshe Feinstein.  Picked by customEndFastPreset.
+    TimeOfDay endFast = (m_pFrame->m_customEndFastPreset == 1)
+        ? z.tzeit_MA72
+        : AddMinutes(z.shkia, (m_pFrame->m_customEndFastPreset == 2)
+            ? (int)round(max(0.0, m_pFrame->m_customEndFastValue))
+            : 27);
+
+    auto pushIf = [&](int bit, const wchar_t* label, const TimeOfDay& t, bool isSha = false) {
+        if (mask & (1u << bit))
+            entries.push_back({ label, t, isSha });
     };
 
-    int numEntries = sizeof(entries) / sizeof(entries[0]);
+    pushIf(0,  d.alotLabel.c_str(),       d.alot);
+    pushIf(1,  d.misheyakirLabel.c_str(), d.misheyakir);
+    pushIf(2,  kZmanimBarLabels[2],       z.hanetz);
+    pushIf(3,  kZmanimBarLabels[3],       z.sofShema_MA72);
+    pushIf(4,  kZmanimBarLabels[4],       z.sofShema_MA90);
+    pushIf(5,  kZmanimBarLabels[5],       z.sofShema_GRA);
+    pushIf(6,  kZmanimBarLabels[6],       sofShemaMaCustom);
+    pushIf(7,  kZmanimBarLabels[7],       z.sofTefilla_MA72);
+    pushIf(8,  kZmanimBarLabels[8],       z.sofTefilla_MA90);
+    pushIf(9,  kZmanimBarLabels[9],       z.sofTefilla_GRA);
+    pushIf(10, kZmanimBarLabels[10],      sofTefMaCustom);
+    pushIf(11, kZmanimBarLabels[11],      z.chatzot);
+    pushIf(12, kZmanimBarLabels[12],      d.minchaGedola);
+    pushIf(13, kZmanimBarLabels[13],      d.minchaKetana);
+    pushIf(14, kZmanimBarLabels[14],      d.plagMincha);
+    pushIf(15, kZmanimBarLabels[15],      z.shkia);
+    pushIf(16, d.tzeitLabel.c_str(),      d.tzeit);
+    pushIf(17, kZmanimBarLabels[17],      z.candleLighting);
+    // bit 18 (Sha'a Zmanit) handled on the separate bottom line below.
+    pushIf(19, kZmanimBarLabels[19],      endFast);
+
+    int numEntries = (int)entries.size();
+    if (numEntries == 0) {
+        dcScreen.BitBlt(0, 0, cx, cy, &memDC, 0, 0, SRCCOPY);
+        memDC.SelectObject(pOldBmp);
+        return;
+    }
     int cols = 4;
     int rows = (numEntries + cols - 1) / cols;
     int padding = 16;
@@ -137,8 +195,9 @@ void CZmanimPanel::OnPaint()
     }
 
     // Sha'a Zmanit — shown on a separate bottom line spanning all columns
+    // (gated by zmanimBarMask bit 18 in v0.8.0).
     double sz = d.shaahZmanit;
-    if (sz > 0.0) {
+    if (sz > 0.0 && (mask & (1u << 18))) {
         int szMin = (int)round(sz);
         CString szStr;
         szStr.Format(L"Sha'a Zmanit:   %d:%02d  (%d min)", szMin/60, szMin%60, szMin);
