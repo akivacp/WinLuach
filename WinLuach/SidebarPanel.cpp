@@ -310,43 +310,6 @@ void CSidebarPanel::OnPaint()
         yOff += rowH + 2;
     }
 
-    // Zmanim section — sof shema and sof tefila (GRA and MA)
-    if (yOff < contentLimit - 20)
-    {
-        const ZmanimResult& zz = m_pFrame->m_zmanim;
-        DrawSep(&memDC, x, yOff, w);
-        CRect rcZHdr(0, yOff - 2, cx - 1, yOff + 20);
-        memDC.FillSolidRect(rcZHdr, CLR_HEADER_BG);
-        memDC.SelectObject(&m_pFrame->m_fontBold);
-        memDC.SetTextColor(RGB(255, 255, 255));
-        CRect rcZTxt = rcZHdr; rcZTxt.left += 6;
-        memDC.DrawText(L"Zmanim", rcZTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        yOff += 26;
-
-        struct ZRow { const wchar_t* label; TimeOfDay time; };
-        ZRow zrows[] = {
-            { L"Sof Shema (GRA):",  zz.sofShema_GRA   },
-            { L"Sof Shema (MA):",   zz.sofShema_MA72  },
-            { L"Sof Tefila (GRA):", zz.sofTefilla_GRA },
-            { L"Sof Tefila (MA):",  zz.sofTefilla_MA72},
-        };
-        int lblW2 = 110;
-        for (const auto& zr : zrows)
-        {
-            if (yOff > contentLimit - 16) break;
-            memDC.SelectObject(&m_pFrame->m_fontSmall);
-            memDC.SetTextColor(RGB(70, 70, 50));
-            CRect rcL(x + indent, yOff, x + indent + lblW2, yOff + 16);
-            memDC.DrawText(zr.label, -1, rcL, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-            memDC.SelectObject(&m_pFrame->m_fontNormal);
-            memDC.SetTextColor(RGB(20, 20, 140));
-            CRect rcT(x + indent + lblW2, yOff, x + w, yOff + 16);
-            std::wstring ts = FormatTime(zr.time, m_pFrame->m_use24hr);
-            memDC.DrawText(ts.c_str(), -1, rcT, DT_LEFT | DT_TOP | DT_SINGLELINE);
-            yOff += 18;
-        }
-    }
-
     // Special times for notable days
     {
         const ZmanimResult& zs = m_pFrame->m_zmanim;

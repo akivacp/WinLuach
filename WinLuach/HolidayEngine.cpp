@@ -74,7 +74,7 @@ const std::vector<std::wstring>& GetParashaNames()
 // 5782 % 7 = 0 -> use (year % 7 == 0) as the rule
 bool IsShmitaYear(int hebrewYear)
 {
-    return (hebrewYear % 7) == 1;
+    return (hebrewYear % 7) == 0;
 }
 
 // Returns the year within the 7-year Shmita cycle (1-7).
@@ -102,7 +102,7 @@ int LunarCycleYear(int hebrewYear)
 // Returns position in the 28-year solar cycle (1-28).
 int SolarCycleYear(int hebrewYear)
 {
-    int r = (hebrewYear + 6) % 28; // offset so cycle starts correctly
+    int r = hebrewYear % 28;
     return (r == 0) ? 28 : r;
 }
 
@@ -125,7 +125,7 @@ std::vector<std::wstring> GetYearFacts(int hebrewYear)
     // Solar cycle
     swprintf_s(buf, L"Year %d of cycle %d of the solar (big) cycle",
         SolarCycleYear(hebrewYear),
-        ((hebrewYear + 6) / 28) + 1);
+        ((hebrewYear - 1) / 28) + 1);
     facts.push_back(buf);
 
     // Shmita cycle
@@ -144,14 +144,33 @@ std::vector<std::wstring> GetYearFacts(int hebrewYear)
     else if (!IsShmitaYear(hebrewYear))
         facts.push_back(L"Maaser Ani (tithe for the poor)");
 
-    // Years from destruction of Temple (3828 AM)
-    int sinceDestruction = hebrewYear - 3828;
+    swprintf_s(buf, L"Year %d of the 28-year Birchas Hachama solar cycle",
+        SolarCycleYear(hebrewYear));
+    facts.push_back(buf);
+
+    // Years from destruction of Temple (3830 AM)
+    int sinceDestruction = hebrewYear - 3830;
     if (sinceDestruction > 0)
     {
         swprintf_s(buf, L"%d years from the destruction of the Holy Temple",
             sinceDestruction);
         facts.push_back(buf);
     }
+
+    int cheshvanDays = DaysInHebrewMonth(CHESHVAN, hebrewYear);
+    int kislevDays = DaysInHebrewMonth(KISLEV, hebrewYear);
+    swprintf_s(buf, L"Cheshvan has %d days", cheshvanDays);
+    facts.push_back(buf);
+    swprintf_s(buf, L"Kislev has %d days", kislevDays);
+    facts.push_back(buf);
+    bool leap = IsHebrewLeapYear(hebrewYear);
+    facts.push_back(leap ? L"Leap (uber) year: 13 months" : L"Simple year: 12 months");
+    if (cheshvanDays == 30 && kislevDays == 30)
+        facts.push_back(L"Full year (malei)");
+    else if (cheshvanDays == 29 && kislevDays == 29)
+        facts.push_back(L"Deficient year (chaser)");
+    else
+        facts.push_back(L"Regular year (kesidran)");
 
     // Years from establishment of State of Israel (5708 AM)
     if (hebrewYear >= 5708)

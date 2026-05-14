@@ -35,6 +35,8 @@ public:
     // Application-wide settings (accessible from any window via theApp)
     AppSettings m_settings;
 
+    HANDLE m_singleInstanceMutex = nullptr;
+
     DECLARE_MESSAGE_MAP()
 };
 

@@ -32,6 +32,19 @@ BOOL CWinLuachApp::InitInstance()
     // Standard MFC initialisation
     CWinApp::InitInstance();
 
+    m_singleInstanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\WinLuachSingleInstance");
+    if (m_singleInstanceMutex && GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        if (HWND hwnd = FindWindowW(nullptr, L"WinLuach - Hebrew Calendar"))
+        {
+            ShowWindow(hwnd, SW_SHOWNORMAL);
+            SetForegroundWindow(hwnd);
+        }
+        CloseHandle(m_singleInstanceMutex);
+        m_singleInstanceMutex = nullptr;
+        return FALSE;
+    }
+
     // Enable visual styles (Windows XP+ themed controls)
     InitCommonControls();
 
@@ -62,5 +75,11 @@ BOOL CWinLuachApp::InitInstance()
 int CWinLuachApp::ExitInstance()
 {
     SaveSettings(m_settings);
+    if (m_singleInstanceMutex)
+    {
+        ReleaseMutex(m_singleInstanceMutex);
+        CloseHandle(m_singleInstanceMutex);
+        m_singleInstanceMutex = nullptr;
+    }
     return CWinApp::ExitInstance();
 }
