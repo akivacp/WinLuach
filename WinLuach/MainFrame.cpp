@@ -242,6 +242,50 @@ static CTime DateTimeForZman(const GregorianDate& g, const TimeOfDay& t)
     return CTime(g.year, g.month, g.day, max(0, t.hour), max(0, t.minute), max(0, t.second));
 }
 
+static TimeOfDay CustomMorningBoundary(const GregorianDate& g, const Location& loc, bool isDst,
+    const ZmanimResult& z, int mode, double value, double fallbackDegrees)
+{
+    mode = max(0, min(2, mode));
+    if (mode == 0)
+    {
+        if (value <= 0.01)
+            return z.hanetz;
+        return CalculateSunAtAngle(g, loc, isDst, value > 0.0 ? value : fallbackDegrees, true);
+    }
+    if (mode == 1)
+        return AddMinutes(z.hanetz, -(int)round(max(0.0, value)));
+    return AddShaot(z.hanetz, z.shaahZmanit_GRA, -max(0.0, value) / 60.0);
+}
+
+static TimeOfDay CustomEveningBoundary(const GregorianDate& g, const Location& loc, bool isDst,
+    const ZmanimResult& z, int mode, double value, double fallbackDegrees)
+{
+    mode = max(0, min(2, mode));
+    if (mode == 0)
+    {
+        if (value <= 0.01)
+            return z.shkia;
+        return CalculateSunAtAngle(g, loc, isDst, value > 0.0 ? value : fallbackDegrees, false);
+    }
+    if (mode == 1)
+        return AddMinutes(z.shkia, (int)round(max(0.0, value)));
+    return AddShaot(z.shkia, z.shaahZmanit_GRA, max(0.0, value) / 60.0);
+}
+
+static std::wstring BoundaryLabel(const wchar_t* base, int mode, double value, bool allowGra)
+{
+    CString s;
+    if (allowGra && value <= 0.01)
+        s.Format(L"%s (GRA)", base);
+    else if (mode == 0)
+        s.Format(L"%s (%.2g deg)", base, value);
+    else if (mode == 1)
+        s.Format(L"%s (%.0f min)", base, value);
+    else
+        s.Format(L"%s (%.0f z-min)", base, value);
+    return (LPCWSTR)s;
+}
+
 static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int weight)
 {
     font.DeleteObject();
@@ -477,7 +521,11 @@ protected:
 
     afx_msg void OnTimer(UINT_PTR id)
     {
-        if (id == 1) Invalidate(FALSE);
+        if (id == 1)
+        {
+            Invalidate(FALSE);
+            UpdateWindow();
+        }
         else CFrameWnd::OnTimer(id);
     }
 
@@ -507,6 +555,7 @@ protected:
         if (!m_pFrame) return best;
 
         CTime now = CTime::GetCurrentTime();
+        CTime threshold = now + CTimeSpan(0, 0, 0, 1);
         SYSTEMTIME st = {};
         GetLocalTime(&st);
         GregorianDate today(st.wYear, st.wMonth, st.wDay);
@@ -516,26 +565,27 @@ protected:
             bool isDst = IsDST(g, m_pFrame->m_location);
             ZmanimResult z = CalculateZmanim(g, m_pFrame->m_location, isDst);
             z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
+            DisplayZmanimTimes dz = m_pFrame->BuildDisplayZmanim(g, z, isDst);
             struct Item { const wchar_t* label; TimeOfDay time; };
-            Item items[] = {
-                { L"Alos Hashachar", z.alot_GRA },
-                { L"Misheyakir", z.misheyakir_10 },
+            std::vector<Item> items = {
+                { L"Alos Hashachar", dz.alot },
+                { L"Misheyakir", dz.misheyakir },
                 { L"Hanetz", z.hanetz },
-                { L"Sof Shema", z.sofShema_GRA },
-                { L"Sof Tefilla", z.sofTefilla_GRA },
+                { L"Sof Shema", dz.sofShema },
+                { L"Sof Tefilla", dz.sofTefilla },
                 { L"Chatzos", z.chatzot },
-                { L"Mincha Gedola", z.minchaGedola_GRA },
-                { L"Mincha Ketana", z.minchaKetana_GRA },
-                { L"Plag HaMincha", z.plagMincha_GRA },
+                { L"Mincha Gedola", dz.minchaGedola },
+                { L"Mincha Ketana", dz.minchaKetana },
+                { L"Plag HaMincha", dz.plagMincha },
                 { L"Shkiah", z.shkia },
-                { L"Tzeis", z.tzeit_GRA },
+                { L"Tzeis", dz.tzeit },
                 { L"Candle Lighting", z.candleLighting },
             };
             for (const auto& item : items)
             {
                 if (!item.time.IsValid()) continue;
                 CTime t = DateTimeForZman(g, item.time);
-                if (t <= now) continue;
+                if (t <= threshold) continue;
                 if (!best.valid || t < best.time)
                     best = { item.label, t, true };
             }
@@ -1848,26 +1898,27 @@ protected:
 
         // --- Zmanim ---
         drawSection(L"Zmanim");
+        DisplayZmanimTimes dz = m_pFrame
+            ? m_pFrame->BuildDisplayZmanim(m_g, m_z, IsDST(m_g, m_pFrame->m_location))
+            : DisplayZmanimTimes{};
 
         auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
             if (t.IsValid()) drawRow(lbl, FormatTime(t, m_use24hr), RGB(20, 60, 20));
         };
-        zRow(L"Alot HaShachar:",     m_z.alot_GRA);
-        zRow(L"Misheyakir:",          m_z.misheyakir_11);
+        zRow(L"Alot HaShachar:",     dz.alot);
+        zRow(L"Misheyakir:",          dz.misheyakir);
         zRow(L"Hanetz (Netz):",       m_z.hanetz);
-        zRow(L"Sof Shema (MA):",      m_z.sofShema_MA72);
-        zRow(L"Sof Shema (GRA):",     m_z.sofShema_GRA);
-        zRow(L"Sof Tefilla (MA):",    m_z.sofTefilla_MA72);
-        zRow(L"Sof Tefilla (GRA):",   m_z.sofTefilla_GRA);
+        zRow(L"Sof Shema:",           dz.sofShema);
+        zRow(L"Sof Tefilla:",         dz.sofTefilla);
         zRow(L"Chatzot:",             m_z.chatzot);
-        zRow(L"Mincha Gedola:",       m_z.minchaGedola_GRA);
-        zRow(L"Mincha Ketana:",       m_z.minchaKetana_GRA);
-        zRow(L"Plag HaMincha:",       m_z.plagMincha_GRA);
+        zRow(L"Mincha Gedola:",       dz.minchaGedola);
+        zRow(L"Mincha Ketana:",       dz.minchaKetana);
+        zRow(L"Plag HaMincha:",       dz.plagMincha);
         if (m_z.candleLighting.IsValid()) zRow(L"Candle Lighting:", m_z.candleLighting);
         zRow(L"Shkia (Sunset):",      m_z.shkia);
-        zRow(L"Tzais HaKochavim:",    m_z.tzeit_GRA);
-        if (y + 17 < H - 40 && m_z.shaahZmanit_GRA > 0.0) {
-            int szMin = (int)round(m_z.shaahZmanit_GRA);
+        zRow(L"Tzais HaKochavim:",    dz.tzeit);
+        if (y + 17 < H - 40 && dz.shaahZmanit > 0.0) {
+            int szMin = (int)round(dz.shaahZmanit);
             CString szs; szs.Format(L"%d:%02d  (%d min)", szMin/60, szMin%60, szMin);
             drawRow(L"Sha’a Zmanit:",  (LPCWSTR)szs, RGB(20, 60, 20));
         }
@@ -3074,6 +3125,49 @@ void CMainFrame::RefreshZmanim()
         -theApp.m_settings.candleLightingMinutes);
 }
 
+DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
+    const GregorianDate& g, const ZmanimResult& z, bool isDst) const
+{
+    DisplayZmanimTimes out;
+    int zmanSh = max(0, min(2, m_zmanimShita));
+    double minchaShaah = (zmanSh == 1) ? z.shaahZmanit_MA72
+        : (zmanSh == 2) ? z.shaahZmanit_MA90
+        : z.shaahZmanit_GRA;
+
+    out.alot = CustomMorningBoundary(g, m_location, isDst, z,
+        m_customAlotMode, m_customAlotValue, 16.1);
+    out.tzeit = CustomEveningBoundary(g, m_location, isDst, z,
+        m_customTzeitMode, m_customTzeitValue, 8.5);
+    out.misheyakir = CustomMorningBoundary(g, m_location, isDst, z,
+        m_customMisheyakirMode, m_customMisheyakirValue, 10.2);
+
+    TimeOfDay sofStart = CustomMorningBoundary(g, m_location, isDst, z,
+        m_customSofZmanMode, m_customSofZmanValue, 16.1);
+    TimeOfDay sofEnd = CustomEveningBoundary(g, m_location, isDst, z,
+        m_customSofZmanMode, m_customSofZmanValue, 16.1);
+    double sofShaah = CalculateShaahZmanit(sofStart, sofEnd);
+    out.shaahZmanit = sofShaah > 0.0 ? sofShaah : minchaShaah;
+    out.sofShema = AddShaot(sofStart, out.shaahZmanit, 3.0);
+    out.sofTefilla = AddShaot(sofStart, out.shaahZmanit, 4.0);
+
+    out.minchaGedola = (zmanSh == 1) ? z.minchaGedola_MA72
+        : (zmanSh == 2) ? z.minchaGedola_MA90
+        : z.minchaGedola_GRA;
+    out.minchaKetana = (zmanSh == 1) ? z.minchaKetana_MA72
+        : (zmanSh == 2) ? z.minchaKetana_MA90
+        : z.minchaKetana_GRA;
+    out.plagMincha = (zmanSh == 1) ? z.plagMincha_MA72
+        : (zmanSh == 2) ? z.plagMincha_MA90
+        : z.plagMincha_GRA;
+
+    out.alotLabel = BoundaryLabel(L"Alos Hashachar", m_customAlotMode, m_customAlotValue, false);
+    out.misheyakirLabel = BoundaryLabel(L"Misheyakir", m_customMisheyakirMode, m_customMisheyakirValue, false);
+    out.sofShemaLabel = BoundaryLabel(L"Sof Shema", m_customSofZmanMode, m_customSofZmanValue, true);
+    out.sofTefillaLabel = BoundaryLabel(L"Sof Tefilla", m_customSofZmanMode, m_customSofZmanValue, true);
+    out.tzeitLabel = BoundaryLabel(L"Tzeis", m_customTzeitMode, m_customTzeitValue, false);
+    return out;
+}
+
 void CMainFrame::ApplySettings(const AppSettings& s)
 {
     m_location    = s.ToLocation();
@@ -3084,6 +3178,26 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_zmanimShita = s.zmanimShita;
     m_customAlotMode = max(0, min(2, s.customAlotMode));
     m_customAlotValue = s.customAlotValue > 0.0 ? s.customAlotValue : 16.1;
+    m_customMisheyakirMode = max(0, min(2, s.customMisheyakirMode));
+    m_customMisheyakirValue = s.customMisheyakirValue > 0.0 ? s.customMisheyakirValue : 10.2;
+    m_customSofZmanMode = max(0, min(2, s.customSofZmanMode));
+    if (s.customSofZmanValue >= 0.0)
+        m_customSofZmanValue = s.customSofZmanValue;
+    else if (s.zmanimShita == 1)
+    {
+        m_customSofZmanMode = 1;
+        m_customSofZmanValue = 72.0;
+    }
+    else if (s.zmanimShita == 2)
+    {
+        m_customSofZmanMode = 1;
+        m_customSofZmanValue = 90.0;
+    }
+    else
+    {
+        m_customSofZmanMode = 0;
+        m_customSofZmanValue = 0.0;
+    }
     m_customTzeitMode = max(0, min(2, s.customTzeitMode));
     m_customTzeitValue = s.customTzeitValue > 0.0 ? s.customTzeitValue : 8.5;
 
@@ -3821,39 +3935,21 @@ CString CMainFrame::BuildTrayTooltip()
     bool isDst = IsDST(g, m_location);
     ZmanimResult z = CalculateZmanim(g, m_location, isDst);
     z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
-
-    int zmanSh = max(0, min(2, m_zmanimShita));
-    TimeOfDay sofShemaTime   = (zmanSh == 1) ? z.sofShema_MA72     : (zmanSh == 2) ? z.sofShema_MA90     : z.sofShema_GRA;
-    TimeOfDay sofTefillaTime = (zmanSh == 1) ? z.sofTefilla_MA72   : (zmanSh == 2) ? z.sofTefilla_MA90   : z.sofTefilla_GRA;
-    TimeOfDay minchaGTime    = (zmanSh == 1) ? z.minchaGedola_MA72 : (zmanSh == 2) ? z.minchaGedola_MA90 : z.minchaGedola_GRA;
-    TimeOfDay minchaKTime    = (zmanSh == 1) ? z.minchaKetana_MA72 : (zmanSh == 2) ? z.minchaKetana_MA90 : z.minchaKetana_GRA;
-    TimeOfDay plagTime       = (zmanSh == 1) ? z.plagMincha_MA72   : (zmanSh == 2) ? z.plagMincha_MA90   : z.plagMincha_GRA;
-    double shaahMin          = (zmanSh == 1) ? z.shaahZmanit_MA72  : (zmanSh == 2) ? z.shaahZmanit_MA90  : z.shaahZmanit_GRA;
-
-    auto customBoundary = [&](bool morning, int mode, double value) -> TimeOfDay {
-        if (mode == 0)
-            return CalculateSunAtAngle(g, m_location, isDst, value, morning);
-        if (mode == 1)
-            return AddMinutes(morning ? z.hanetz : z.shkia, morning ? -(int)round(value) : (int)round(value));
-        return AddShaot(morning ? z.hanetz : z.shkia, shaahMin, (morning ? -1.0 : 1.0) * value / 60.0);
-    };
-
-    TimeOfDay alotTime = customBoundary(true, m_customAlotMode, m_customAlotValue);
-    TimeOfDay tzeitTime = customBoundary(false, m_customTzeitMode, m_customTzeitValue);
+    DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDst);
 
     struct TooltipZman { int bit; const wchar_t* label; TimeOfDay time; };
     std::vector<TooltipZman> items = {
-        { 0, L"Alos", alotTime },
-        { 1, L"Misheyakir", z.misheyakir_10 },
+        { 0, L"Alos", dz.alot },
+        { 1, L"Misheyakir", dz.misheyakir },
         { 2, L"Netz", z.hanetz },
-        { 3, L"Sof Shema", sofShemaTime },
-        { 4, L"Sof Tefilla", sofTefillaTime },
+        { 3, L"Sof Shema", dz.sofShema },
+        { 4, L"Sof Tefilla", dz.sofTefilla },
         { 5, L"Chatzos", z.chatzot },
-        { 6, L"Mincha Gedola", minchaGTime },
-        { 7, L"Mincha Ketana", minchaKTime },
-        { 8, L"Plag", plagTime },
+        { 6, L"Mincha Gedola", dz.minchaGedola },
+        { 7, L"Mincha Ketana", dz.minchaKetana },
+        { 8, L"Plag", dz.plagMincha },
         { 9, L"Shkiah", z.shkia },
-        { 10, L"Tzais", tzeitTime },
+        { 10, L"Tzais", dz.tzeit },
         { 11, L"Candles", z.candleLighting },
     };
 

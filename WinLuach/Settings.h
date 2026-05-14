@@ -143,6 +143,10 @@ struct AppSettings
     bool         showChatzosOnFasts = false; // show chatzos on public fast day cells
     int          customAlotMode = 0;         // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
     double       customAlotValue = 16.1;
+    int          customMisheyakirMode = 0;   // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
+    double       customMisheyakirValue = 10.2;
+    int          customSofZmanMode = 0;      // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes; value 0 means netz-to-shkiah
+    double       customSofZmanValue = -1.0;  // -1 migrates from legacy zmanimShita
     int          customTzeitMode = 0;        // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
     double       customTzeitValue = 8.5;
 
