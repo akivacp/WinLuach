@@ -90,7 +90,22 @@
 #define IDC_OPT_SOFZMAN_ZMANIS   374
 #define IDC_OPT_NOTIFY_SEFIRAH_STYLE 375
 #define IDC_OPT_NOTIFY_SEFIRAH_TIME 376
+#define IDC_OPT_TRAY_BACK_ENABLED 377
+#define IDC_OPT_TRAY_BACK_COLOR   378
+#define IDC_OPT_TRAY_FONT         379
 #define IDC_OPT_NOTIFY_ZMAN_FIRST 380
+#define IDC_OPT_TRAY_NUMBER       397
+#define IDC_OPT_TRAY_DEFAULTS     398
+#define IDC_OPT_NOTIFY_SEFIRAH_HOUR 399
+#define IDC_OPT_NOTIFY_SEFIRAH_MIN  400
+#define IDC_OPT_NOTIFY_SEFIRAH_AMPM 401
+#define IDC_OPT_NOTIFY_SEFIRAH_MODE 402
+#define IDC_OPT_NOTIFY_SEFIRAH_OFFSET 403
+#define IDC_OPT_NOTIFY_SEFIRAH_DIR 404
+#define IDC_OPT_NOTIFY_SEFIRAH_BASE 405
+#define IDC_OPT_NOTIFY_SEFIRAH_OTHER 406
+#define IDC_OPT_NOTIFY_MOADIM_UNIT 407
+#define IDC_OPT_NOTIFY_PERSONAL_UNIT 408
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
 enum ColorPreviewKind
@@ -154,10 +169,14 @@ static const wchar_t* kColorPreviewNames[] = {
 };
 
 static const wchar_t* kZmanCheckboxLabels[] = {
-    L"Alos", L"Misheyakir", L"Netz (Hanetz)", L"Sof Shema", L"Sof Tefilla",
+    L"Alos", L"Misheyakir", L"Netz (Hanetz)", L"Sof Shema (GRA)", L"Sof Tefilla (GRA)",
     L"Chatzos", L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah",
-    L"Tzais", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz"
+    L"Tzais", L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz",
+    L"Sof Shema (MA)", L"Sof Tefilla (MA)"
 };
+
+static constexpr int kZmanCheckboxCount =
+    (int)(sizeof(kZmanCheckboxLabels) / sizeof(kZmanCheckboxLabels[0]));
 
 static CString ColorToHex(COLORREF c)
 {
@@ -334,6 +353,7 @@ public:
     {
         struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
         buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
         buf.t.cx = 380; buf.t.cy = 260;
         wcscpy_s(buf.title, L"Manage Calendars");
         if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
@@ -523,6 +543,97 @@ static void ParseReminderOffsetText(const std::wstring& text, CString& amount, i
     else unitSel = 0;
 }
 
+static bool ParseClockText(const std::wstring& text, int& hour24, int& minute)
+{
+    std::wstring s;
+    for (wchar_t ch : text)
+        if (!iswspace(ch))
+            s.push_back((wchar_t)towlower(ch));
+
+    bool pm = s.find(L"pm") != std::wstring::npos;
+    bool am = s.find(L"am") != std::wstring::npos;
+    size_t colon = s.find(L':');
+    if (colon == std::wstring::npos)
+        return false;
+
+    hour24 = _wtoi(s.substr(0, colon).c_str());
+    minute = _wtoi(s.substr(colon + 1).c_str());
+    if (minute < 0 || minute > 59)
+        return false;
+
+    if (pm && hour24 < 12) hour24 += 12;
+    if (am && hour24 == 12) hour24 = 0;
+    if (hour24 < 0 || hour24 > 23)
+        return false;
+    return true;
+}
+
+static void FillClockCombos(CComboBox& hour, CComboBox& minute, CComboBox& ampm)
+{
+    for (int i = 1; i <= 12; ++i)
+    {
+        CString text;
+        text.Format(L"%d", i);
+        hour.AddString(text);
+    }
+    for (int i = 0; i < 60; ++i)
+    {
+        CString text;
+        text.Format(L"%02d", i);
+        minute.AddString(text);
+    }
+    ampm.AddString(L"AM");
+    ampm.AddString(L"PM");
+}
+
+static void SetClockCombos(CComboBox& hour, CComboBox& minute, CComboBox& ampm,
+    const std::wstring& value, int fallbackHour24, int fallbackMinute)
+{
+    int h = fallbackHour24;
+    int m = fallbackMinute;
+    ParseClockText(value, h, m);
+    bool isPm = h >= 12;
+    int displayHour = h % 12;
+    if (displayHour == 0) displayHour = 12;
+    hour.SetCurSel(max(0, min(11, displayHour - 1)));
+    minute.SetCurSel(max(0, min(59, m)));
+    ampm.SetCurSel(isPm ? 1 : 0);
+}
+
+static std::wstring ReadClockCombos(const CComboBox& hour, const CComboBox& minute,
+    const CComboBox& ampm)
+{
+    int hSel = max(0, hour.GetCurSel());
+    int mSel = max(0, minute.GetCurSel());
+    int aSel = max(0, ampm.GetCurSel());
+    int h = hSel + 1;
+    CString out;
+    out.Format(L"%d:%02d %s", h, mSel, aSel == 1 ? L"PM" : L"AM");
+    return (LPCWSTR)out;
+}
+
+static void SetOffsetControls(const std::wstring& value, CEdit& amount, CComboBox& unit)
+{
+    CString amt;
+    int unitSel = 0;
+    ParseReminderOffsetText(value, amt, unitSel);
+    amount.SetWindowText(amt);
+    unit.SetCurSel(max(0, min(5, unitSel)));
+}
+
+static std::wstring ReadOffsetControls(const CEdit& amount, const CComboBox& unit)
+{
+    CString amt;
+    amount.GetWindowText(amt);
+    amt.Trim();
+    if (amt.IsEmpty())
+        amt = L"15";
+    int unitSel = max(0, unit.GetCurSel());
+    CString unitText;
+    unit.GetLBText(unitSel, unitText);
+    return std::wstring((LPCWSTR)amt) + L" " + std::wstring((LPCWSTR)unitText);
+}
+
 class CReminderEditDlg : public CDialog
 {
 public:
@@ -541,6 +652,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 360; b.t.cy = 205;
         wcscpy_s(b.title, L"Reminder");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -714,6 +826,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 430; b.t.cy = 260;
         wcscpy_s(b.title, L"Advanced Reminders");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -853,6 +966,9 @@ private:
 
 BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_TRAY_COLOR,      &COptionsDlg::OnTrayTextColor)
+    ON_BN_CLICKED(IDC_OPT_TRAY_BACK_COLOR, &COptionsDlg::OnTrayBackColor)
+    ON_BN_CLICKED(IDC_OPT_TRAY_FONT,       &COptionsDlg::OnTrayFont)
+    ON_BN_CLICKED(IDC_OPT_TRAY_DEFAULTS,   &COptionsDlg::OnTrayDefaults)
     ON_BN_CLICKED(IDC_OPT_MANAGE_CALS,     &COptionsDlg::OnManageCals)
     ON_BN_CLICKED(IDC_OPT_PREVIEW_NOTIFY,  &COptionsDlg::OnPreviewNotification)
     ON_BN_CLICKED(IDC_OPT_ADV_REMINDERS,   &COptionsDlg::OnAdvancedReminders)
@@ -893,7 +1009,7 @@ COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
 static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
 {
     t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
-    t.dwExtendedStyle = 0;
+    t.dwExtendedStyle = WS_EX_APPWINDOW;
     t.cdit = 0;
     t.x = 0;
     t.y = 0;
@@ -1064,7 +1180,7 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(240, y, 330, y + 20), this, IDC_OPT_RAD_ISRAEL); track(m_pageGeneral, &m_radIsrael);
     y = 38;
 
-    mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 122); y += 20;
+    mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 230); y += 20;
     m_chkShowTrayIcon.Create(L"Always show tray icon", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 200, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
     m_chkMinimizeToTray.Create(L"Minimize to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -1078,19 +1194,32 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(28, y, 170, y + 20), this, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
     m_chkDesktopShortcut.Create(L"desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(205, y, 350, y + 20), this, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut); y += 28;
-    mkStatic(m_pageInterface, L"Tray text color", 28, y, 105, 22);
-    m_btnTrayTextColor.Create(L"Choose...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(135, y, 220, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
+    mkStatic(m_pageInterface, L"Tray text", 28, y, 75, 22);
+    m_btnTrayTextColor.Create(L"Color...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(105, y, 180, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
+    m_btnTrayFont.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(188, y, 262, y + 24), this, IDC_OPT_TRAY_FONT); track(m_pageInterface, &m_btnTrayFont);
     m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(238, y, 395, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
+        CRect(270, y, 410, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
+    y += 30;
+    m_chkTrayBackEnabled.Create(L"tray background", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, 152, y + 20), this, IDC_OPT_TRAY_BACK_ENABLED); track(m_pageInterface, &m_chkTrayBackEnabled);
+    m_btnTrayBackColor.Create(L"Background...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(160, y - 2, 270, y + 22), this, IDC_OPT_TRAY_BACK_COLOR); track(m_pageInterface, &m_btnTrayBackColor);
+    mkStatic(m_pageInterface, L"Tray date:", 282, y, 70, 22);
+    initCombo(m_pageInterface, m_cmbTrayNumber, 350, y - 1, 66, IDC_OPT_TRAY_NUMBER,
+        { L"Heb", L"Eng" }, max(0, min(1, m_current.trayNumberStyle)));
+    y += 32;
+    m_btnTrayDefaults.Create(L"Restore Tray Defaults", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(28, y, 185, y + 24), this, IDC_OPT_TRAY_DEFAULTS); track(m_pageInterface, &m_btnTrayDefaults);
 
     // Tray Tooltip tab
     y = 38;
-    mkGroup(m_pageTrayTooltip, L"Zmanim Shown In Today's Tray Tooltip", 14, y, W - 28, 202); y += 26;
-    for (int i = 0; i < 15; ++i)
+    mkGroup(m_pageTrayTooltip, L"Zmanim Shown In Today's Tray Tooltip", 14, y, W - 28, 226); y += 26;
+    for (int i = 0; i < kZmanCheckboxCount; ++i)
     {
-        int col = i / 8;
-        int row = i % 8;
+        int col = i / 9;
+        int row = i % 9;
         int x0 = 28 + col * 190;
         int yy = y + row * 22;
         m_chkTrayTooltipZmanim[i].Create(kZmanCheckboxLabels[i],
@@ -1219,7 +1348,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Notifications tab
     y = 38;
-    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 114); y += 22;
+    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 178); y += 22;
     mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
     initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
@@ -1235,23 +1364,56 @@ BOOL COptionsDlg::OnInitDialog()
     initCombo(m_pageNotifications, m_cmbNotifySefirah, 145, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifySefirahStyle)));
-    mkStatic(m_pageNotifications, L"at:", 286, y, 24, 22);
-    m_editNotifySefirahTime.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(312, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_TIME);
-    track(m_pageNotifications, &m_editNotifySefirahTime);
-    m_editNotifySefirahTime.SetWindowText(m_current.notifySefirahTime.c_str());
+    mkStatic(m_pageNotifications, L"mode:", 286, y, 42, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirahMode, 330, y - 1, 92, IDC_OPT_NOTIFY_SEFIRAH_MODE,
+        { L"Manual", L"Relative" }, max(0, min(1, m_current.notifySefirahMode)));
+    y += 28;
+    mkStatic(m_pageNotifications, L"manual at:", 28, y, 76, 22);
+    m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(105, y - 1, 154, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
+    track(m_pageNotifications, &m_cmbNotifySefirahHour);
+    m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(158, y - 1, 207, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
+    track(m_pageNotifications, &m_cmbNotifySefirahMinute);
+    m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(212, y - 1, 270, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
+    track(m_pageNotifications, &m_cmbNotifySefirahAmPm);
+    FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
+    SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
+        m_current.notifySefirahTime, 21, 0);
+    mkStatic(m_pageNotifications, L"relative:", 286, y, 58, 22);
+    m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+        CRect(346, y, 386, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
+    track(m_pageNotifications, &m_editNotifySefirahOffset);
+    {
+        CString off;
+        off.Format(L"%d", max(0, m_current.notifySefirahOffsetMinutes));
+        m_editNotifySefirahOffset.SetWindowText(off);
+    }
+    y += 28;
+    mkStatic(m_pageNotifications, L"minutes", 28, y, 55, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 84, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
+        { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
+    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 164, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
+        { L"sunset", L"tzais", L"zman" }, max(0, min(2, m_current.notifySefirahBase)));
+    m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+        CRect(256, y - 1, 420, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
+    track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
+    for (const wchar_t* label : kZmanCheckboxLabels)
+        m_cmbNotifySefirahOtherZman.AddString(label);
+    m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
     y += 36;
 
-    mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 142); y += 22;
+    mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 168); y += 22;
     mkStatic(m_pageNotifications, L"Zmanim:", 28, y, 70, 22);
     initCombo(m_pageNotifications, m_cmbNotifyZmanim, 100, y - 1, 126, IDC_OPT_NOTIFY_ZMAN_STYLE,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifyZmanimStyle)));
     y += 28;
-    for (int i = 0; i < 15; ++i)
+    for (int i = 0; i < kZmanCheckboxCount; ++i)
     {
-        int col = i / 8;
-        int row = i % 8;
+        int col = i / 9;
+        int row = i % 9;
         int x0 = 28 + col * 190;
         int yy = y + row * 20;
         m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
@@ -1260,7 +1422,7 @@ BOOL COptionsDlg::OnInitDialog()
         track(m_pageNotifications, &m_chkNotifyZmanim[i]);
         m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
-    y += 164;
+    y += 188;
 
     mkGroup(m_pageNotifications, L"Advance Reminders", 14, y, W - 28, 112); y += 22;
     mkStatic(m_pageNotifications, L"Moadim:", 28, y, 70, 22);
@@ -1268,10 +1430,12 @@ BOOL COptionsDlg::OnInitDialog()
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifyMoadimStyle)));
     mkStatic(m_pageNotifications, L"before:", 238, y, 50, 22);
-    m_editNotifyMoadimOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(290, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyMoadimOffsets);
-    m_editNotifyMoadimOffsets.SetWindowText(m_current.notifyMoadimOffsets.c_str());
+    m_editNotifyMoadimAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+        CRect(290, y, 332, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyMoadimAmount);
+    initCombo(m_pageNotifications, m_cmbNotifyMoadimUnit, 338, y - 1, 84, IDC_OPT_NOTIFY_MOADIM_UNIT,
+        { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 2);
+    SetOffsetControls(m_current.notifyMoadimOffsets, m_editNotifyMoadimAmount, m_cmbNotifyMoadimUnit);
     y += 28;
     mkStatic(m_pageNotifications, L"Parsha:", 28, y, 70, 22);
     initCombo(m_pageNotifications, m_cmbNotifyParsha, 100, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_NAME,
@@ -1297,15 +1461,21 @@ BOOL COptionsDlg::OnInitDialog()
         max(0, min(3, m_current.notifyParshaStyle)));
     y += 28;
     mkStatic(m_pageNotifications, L"Parsha before:", 28, y, 100, 22);
-    m_editNotifyParshaOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(130, y, 230, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyParshaOffsets);
-    m_editNotifyParshaOffsets.SetWindowText(m_current.notifyParshaOffsets.c_str());
-    mkStatic(m_pageNotifications, L"Personal before:", 238, y, 110, 22);
-    m_editNotifyPersonalOffsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(348, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyPersonalOffsets);
-    m_editNotifyPersonalOffsets.SetWindowText(m_current.notifyPersonalOffsets.c_str());
+    initCombo(m_pageNotifications, m_cmbNotifyParshaOffsets, 130, y - 1, 104, IDC_OPT_NOTIFY_PARSHA_OFFSETS,
+        { L"15 minutes", L"30 minutes", L"1 hour", L"1 day", L"1 week", L"1 month" }, 4);
+    for (int i = 0; i < m_cmbNotifyParshaOffsets.GetCount(); ++i)
+    {
+        CString val; m_cmbNotifyParshaOffsets.GetLBText(i, val);
+        if (std::wstring((LPCWSTR)val) == m_current.notifyParshaOffsets)
+            m_cmbNotifyParshaOffsets.SetCurSel(i);
+    }
+    mkStatic(m_pageNotifications, L"Personal before:", 236, y, 96, 22);
+    m_editNotifyPersonalAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+        CRect(328, y, 362, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyPersonalAmount);
+    initCombo(m_pageNotifications, m_cmbNotifyPersonalUnit, 366, y - 1, 76, IDC_OPT_NOTIFY_PERSONAL_UNIT,
+        { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 0);
+    SetOffsetControls(m_current.notifyPersonalOffsets, m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
     y += 32;
     m_btnAdvancedReminders.Create(L"Manage Advanced Reminders...",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -1350,6 +1520,8 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
     m_chkStartWithWindows.SetCheck(m_current.startWithWindows ? BST_CHECKED : BST_UNCHECKED);
     m_chkDesktopShortcut.SetCheck(m_current.desktopShortcut ? BST_CHECKED : BST_UNCHECKED);
+    m_chkTrayBackEnabled.SetCheck(m_current.trayBackEnabled ? BST_CHECKED : BST_UNCHECKED);
+    m_btnTrayBackColor.EnableWindow(m_current.trayBackEnabled ? TRUE : FALSE);
 
     if (m_current.zmanimShita == 1) m_radMA72.SetCheck(BST_CHECKED);
     else if (m_current.zmanimShita == 2) m_radMA90.SetCheck(BST_CHECKED);
@@ -1438,7 +1610,114 @@ BOOL COptionsDlg::OnInitDialog()
     m_initialized = true;
     SetDirty(false);
 
+    // Initialize tooltips
+    m_tooltip.Create(this, TTS_ALWAYSTIP | TTS_BALLOON);
+    m_tooltip.SetMaxTipWidth(300);
+    m_tooltip.Activate(TRUE);
+
+    // General tab
+    m_tooltip.AddTool(&m_radAmPm,           L"Display times in 12-hour AM/PM format");
+    m_tooltip.AddTool(&m_rad24hr,           L"Display times in 24-hour format");
+    m_tooltip.AddTool(&m_radCivilMonth,     L"Navigate the calendar by civil (Gregorian) month");
+    m_tooltip.AddTool(&m_radHebrewMonth,    L"Navigate the calendar by Hebrew month");
+    m_tooltip.AddTool(&m_chkDateTracking,   L"Highlight the date cell under the mouse as you hover");
+    m_tooltip.AddTool(&m_cmbFontSize,       L"Font size for the calendar cell text");
+    m_tooltip.AddTool(&m_radDiaspora,       L"Diaspora: follows 2-day Yom Tov outside Israel");
+    m_tooltip.AddTool(&m_radIsrael,         L"Israel: follows 1-day Yom Tov as observed in Israel");
+
+    // Month View tab
+    m_tooltip.AddTool(&m_chkParshios,       L"Show the weekly Torah portion (parasha) on the calendar");
+    m_tooltip.AddTool(&m_chkMoadim,         L"Show Jewish holidays and Moadim on the calendar");
+    m_tooltip.AddTool(&m_chkUserEvents,     L"Show personal events added by the user");
+    m_tooltip.AddTool(&m_chkDafYomi,        L"Show the Daf Yomi (Babylonian Talmud) daily page");
+    m_tooltip.AddTool(&m_chkYerushalmi,     L"Show the Yerushalmi (Jerusalem Talmud) daily page");
+    m_tooltip.AddTool(&m_chkHalacha,        L"Show the Halacha Yomit daily halacha study");
+    m_tooltip.AddTool(&m_chkMishna,         L"Show the Mishna Yomit daily Mishna study");
+    m_tooltip.AddTool(&m_chkTanach,         L"Show the Tanach Yomi daily Tanach study");
+
+    // Interface tab
+    m_tooltip.AddTool(&m_chkShowTrayIcon,   L"Always show the WinLuach icon in the system tray");
+    m_tooltip.AddTool(&m_chkMinimizeToTray, L"Send the window to the system tray when minimized or closed");
+    m_tooltip.AddTool(&m_cmbTrayWhen,       L"Choose when the window minimizes to tray");
+    m_tooltip.AddTool(&m_chkMinimizeOnStartup, L"Start the application minimized to the system tray");
+    m_tooltip.AddTool(&m_chkStartWithWindows,  L"Automatically launch WinLuach when Windows starts");
+    m_tooltip.AddTool(&m_chkDesktopShortcut,   L"Create a desktop shortcut for WinLuach");
+    m_tooltip.AddTool(&m_btnTrayTextColor,  L"Choose the color for the tray icon clock text");
+    m_tooltip.AddTool(&m_btnTrayFont,       L"Choose the tray icon font and formatting");
+    m_tooltip.AddTool(&m_chkTrayBackEnabled,L"Draw a colored background behind the tray icon date");
+    m_tooltip.AddTool(&m_btnTrayBackColor,  L"Choose the tray icon background color");
+    m_tooltip.AddTool(&m_cmbTrayNumber,     L"Choose Hebrew letters or English digits for the tray date");
+    m_tooltip.AddTool(&m_btnTrayDefaults,   L"Restore the default tray icon text, background, and font settings");
+    m_tooltip.AddTool(&m_btnManageCals,     L"Add, remove, or edit web calendar (ICS) subscriptions");
+
+    // Zmanim tab
+    m_tooltip.AddTool(&m_radGRA,            L"Use Vilna Gaon (GRA) calculation: day runs from sunrise to sunset");
+    m_tooltip.AddTool(&m_radMA72,           L"Use Magen Avraham with 72-minute shaah zmanit before sunrise/after sunset");
+    m_tooltip.AddTool(&m_radMA90,           L"Use Magen Avraham with 90-minute shaah zmanit before sunrise/after sunset (default)");
+    m_tooltip.AddTool(&m_cmbAlotShita,      L"Preset method for calculating Alos HaShachar (dawn)");
+    m_tooltip.AddTool(&m_cmbTzeitShita,     L"Preset method for calculating Tzeis HaKochavim (nightfall)");
+    m_tooltip.AddTool(&m_chkChatzosOnFasts, L"Show Chatzos time on public fast day calendar cells");
+    m_tooltip.AddTool(&m_cmbCandleMinutes,  L"Minutes before sunset for Shabbos/Yom Tov candle lighting");
+    m_tooltip.AddTool(&m_editCustomAlot,    L"Custom value for Alos HaShachar (degrees below horizon or minutes)");
+    m_tooltip.AddTool(&m_radAlotDegrees,    L"Express Alos as degrees below the horizon");
+    m_tooltip.AddTool(&m_radAlotMinutes,    L"Express Alos as fixed minutes before sunrise");
+    m_tooltip.AddTool(&m_radAlotZmanis,     L"Express Alos as shaah zmanit (proportional) minutes before sunrise");
+    m_tooltip.AddTool(&m_editCustomTzeit,   L"Custom value for Tzeis HaKochavim (degrees or minutes)");
+    m_tooltip.AddTool(&m_radTzeitDegrees,   L"Express Tzeis as degrees below the horizon");
+    m_tooltip.AddTool(&m_radTzeitMinutes,   L"Express Tzeis as fixed minutes after sunset");
+    m_tooltip.AddTool(&m_radTzeitZmanis,    L"Express Tzeis as shaah zmanit (proportional) minutes after sunset");
+
+    // Zman Shitos tab
+    m_tooltip.AddTool(&m_cmbSofZmanShita,       L"Preset calculation method for Sof Zman Shema and Tefilla");
+    m_tooltip.AddTool(&m_editCustomSofZman,     L"Custom value for the Sof Zman period (degrees or minutes)");
+    m_tooltip.AddTool(&m_radSofZmanDegrees,     L"Express Sof Zman offset as degrees below horizon");
+    m_tooltip.AddTool(&m_radSofZmanMinutes,     L"Express Sof Zman offset as fixed minutes");
+    m_tooltip.AddTool(&m_radSofZmanZmanis,      L"Express Sof Zman offset as shaah zmanit (proportional) minutes");
+    m_tooltip.AddTool(&m_cmbMisheyakirShita,    L"Preset calculation method for Misheyakir");
+    m_tooltip.AddTool(&m_editCustomMisheyakir,  L"Custom value for Misheyakir (degrees or minutes)");
+    m_tooltip.AddTool(&m_radMisheyakirDegrees,  L"Express Misheyakir as degrees below the horizon");
+    m_tooltip.AddTool(&m_radMisheyakirMinutes,  L"Express Misheyakir as fixed minutes before sunrise");
+    m_tooltip.AddTool(&m_radMisheyakirZmanis,   L"Express Misheyakir as shaah zmanit (proportional) minutes");
+
+    // Notifications tab
+    m_tooltip.AddTool(&m_cmbNotifyPersonal,     L"Notification style for personal calendar events");
+    m_tooltip.AddTool(&m_cmbNotifyWebCal,       L"Notification style for web calendar (ICS) events");
+    m_tooltip.AddTool(&m_cmbNotifySefirah,      L"Notification style for the nightly Sefiras HaOmer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahHour,  L"Hour for a manual Sefiras HaOmer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahMinute,L"Minute for a manual Sefiras HaOmer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahAmPm,  L"AM or PM for a manual Sefiras HaOmer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahMode,  L"Choose a fixed time or a reminder relative to a zman");
+    m_tooltip.AddTool(&m_editNotifySefirahOffset, L"Minutes before or after the selected zman for the Omer reminder");
+    m_tooltip.AddTool(&m_cmbNotifyZmanim,       L"Notification style for upcoming zmanim alerts");
+    m_tooltip.AddTool(&m_cmbNotifyMoadim,       L"Notification style for upcoming holidays and Moadim");
+    m_tooltip.AddTool(&m_editNotifyMoadimAmount, L"How far before a holiday or moed to remind you");
+    m_tooltip.AddTool(&m_cmbNotifyParsha,       L"Notify for a specific parasha, or any parasha");
+    m_tooltip.AddTool(&m_cmbNotifyParshaStyle,  L"Notification style for Shabbos parasha reminders");
+    m_tooltip.AddTool(&m_cmbNotifyParshaOffsets, L"How far before Shabbos to remind you about the selected parasha");
+    m_tooltip.AddTool(&m_editNotifyPersonalAmount, L"How far before personal events to remind you");
+    m_tooltip.AddTool(&m_btnPreviewNotify,      L"Preview the selected notification style");
+    m_tooltip.AddTool(&m_btnAdvancedReminders,  L"Configure advanced reminder rules and schedules");
+
+    // Colors tab
+    m_tooltip.AddTool(&m_cmbColorItem,      L"Select which calendar element to customize the color for");
+    m_tooltip.AddTool(&m_editColorHex,      L"Enter a hex color code (e.g. #FF8800) to set precisely");
+    m_tooltip.AddTool(&m_btnColorPicker,    L"Open the color picker dialog to choose a color visually");
+    m_tooltip.AddTool(&m_cmbColorPreview,   L"Preview colors using a sample day type");
+    m_tooltip.AddTool(&m_btnRestoreColors,  L"Reset all calendar cell colors back to their defaults");
+
+    // Bottom buttons
+    m_tooltip.AddTool(&m_btnOK,     L"Save settings and close the Options dialog");
+    m_tooltip.AddTool(&m_btnApply,  L"Apply settings immediately without closing");
+    m_tooltip.AddTool(&m_btnCancel, L"Close without saving any changes");
+
     return TRUE;
+}
+
+BOOL COptionsDlg::PreTranslateMessage(MSG* pMsg)
+{
+    if (m_tooltip.GetSafeHwnd())
+        m_tooltip.RelayEvent(pMsg);
+    return CDialog::PreTranslateMessage(pMsg);
 }
 
 // =============================================================================
@@ -1878,6 +2157,13 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
+    if (id == IDC_OPT_TRAY_BACK_ENABLED && code == BN_CLICKED)
+    {
+        if (m_btnTrayBackColor.GetSafeHwnd())
+            m_btnTrayBackColor.EnableWindow(m_chkTrayBackEnabled.GetCheck() == BST_CHECKED ? TRUE : FALSE);
+        SetDirty(true);
+        return TRUE;
+    }
     if (id == IDC_OPT_ALOT_DEG)    { ConvertAlotMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_MIN)    { ConvertAlotMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_ZMANIS) { ConvertAlotMode(2); SetDirty(true); return TRUE; }
@@ -1927,8 +2213,10 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.minimizeOnStartup = (m_chkMinimizeOnStartup.GetCheck() == BST_CHECKED);
     m_result.startWithWindows = (m_chkStartWithWindows.GetCheck() == BST_CHECKED);
     m_result.desktopShortcut = (m_chkDesktopShortcut.GetCheck() == BST_CHECKED);
+    m_result.trayBackEnabled = (m_chkTrayBackEnabled.GetCheck() == BST_CHECKED);
+    m_result.trayNumberStyle = max(0, min(1, m_cmbTrayNumber.GetCurSel()));
     m_result.trayTooltipZmanimMask = 0;
-    for (int i = 0; i < 15; ++i)
+    for (int i = 0; i < kZmanCheckboxCount; ++i)
         if (m_chkTrayTooltipZmanim[i].GetSafeHwnd() &&
             m_chkTrayTooltipZmanim[i].GetCheck() == BST_CHECKED)
             m_result.trayTooltipZmanimMask |= (1u << i);
@@ -1972,16 +2260,20 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.notifySefirahStyle = max(0, m_cmbNotifySefirah.GetCurSel());
     m_result.notifyZmanimStyle = max(0, m_cmbNotifyZmanim.GetCurSel());
     m_result.notifyZmanimMask = 0;
-    for (int i = 0; i < 15; ++i)
+    for (int i = 0; i < kZmanCheckboxCount; ++i)
         if (m_chkNotifyZmanim[i].GetSafeHwnd() &&
             m_chkNotifyZmanim[i].GetCheck() == BST_CHECKED)
             m_result.notifyZmanimMask |= (1u << i);
     m_result.notifyMoadimStyle = max(0, m_cmbNotifyMoadim.GetCurSel());
     CString txt;
-    m_editNotifySefirahTime.GetWindowText(txt);
-    m_result.notifySefirahTime = (LPCWSTR)txt;
-    m_editNotifyMoadimOffsets.GetWindowText(txt);
-    m_result.notifyMoadimOffsets = (LPCWSTR)txt;
+    m_result.notifySefirahTime = ReadClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
+    m_result.notifySefirahMode = max(0, min(1, m_cmbNotifySefirahMode.GetCurSel()));
+    m_editNotifySefirahOffset.GetWindowText(txt);
+    m_result.notifySefirahOffsetMinutes = max(0, _wtoi(txt));
+    m_result.notifySefirahOffsetDir = max(0, min(1, m_cmbNotifySefirahDir.GetCurSel()));
+    m_result.notifySefirahBase = max(0, min(2, m_cmbNotifySefirahBase.GetCurSel()));
+    m_result.notifySefirahOtherZman = max(0, min(kZmanCheckboxCount - 1, m_cmbNotifySefirahOtherZman.GetCurSel()));
+    m_result.notifyMoadimOffsets = ReadOffsetControls(m_editNotifyMoadimAmount, m_cmbNotifyMoadimUnit);
     m_result.notifyParshaStyle = max(0, m_cmbNotifyParshaStyle.GetCurSel());
     int parSel = m_cmbNotifyParsha.GetCurSel();
     if (parSel > 0)
@@ -1994,10 +2286,9 @@ void COptionsDlg::ReadControlsIntoResult()
     {
         m_result.notifyParshaName.clear();
     }
-    m_editNotifyParshaOffsets.GetWindowText(txt);
+    m_cmbNotifyParshaOffsets.GetWindowText(txt);
     m_result.notifyParshaOffsets = (LPCWSTR)txt;
-    m_editNotifyPersonalOffsets.GetWindowText(txt);
-    m_result.notifyPersonalOffsets = (LPCWSTR)txt;
+    m_result.notifyPersonalOffsets = ReadOffsetControls(m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
 }
 
 bool COptionsDlg::ApplyToParent()
@@ -2060,6 +2351,62 @@ void COptionsDlg::OnTrayTextColor()
         m_result.trayTextColor = (int)dlg.GetColor();
         SetDirty(true);
     }
+}
+
+void COptionsDlg::OnTrayBackColor()
+{
+    CColorDialog dlg((COLORREF)m_result.trayBackColor, CC_FULLOPEN, this);
+    if (dlg.DoModal() == IDOK)
+    {
+        m_result.trayBackColor = (int)dlg.GetColor();
+        SetDirty(true);
+    }
+}
+
+void COptionsDlg::OnTrayFont()
+{
+    LOGFONT lf = {};
+    wcscpy_s(lf.lfFaceName, m_result.trayFontFace.empty() ? L"Arial" : m_result.trayFontFace.c_str());
+    HDC screen = ::GetDC(nullptr);
+    int dpiY = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
+    if (screen) ::ReleaseDC(nullptr, screen);
+    int pointSize = m_result.trayFontSize > 0 ? m_result.trayFontSize : 12;
+    lf.lfHeight = -MulDiv(max(6, pointSize), dpiY, 72);
+    lf.lfWeight = m_result.trayFontBold ? FW_BOLD : FW_NORMAL;
+    lf.lfItalic = m_result.trayFontItalic ? TRUE : FALSE;
+
+    CFontDialog dlg(&lf, CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT, nullptr, this);
+    dlg.m_cf.rgbColors = (COLORREF)m_result.trayTextColor;
+    if (dlg.DoModal() == IDOK)
+    {
+        LOGFONT chosen = {};
+        dlg.GetCurrentFont(&chosen);
+        m_result.trayFontFace = chosen.lfFaceName;
+        m_result.trayFontSize = max(6, (int)dlg.GetSize() / 10);
+        m_result.trayFontBold = chosen.lfWeight >= FW_SEMIBOLD;
+        m_result.trayFontItalic = chosen.lfItalic != 0;
+        m_result.trayTextColor = (int)dlg.GetColor();
+        SetDirty(true);
+    }
+}
+
+void COptionsDlg::OnTrayDefaults()
+{
+    m_result.trayTextColor = 0x00FFFF;
+    m_result.trayBackEnabled = false;
+    m_result.trayBackColor = 0x000000;
+    m_result.trayFontFace = L"Arial";
+    m_result.trayFontSize = 0;
+    m_result.trayFontBold = true;
+    m_result.trayFontItalic = false;
+    m_result.trayNumberStyle = 0;
+    if (m_chkTrayBackEnabled.GetSafeHwnd())
+        m_chkTrayBackEnabled.SetCheck(BST_UNCHECKED);
+    if (m_btnTrayBackColor.GetSafeHwnd())
+        m_btnTrayBackColor.EnableWindow(FALSE);
+    if (m_cmbTrayNumber.GetSafeHwnd())
+        m_cmbTrayNumber.SetCurSel(0);
+    SetDirty(true);
 }
 
 void COptionsDlg::OnManageCals()

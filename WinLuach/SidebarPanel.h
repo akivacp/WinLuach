@@ -26,6 +26,9 @@ protected:
     afx_msg void OnLButtonDown(UINT nFlags, CPoint pt);
     afx_msg void OnMouseMove(UINT nFlags, CPoint pt);
     afx_msg void OnLButtonUp(UINT nFlags, CPoint pt);
+    afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
+    afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
+    afx_msg void OnSize(UINT nType, int cx, int cy);
 
 private:
     void DrawSep(CDC* pDC, int x, int& yOff, int w);
@@ -35,6 +38,10 @@ private:
     float       m_splitFrac = 0.46f; // fraction of height where year section begins
     bool        m_dragging  = false;
     int         m_dragStartY = 0;
+    int         m_scrollPos = 0;
+    int         m_contentHeight = 0;
+
+    void UpdateScrollBar(int clientHeight);
 
     DECLARE_MESSAGE_MAP()
 };
