@@ -69,14 +69,18 @@ void CZmanimPanel::OnPaint()
     DisplayZmanimTimes d = m_pFrame->BuildDisplayZmanim(
         m_pFrame->m_selectedDate, z, m_pFrame->m_isDST);
 
-    // 12 zmanim entries
+    // Include the common MA/GRA variants directly in the bottom bar.
     struct ZmanEntry { std::wstring label; TimeOfDay time; };
     ZmanEntry entries[] = {
         { d.alotLabel,                  d.alot          },
         { d.misheyakirLabel,            d.misheyakir    },
         { L"Hanetz",                    z.hanetz        },
-        { d.sofShemaLabel,              d.sofShema      },
-        { d.sofTefillaLabel,            d.sofTefilla    },
+        { L"Sof Shema (GRA)",           z.sofShema_GRA  },
+        { L"Sof Shema (MA72)",          z.sofShema_MA72 },
+        { L"Sof Shema (MA90)",          z.sofShema_MA90 },
+        { L"Sof Tefilla (GRA)",         z.sofTefilla_GRA },
+        { L"Sof Tefilla (MA72)",        z.sofTefilla_MA72 },
+        { L"Sof Tefilla (MA90)",        z.sofTefilla_MA90 },
         { L"Chatzos",                   z.chatzot       },
         { L"Mincha Gedola",             d.minchaGedola  },
         { L"Mincha Ketana",             d.minchaKetana  },
@@ -93,7 +97,7 @@ void CZmanimPanel::OnPaint()
     int colGap = 20;
     int colW = (cx - padding * 2 - colGap * (cols - 1)) / cols;
     int startY = 22;
-    int rowH = 19;
+    int rowH = max(15, min(19, (cy - startY - 20) / max(1, rows)));
     int labelW = 110;
     int timeW = 60;
 

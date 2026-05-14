@@ -209,7 +209,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     int       numRows  = ((int)dow0 + daysInMo - 1) / 7 + 1;  // 4, 5, or 6
     int       cellH    = gridH / numRows;
     int       lineH    = -fSmall + 2;
-    int       mg       = max(2, W / 250);
+    int       mg       = max(3, W / 120);
 
     bool isIsrael   = pFrame ? pFrame->m_isIsrael    : false;
     bool showMoadim = pFrame ? pFrame->m_showMoadim  : true;
@@ -1423,6 +1423,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             {
                 struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[24]; } b = {};
                 b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
+                b.t.dwExtendedStyle = WS_EX_APPWINDOW;
                 b.t.cx = 140; b.t.cy = 60;
                 wcscpy_s(b.title, L"Choose Year");
                 if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
@@ -1507,6 +1508,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
         {
             struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[32]; } b = {};
             b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
+            b.t.dwExtendedStyle = WS_EX_APPWINDOW;
             b.t.cx = 220; b.t.cy = 180;
             wcscpy_s(b.title, L"Print Events List");
             if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
@@ -1693,9 +1695,10 @@ public:
 
     INT_PTR DoModal() override
     {
-        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
-        b.t.cx = 310; b.t.cy = 190;
+    struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
+    b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+    b.t.dwExtendedStyle = WS_EX_APPWINDOW;
+    b.t.cx = 310; b.t.cy = 190;
         wcscpy_s(b.title, L"Page Setup");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -1906,6 +1909,7 @@ INT_PTR CSimplePageSetupDlg::DoModal()
 {
     struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
     b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
+    b.t.dwExtendedStyle = WS_EX_APPWINDOW;
     b.t.cx = 310; b.t.cy = 220;
     wcscpy_s(b.title, L"Page Setup");
     if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -2018,7 +2022,7 @@ void CSimplePageSetupDlg::OnPreview()
 {
     ReadControls();
     bool sf = (!m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED);
-    CSimplePreviewDlg prev(m_render, m_docName.c_str(), !m_opts.landscape, sf, this);
+    CSimplePreviewDlg prev(m_render, m_docName.c_str(), !m_opts.landscape, sf, nullptr);
     prev.DoModal();
 }
 
@@ -2054,6 +2058,7 @@ INT_PTR CSimplePreviewDlg::DoModal()
 {
     struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
     b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
+    b.t.dwExtendedStyle = WS_EX_APPWINDOW;
     b.t.cx = 520; b.t.cy = 420;
     wcscpy_s(b.title, L"Print Preview");
     if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -2169,6 +2174,7 @@ INT_PTR CCalPrintDlg::DoModal()
         wchar_t title[32];
     } buf = {};
     buf.t.style  = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+    buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
     buf.t.cy     = 420;
@@ -2420,7 +2426,7 @@ void CCalPrintDlg::OnBnPreview()
 {
     ReadControls();
     SavePrintOptsToSettings(m_opts);
-    CCalPreviewDlg prev(m_opts, m_pFrame, this);
+    CCalPreviewDlg prev(m_opts, m_pFrame, nullptr);
     prev.DoModal();
 }
 
@@ -2463,6 +2469,7 @@ INT_PTR CCalPreviewDlg::DoModal()
     } buf = {};
     buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
                   DS_MODALFRAME | DS_CENTER;
+    buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
     buf.t.cdit  = 0;
     buf.t.cx    = 560;
     buf.t.cy    = 460;
