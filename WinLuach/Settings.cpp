@@ -148,6 +148,10 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"showChatzosOnFasts\": " << (s.showChatzosOnFasts ? L"true" : L"false") << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
     f << L"  \"customAlotValue\": " << s.customAlotValue << L",\n";
+    f << L"  \"customMisheyakirMode\": " << s.customMisheyakirMode << L",\n";
+    f << L"  \"customMisheyakirValue\": " << s.customMisheyakirValue << L",\n";
+    f << L"  \"customSofZmanMode\": " << s.customSofZmanMode << L",\n";
+    f << L"  \"customSofZmanValue\": " << s.customSofZmanValue << L",\n";
     f << L"  \"customTzeitMode\": " << s.customTzeitMode << L",\n";
     f << L"  \"customTzeitValue\": " << s.customTzeitValue << L",\n";
     f << L"  \"colorNormalCell\": " << s.colorNormalCell << L",\n";
@@ -335,6 +339,10 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"showChatzosOnFasts\"") != std::wstring::npos) s.showChatzosOnFasts = ParseJsonBool(line);
         else if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
         else if (line.find(L"\"customAlotValue\"")    != std::wstring::npos) s.customAlotValue = ParseJsonNumber(line);
+        else if (line.find(L"\"customMisheyakirMode\"")  != std::wstring::npos) s.customMisheyakirMode = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"customMisheyakirValue\"") != std::wstring::npos) s.customMisheyakirValue = ParseJsonNumber(line);
+        else if (line.find(L"\"customSofZmanMode\"")     != std::wstring::npos) s.customSofZmanMode = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"customSofZmanValue\"")    != std::wstring::npos) s.customSofZmanValue = ParseJsonNumber(line);
         else if (line.find(L"\"customTzeitMode\"")    != std::wstring::npos) s.customTzeitMode = (int)ParseJsonNumber(line);
         else if (line.find(L"\"customTzeitValue\"")   != std::wstring::npos) s.customTzeitValue = ParseJsonNumber(line);
         else if (line.find(L"\"colorNormalCell\"")      != std::wstring::npos) s.colorNormalCell = (int)ParseJsonNumber(line);
