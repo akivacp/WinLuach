@@ -43,6 +43,24 @@ struct CalendarEventLine
     bool         isWebCalendar = false;
 };
 
+struct DisplayZmanimTimes
+{
+    TimeOfDay alot;
+    TimeOfDay misheyakir;
+    TimeOfDay sofShema;
+    TimeOfDay sofTefilla;
+    TimeOfDay minchaGedola;
+    TimeOfDay minchaKetana;
+    TimeOfDay plagMincha;
+    TimeOfDay tzeit;
+    double    shaahZmanit = 0.0;
+    std::wstring alotLabel;
+    std::wstring misheyakirLabel;
+    std::wstring sofShemaLabel;
+    std::wstring sofTefillaLabel;
+    std::wstring tzeitLabel;
+};
+
 // =============================================================================
 // LAYOUT CONSTANTS
 // =============================================================================
@@ -172,6 +190,8 @@ public:
     std::pair<std::wstring, std::wstring> GetCellZmanimLabels(
         const GregorianDate& g, const HebrewDate& h,
         const std::vector<HolidayInfo>& hols) const;
+    DisplayZmanimTimes BuildDisplayZmanim(
+        const GregorianDate& g, const ZmanimResult& z, bool isDst) const;
 
     // Current view state (public so child panels can read it)
     int           m_viewYear = 2026;
@@ -203,6 +223,10 @@ public:
     ZmanimResult  m_zmanim;
     int           m_customAlotMode = 0;
     double        m_customAlotValue = 16.1;
+    int           m_customMisheyakirMode = 0;
+    double        m_customMisheyakirValue = 10.2;
+    int           m_customSofZmanMode = 0;
+    double        m_customSofZmanValue = 0.0;
     int           m_customTzeitMode = 0;
     double        m_customTzeitValue = 8.5;
     COLORREF      m_colorNormalCell = CLR_NORMAL;

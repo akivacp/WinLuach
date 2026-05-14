@@ -100,6 +100,16 @@ private:
     CButton   m_radAlotDegrees;
     CButton   m_radAlotMinutes;
     CButton   m_radAlotZmanis;
+    CComboBox m_cmbMisheyakirShita;
+    CEdit     m_editCustomMisheyakir;
+    CButton   m_radMisheyakirDegrees;
+    CButton   m_radMisheyakirMinutes;
+    CButton   m_radMisheyakirZmanis;
+    CComboBox m_cmbSofZmanShita;
+    CEdit     m_editCustomSofZman;
+    CButton   m_radSofZmanDegrees;
+    CButton   m_radSofZmanMinutes;
+    CButton   m_radSofZmanZmanis;
     CEdit     m_editCustomTzeit;
     CButton   m_radTzeitDegrees;
     CButton   m_radTzeitMinutes;
@@ -111,6 +121,7 @@ private:
     std::vector<CWnd*> m_pageTrayTooltip;
     std::vector<CWnd*> m_pageColors;
     std::vector<CWnd*> m_pageZmanim;
+    std::vector<CWnd*> m_pageZmanShitos;
     std::vector<CWnd*> m_pageNotifications;
     CButton m_btnOK;
     CButton m_btnCancel;
@@ -128,14 +139,22 @@ private:
     void InvalidateColorPreview();
     int CurrentColorIndex() const;
     int CurrentAlotMode() const;
+    int CurrentMisheyakirMode() const;
+    int CurrentSofZmanMode() const;
     int CurrentTzeitMode() const;
     void SetAlotMode(int mode);
+    void SetMisheyakirMode(int mode);
+    void SetSofZmanMode(int mode);
     void SetTzeitMode(int mode);
     double GetEditValue(const CEdit& edit, double fallback) const;
     void SetEditValue(CEdit& edit, double value);
     void ApplyAlotPreset();
+    void ApplyMisheyakirPreset();
+    void ApplySofZmanPreset();
     void ApplyTzeitPreset();
     void ConvertAlotMode(int newMode);
+    void ConvertMisheyakirMode(int newMode);
+    void ConvertSofZmanMode(int newMode);
     void ConvertTzeitMode(int newMode);
 
     CComboBox m_cmbColorItem;
@@ -146,6 +165,8 @@ private:
     CButton   m_btnRestoreColors;
     bool      m_updatingColorUi = false;
     int       m_lastAlotMode = 0;
+    int       m_lastMisheyakirMode = 0;
+    int       m_lastSofZmanMode = 0;
     int       m_lastTzeitMode = 0;
 
     CComboBox m_cmbNotifyZmanim;

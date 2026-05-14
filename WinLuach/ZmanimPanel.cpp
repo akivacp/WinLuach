@@ -66,53 +66,23 @@ void CZmanimPanel::OnPaint()
 
     // Select time variants based on shita settings
     const ZmanimResult& z = m_pFrame->m_zmanim;
-    int zmanSh  = m_pFrame->m_zmanimShita;
-
-    TimeOfDay sofShemaTime    = (zmanSh == 1) ? z.sofShema_MA72    : (zmanSh == 2) ? z.sofShema_MA90    : z.sofShema_GRA;
-    TimeOfDay sofTefillaTime  = (zmanSh == 1) ? z.sofTefilla_MA72  : (zmanSh == 2) ? z.sofTefilla_MA90  : z.sofTefilla_GRA;
-    TimeOfDay minchaGTime     = (zmanSh == 1) ? z.minchaGedola_MA72: (zmanSh == 2) ? z.minchaGedola_MA90: z.minchaGedola_GRA;
-    TimeOfDay minchaKTime     = (zmanSh == 1) ? z.minchaKetana_MA72: (zmanSh == 2) ? z.minchaKetana_MA90: z.minchaKetana_GRA;
-    TimeOfDay plagTime        = (zmanSh == 1) ? z.plagMincha_MA72  : (zmanSh == 2) ? z.plagMincha_MA90  : z.plagMincha_GRA;
-    double    shaahMin        = (zmanSh == 1) ? z.shaahZmanit_MA72 : (zmanSh == 2) ? z.shaahZmanit_MA90 : z.shaahZmanit_GRA;
-
-    auto customBoundary = [&](bool morning, int mode, double value) -> TimeOfDay {
-        if (mode == 0)
-            return CalculateSunAtAngle(m_pFrame->m_selectedDate, m_pFrame->m_location,
-                m_pFrame->m_isDST, value, morning);
-        if (mode == 1)
-            return AddMinutes(morning ? z.hanetz : z.shkia, morning ? -(int)round(value) : (int)round(value));
-        return AddShaot(morning ? z.hanetz : z.shkia, shaahMin, (morning ? -1.0 : 1.0) * value / 60.0);
-    };
-    auto customLabel = [](const wchar_t* base, int mode, double value) -> std::wstring {
-        CString s;
-        if (mode == 0) s.Format(L"%s (%.2g deg)", base, value);
-        else if (mode == 1) s.Format(L"%s (%.0f min)", base, value);
-        else s.Format(L"%s (%.0f z-min)", base, value);
-        return (LPCWSTR)s;
-    };
-
-    TimeOfDay alotTime  = customBoundary(true,  m_pFrame->m_customAlotMode,  m_pFrame->m_customAlotValue);
-    TimeOfDay tzeitTime = customBoundary(false, m_pFrame->m_customTzeitMode, m_pFrame->m_customTzeitValue);
-    std::wstring alotLabel  = customLabel(L"Alos Hashachar", m_pFrame->m_customAlotMode,  m_pFrame->m_customAlotValue);
-    std::wstring tzeitLabel = customLabel(L"Tzeis",           m_pFrame->m_customTzeitMode, m_pFrame->m_customTzeitValue);
-
-    static const wchar_t* kShemaLabels[] = { L"Sof Shema (GRA)", L"Sof Shema (MA72)", L"Sof Shema (MA90)" };
-    static const wchar_t* kMinchaGLabels[] = { L"Mincha Gedola", L"Mincha Gedola", L"Mincha Gedola" };
+    DisplayZmanimTimes d = m_pFrame->BuildDisplayZmanim(
+        m_pFrame->m_selectedDate, z, m_pFrame->m_isDST);
 
     // 12 zmanim entries
     struct ZmanEntry { std::wstring label; TimeOfDay time; };
     ZmanEntry entries[] = {
-        { alotLabel,                    alotTime        },
-        { L"Misheyakir",                z.misheyakir_10 },
+        { d.alotLabel,                  d.alot          },
+        { d.misheyakirLabel,            d.misheyakir    },
         { L"Hanetz",                    z.hanetz        },
-        { kShemaLabels[zmanSh],         sofShemaTime    },
-        { L"Sof Tefilla",               sofTefillaTime  },
+        { d.sofShemaLabel,              d.sofShema      },
+        { d.sofTefillaLabel,            d.sofTefilla    },
         { L"Chatzos",                   z.chatzot       },
-        { kMinchaGLabels[zmanSh],       minchaGTime     },
-        { L"Mincha Ketana",             minchaKTime     },
-        { L"Plag HaMincha",             plagTime        },
+        { L"Mincha Gedola",             d.minchaGedola  },
+        { L"Mincha Ketana",             d.minchaKetana  },
+        { L"Plag HaMincha",             d.plagMincha    },
         { L"Shkiah",                    z.shkia         },
-        { tzeitLabel,                   tzeitTime       },
+        { d.tzeitLabel,                 d.tzeit         },
         { L"Candle Lighting",           z.candleLighting},
     };
 
@@ -163,7 +133,7 @@ void CZmanimPanel::OnPaint()
     }
 
     // Sha'a Zmanit — shown on a separate bottom line spanning all columns
-    double sz = shaahMin;
+    double sz = d.shaahZmanit;
     if (sz > 0.0) {
         int szMin = (int)round(sz);
         CString szStr;
