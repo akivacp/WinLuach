@@ -9,6 +9,7 @@
 // CHANGELOG:
 // v0.1.0 - Initial implementation. Saves/loads all AppSettings fields.
 //          Creates %APPDATA%\WinLuach\ directory if it doesn't exist.
+// v0.8.0 - Save/load zmanim bar mask + per-sub-tab preset fields.
 // =============================================================================
 
 #include "pch.h"
@@ -161,6 +162,20 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"customSofZmanValue\": " << s.customSofZmanValue << L",\n";
     f << L"  \"customTzeitMode\": " << s.customTzeitMode << L",\n";
     f << L"  \"customTzeitValue\": " << s.customTzeitValue << L",\n";
+    f << L"  \"zmanimBarMask\": " << (uint32_t)s.zmanimBarMask << L",\n";
+    f << L"  \"customMinchaGedolaPreset\": " << s.customMinchaGedolaPreset << L",\n";
+    f << L"  \"customMinchaKetanaPreset\": " << s.customMinchaKetanaPreset << L",\n";
+    f << L"  \"customPlagPreset\": " << s.customPlagPreset << L",\n";
+    f << L"  \"customEndFastPreset\": " << s.customEndFastPreset << L",\n";
+    f << L"  \"customMinchaGedolaValue\": " << s.customMinchaGedolaValue << L",\n";
+    f << L"  \"customMinchaKetanaValue\": " << s.customMinchaKetanaValue << L",\n";
+    f << L"  \"customPlagValue\": " << s.customPlagValue << L",\n";
+    f << L"  \"customEndFastValue\": " << s.customEndFastValue << L",\n";
+    f << L"  \"customSofZmanMaPreset\": " << s.customSofZmanMaPreset << L",\n";
+    f << L"  \"customSofZmanGraPreset\": " << s.customSofZmanGraPreset << L",\n";
+    f << L"  \"customMisheyakirPreset\": " << s.customMisheyakirPreset << L",\n";
+    f << L"  \"customTzeitPreset\": " << s.customTzeitPreset << L",\n";
+    f << L"  \"customAlotPreset\": " << s.customAlotPreset << L",\n";
     f << L"  \"colorNormalCell\": " << s.colorNormalCell << L",\n";
     f << L"  \"colorOtherMonthCell\": " << s.colorOtherMonthCell << L",\n";
     f << L"  \"colorTodayCell\": " << s.colorTodayCell << L",\n";
@@ -381,6 +396,20 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"customSofZmanValue\"")    != std::wstring::npos) s.customSofZmanValue = ParseJsonNumber(line);
         if (line.find(L"\"customTzeitMode\"")    != std::wstring::npos) s.customTzeitMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customTzeitValue\"")   != std::wstring::npos) s.customTzeitValue = ParseJsonNumber(line);
+        if (line.find(L"\"zmanimBarMask\"")            != std::wstring::npos) s.zmanimBarMask = (uint32_t)ParseJsonNumber(line);
+        if (line.find(L"\"customMinchaGedolaPreset\"") != std::wstring::npos) s.customMinchaGedolaPreset = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customMinchaKetanaPreset\"") != std::wstring::npos) s.customMinchaKetanaPreset = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customPlagPreset\"")         != std::wstring::npos) s.customPlagPreset         = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customEndFastPreset\"")      != std::wstring::npos) s.customEndFastPreset      = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customMinchaGedolaValue\"")  != std::wstring::npos) s.customMinchaGedolaValue  = ParseJsonNumber(line);
+        if (line.find(L"\"customMinchaKetanaValue\"")  != std::wstring::npos) s.customMinchaKetanaValue  = ParseJsonNumber(line);
+        if (line.find(L"\"customPlagValue\"")          != std::wstring::npos) s.customPlagValue          = ParseJsonNumber(line);
+        if (line.find(L"\"customEndFastValue\"")       != std::wstring::npos) s.customEndFastValue       = ParseJsonNumber(line);
+        if (line.find(L"\"customSofZmanMaPreset\"")    != std::wstring::npos) s.customSofZmanMaPreset    = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customSofZmanGraPreset\"")   != std::wstring::npos) s.customSofZmanGraPreset   = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customMisheyakirPreset\"")   != std::wstring::npos) s.customMisheyakirPreset   = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customTzeitPreset\"")        != std::wstring::npos) s.customTzeitPreset        = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customAlotPreset\"")         != std::wstring::npos) s.customAlotPreset         = (int)ParseJsonNumber(line);
         if (line.find(L"\"colorNormalCell\"")      != std::wstring::npos) s.colorNormalCell = (int)ParseJsonNumber(line);
         if (line.find(L"\"colorOtherMonthCell\"")  != std::wstring::npos) s.colorOtherMonthCell = (int)ParseJsonNumber(line);
         if (line.find(L"\"colorTodayCell\"")       != std::wstring::npos) s.colorTodayCell = (int)ParseJsonNumber(line);
