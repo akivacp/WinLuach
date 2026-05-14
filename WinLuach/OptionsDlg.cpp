@@ -664,7 +664,13 @@ public:
     {
         if (existing) rule = *existing;
         if (rule.kind.empty()) rule.kind = L"Zman";
-        if (rule.target.empty()) rule.target = L"Shkiah";
+        if (rule.target.empty()) {
+            if (rule.kind == L"Shmita Year") rule.target = L"Rosh Hashana of Shmita Year";
+            else if (rule.kind == L"Simple Year (12 months)") rule.target = L"Rosh Hashana";
+            else if (rule.kind == L"Full/Leap Year (13 months)") rule.target = L"Rosh Hashana";
+            else if (rule.kind == L"28-Year Solar Cycle") rule.target = L"Birchas Hachama (April 8)";
+            else rule.target = L"Shkiah";
+        }
         if (rule.offsets.empty()) rule.offsets = L"15 minutes";
         m_pParentWnd = parent;
     }
@@ -698,7 +704,9 @@ protected:
         m_kind.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
             CRect(82, 12, W - 10, 150), this, 6101);
         m_kind.SetFont(pF);
-        for (const wchar_t* k : { L"Zman", L"Parsha", L"Holiday", L"Personal Event" })
+        for (const wchar_t* k : { L"Zman", L"Parsha", L"Holiday", L"Personal Event",
+                                   L"Shmita Year", L"Simple Year (12 months)", L"Full/Leap Year (13 months)",
+                                   L"28-Year Solar Cycle" })
             m_kind.AddString(k);
         m_kind.SetCurSel(0);
         for (int i = 0; i < m_kind.GetCount(); ++i) {
@@ -756,6 +764,16 @@ protected:
         if (LOWORD(wParam) == 6101 && HIWORD(wParam) == CBN_SELCHANGE)
         {
             FillTargets();
+            // Set a sensible default target for the new kind
+            CString kind; m_kind.GetWindowText(kind);
+            if (kind == L"Shmita Year")
+                m_target.SetWindowText(L"Rosh Hashana of Shmita Year");
+            else if (kind == L"Simple Year (12 months)" || kind == L"Full/Leap Year (13 months)")
+                m_target.SetWindowText(L"Rosh Hashana");
+            else if (kind == L"28-Year Solar Cycle")
+                m_target.SetWindowText(L"Birchas Hachama (April 8)");
+            else if (kind == L"Holiday")
+                m_target.SetWindowText(L"Rosh Hashana");
             return TRUE;
         }
         return CDialog::OnCommand(wParam, lParam);
@@ -807,6 +825,17 @@ private:
                 L"Tu BiShvat", L"Purim", L"Pesach", L"Lag BaOmer", L"Shavuos", L"Tisha B'Av" });
         else if (kind == L"Personal Event")
             addMany({ L"Any personal event", L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" });
+        else if (kind == L"Shmita Year")
+            addMany({ L"Rosh Hashana of Shmita Year", L"Erev Rosh Hashana of Shmita Year",
+                      L"Start of Shmita (1 Tishrei)", L"End of Shmita (29 Elul)" });
+        else if (kind == L"Simple Year (12 months)")
+            addMany({ L"Rosh Hashana", L"Erev Rosh Hashana", L"1 Tishrei" });
+        else if (kind == L"Full/Leap Year (13 months)")
+            addMany({ L"Rosh Hashana", L"Erev Rosh Hashana", L"1 Tishrei",
+                      L"Rosh Chodesh Adar I", L"Rosh Chodesh Adar II" });
+        else if (kind == L"28-Year Solar Cycle")
+            addMany({ L"Birchas Hachama (April 8)", L"1 Nissan of Cycle Year",
+                      L"Start of New Solar Cycle" });
         else
             addMany({
                 L"Alos (GRA 16.1 deg)", L"Alos (MA 72)", L"Alos (MA 90)",
@@ -1720,14 +1749,19 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_radNotifySefirahOther,    L"Base the Omer reminder on another zman of the day");
     m_tooltip.AddTool(&m_radNotifySefirahManual,   L"Show the Omer reminder at a fixed clock time");
     m_tooltip.AddTool(&m_editNotifySefirahOffset, L"Minutes before or after the selected zman for the Omer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahDir,    L"Whether the Omer reminder fires before or after the reference zman");
+    m_tooltip.AddTool(&m_cmbNotifySefirahBase,   L"Reference zman for the Omer reminder: sunset or tzais");
+    m_tooltip.AddTool(&m_cmbNotifySefirahOtherZman, L"The specific zman to use when 'other zman' mode is selected");
     m_tooltip.AddTool(&m_cmbNotifyZmanim,       L"Notification style for upcoming zmanim alerts");
     m_tooltip.AddTool(&m_cmbNotifyMoadim,       L"Notification style for upcoming holidays and Moadim");
     m_tooltip.AddTool(&m_editNotifyMoadimAmount, L"How far before a holiday or moed to remind you");
+    m_tooltip.AddTool(&m_cmbNotifyMoadimUnit,    L"Units for the holiday advance reminder (minutes, hours, days, etc.)");
     m_tooltip.AddTool(&m_cmbNotifyParsha,       L"Notify for a specific parasha, or any parasha");
     m_tooltip.AddTool(&m_cmbNotifyParshaStyle,  L"Notification style for Shabbos parasha reminders");
     m_tooltip.AddTool(&m_editNotifyParshaAmount, L"How far before Shabbos to remind you about the selected parasha");
-    m_tooltip.AddTool(&m_cmbNotifyParshaUnit,    L"Units for the parasha advance reminder");
+    m_tooltip.AddTool(&m_cmbNotifyParshaUnit,    L"Units for the parasha advance reminder (minutes, hours, days, etc.)");
     m_tooltip.AddTool(&m_editNotifyPersonalAmount, L"How far before personal events to remind you");
+    m_tooltip.AddTool(&m_cmbNotifyPersonalUnit,  L"Units for the personal event advance reminder");
     m_tooltip.AddTool(&m_btnPreviewNotify,      L"Preview the selected notification style");
     m_tooltip.AddTool(&m_btnAdvancedReminders,  L"Configure advanced reminder rules and schedules");
 
