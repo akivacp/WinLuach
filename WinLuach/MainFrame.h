@@ -343,6 +343,7 @@ protected:
     void ChangeYear(int deltaYears);
     void RefreshWebCalendarEvents();
     void CheckZmanNotifications();
+    void CheckSefirahNotification();
     bool ShouldHideToTrayOnClose() const;
     void HideToTray();
     void AddTrayIcon();

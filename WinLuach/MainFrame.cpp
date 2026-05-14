@@ -26,8 +26,15 @@
 #include <thread>
 #include <commctrl.h>
 #include <cmath>
+#include <cwctype>
 #pragma comment(lib, "Urlmon.lib")
 #pragma comment(lib, "comctl32.lib")
+
+#define ID_COUNTDOWN_OPTIONS    6101
+#define ID_COUNTDOWN_FULLSCREEN 6102
+#define ID_COUNTDOWN_MINIMIZE   6103
+#define ID_COUNTDOWN_MAXIMIZE   6104
+#define ID_COUNTDOWN_RESTORE    6105
 
 static std::wstring WebCalTrim(const std::wstring& s)
 {
@@ -242,6 +249,52 @@ static CTime DateTimeForZman(const GregorianDate& g, const TimeOfDay& t)
     return CTime(g.year, g.month, g.day, max(0, t.hour), max(0, t.minute), max(0, t.second));
 }
 
+static bool ParseUserClockTime(std::wstring text, int& hour, int& minute)
+{
+    text = WebCalTrim(text);
+    if (text.empty()) return false;
+
+    std::wstring lower;
+    lower.reserve(text.size());
+    for (wchar_t ch : text)
+        lower.push_back((wchar_t)towlower(ch));
+
+    bool hasPm = lower.find(L"pm") != std::wstring::npos;
+    bool hasAm = lower.find(L"am") != std::wstring::npos;
+    std::wstring cleaned;
+    for (wchar_t ch : lower)
+        if ((ch >= L'0' && ch <= L'9') || ch == L':')
+            cleaned.push_back(ch);
+
+    if (cleaned.empty()) return false;
+    size_t colon = cleaned.find(L':');
+    int h = 0, m = 0;
+    try
+    {
+        if (colon == std::wstring::npos)
+        {
+            h = std::stoi(cleaned);
+        }
+        else
+        {
+            h = std::stoi(cleaned.substr(0, colon));
+            m = std::stoi(cleaned.substr(colon + 1));
+        }
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    if (m < 0 || m > 59) return false;
+    if (hasPm && h >= 1 && h <= 11) h += 12;
+    if (hasAm && h == 12) h = 0;
+    if (h < 0 || h > 23) return false;
+    hour = h;
+    minute = m;
+    return true;
+}
+
 static TimeOfDay CustomMorningBoundary(const GregorianDate& g, const Location& loc, bool isDst,
     const ZmanimResult& z, int mode, double value, double fallbackDegrees)
 {
@@ -317,7 +370,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
-        b.t.cx = 410; b.t.cy = 330;
+        b.t.cx = 410; b.t.cy = 350;
         wcscpy_s(b.title, L"Countdown Options");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -377,6 +430,8 @@ protected:
         y += 42;
 
         mkStatic(L"Use the color buttons to choose text and background colors.", 10, y, W - 20, 20);
+        y += 28;
+        mkBtn(m_btnRestoreColors, L"Restore Default Colors", 10, y, 170, 5202);
 
         mkBtn(m_btnOK, L"OK", W - 238, rc.Height() - 34, 64, IDOK);
         mkBtn(m_btnApply, L"Apply", W - 166, rc.Height() - 34, 70, 5201);
@@ -428,6 +483,12 @@ protected:
             Apply();
             return TRUE;
         }
+        if (LOWORD(wParam) == 5202)
+        {
+            RestoreDefaultColors();
+            Apply();
+            return TRUE;
+        }
         return CDialog::OnCommand(wParam, lParam);
     }
 
@@ -466,6 +527,19 @@ protected:
             m_pFrame->ApplyAndSaveSettings(m_settings);
     }
 
+    void RestoreDefaultColors()
+    {
+        AppSettings defaults;
+        m_settings.countdownTitleTextColor = defaults.countdownTitleTextColor;
+        m_settings.countdownTitleBackColor = defaults.countdownTitleBackColor;
+        m_settings.countdownClockTextColor = defaults.countdownClockTextColor;
+        m_settings.countdownClockBackColor = defaults.countdownClockBackColor;
+        m_settings.countdownCurrentTextColor = defaults.countdownCurrentTextColor;
+        m_settings.countdownCurrentBackColor = defaults.countdownCurrentBackColor;
+        m_settings.countdownLiveTextColor = defaults.countdownLiveTextColor;
+        m_settings.countdownLiveBackColor = defaults.countdownLiveBackColor;
+    }
+
 private:
     CMainFrame* m_pFrame = nullptr;
     AppSettings m_settings;
@@ -478,7 +552,7 @@ private:
     CButton m_btnClockColor, m_btnClockBack;
     CButton m_btnCurrentColor, m_btnCurrentBack;
     CButton m_btnLiveColor, m_btnLiveBack;
-    CButton m_btnOK, m_btnApply, m_btnCancel;
+    CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
 };
 
 class CCountdownClockWnd : public CFrameWnd
@@ -492,7 +566,8 @@ public:
             ::LoadCursor(nullptr, IDC_ARROW), (HBRUSH)(COLOR_WINDOW + 1),
             ::LoadIcon(nullptr, IDI_APPLICATION));
         return CFrameWnd::Create(cls, L"WinLuach Countdown Clock",
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
             CRect(180, 180, 560, 370), m_pFrame);
     }
 
@@ -503,7 +578,13 @@ protected:
         CMenu menu, opt;
         menu.CreateMenu();
         opt.CreatePopupMenu();
-        opt.AppendMenu(MF_STRING, 6101, L"&Options...");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_OPTIONS, L"&Options...");
+        opt.AppendMenu(MF_SEPARATOR);
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_FULLSCREEN, L"&Full Screen\tF11");
+        opt.AppendMenu(MF_SEPARATOR);
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MINIMIZE, L"Mi&nimize");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MAXIMIZE, L"Ma&ximize");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_RESTORE, L"&Restore");
         menu.AppendMenu(MF_POPUP, (UINT_PTR)opt.Detach(), L"&Clock");
         SetMenu(&menu);
         menu.Detach();
@@ -540,6 +621,73 @@ protected:
     {
         CCountdownOptionsDlg dlg(m_pFrame, this);
         dlg.DoModal();
+    }
+
+    afx_msg void OnClockFullscreen()
+    {
+        ToggleFullscreen();
+    }
+
+    afx_msg void OnClockMinimize()
+    {
+        ShowWindow(SW_MINIMIZE);
+    }
+
+    afx_msg void OnClockMaximize()
+    {
+        if (m_fullScreen)
+            ToggleFullscreen();
+        ShowWindow(SW_MAXIMIZE);
+    }
+
+    afx_msg void OnClockRestore()
+    {
+        if (m_fullScreen)
+            ToggleFullscreen();
+        else
+            ShowWindow(SW_RESTORE);
+    }
+
+    BOOL PreTranslateMessage(MSG* pMsg) override
+    {
+        if (pMsg && pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_F11)
+        {
+            ToggleFullscreen();
+            return TRUE;
+        }
+        return CFrameWnd::PreTranslateMessage(pMsg);
+    }
+
+    void ToggleFullscreen()
+    {
+        if (!m_fullScreen)
+        {
+            m_restorePlacement.length = sizeof(m_restorePlacement);
+            GetWindowPlacement(&m_restorePlacement);
+            m_restoreStyle = (DWORD)GetWindowLongPtr(m_hWnd, GWL_STYLE);
+            SetWindowLongPtr(m_hWnd, GWL_STYLE,
+                m_restoreStyle & ~(WS_CAPTION | WS_THICKFRAME));
+
+            MONITORINFO mi = {};
+            mi.cbSize = sizeof(mi);
+            HMONITOR mon = MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
+            GetMonitorInfo(mon, &mi);
+            SetWindowPos(nullptr, mi.rcMonitor.left, mi.rcMonitor.top,
+                mi.rcMonitor.right - mi.rcMonitor.left,
+                mi.rcMonitor.bottom - mi.rcMonitor.top,
+                SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            m_fullScreen = true;
+        }
+        else
+        {
+            SetWindowLongPtr(m_hWnd, GWL_STYLE, m_restoreStyle);
+            SetWindowPlacement(&m_restorePlacement);
+            SetWindowPos(nullptr, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            m_fullScreen = false;
+        }
+        Invalidate(FALSE);
     }
 
     struct UpcomingZman
@@ -653,6 +801,9 @@ protected:
 
 private:
     CMainFrame* m_pFrame = nullptr;
+    bool m_fullScreen = false;
+    DWORD m_restoreStyle = 0;
+    WINDOWPLACEMENT m_restorePlacement = { sizeof(WINDOWPLACEMENT) };
 };
 
 BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
@@ -661,7 +812,11 @@ BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
     ON_WM_TIMER()
     ON_WM_SIZE()
     ON_WM_PAINT()
-    ON_COMMAND(6101, &CCountdownClockWnd::OnClockOptions)
+    ON_COMMAND(ID_COUNTDOWN_OPTIONS, &CCountdownClockWnd::OnClockOptions)
+    ON_COMMAND(ID_COUNTDOWN_FULLSCREEN, &CCountdownClockWnd::OnClockFullscreen)
+    ON_COMMAND(ID_COUNTDOWN_MINIMIZE, &CCountdownClockWnd::OnClockMinimize)
+    ON_COMMAND(ID_COUNTDOWN_MAXIMIZE, &CCountdownClockWnd::OnClockMaximize)
+    ON_COMMAND(ID_COUNTDOWN_RESTORE, &CCountdownClockWnd::OnClockRestore)
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -2616,6 +2771,7 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
             UpdateTrayIcon();
         }
         CheckZmanNotifications();
+        CheckSefirahNotification();
         return;
     }
     CFrameWnd::OnTimer(nIDEvent);
@@ -3798,6 +3954,39 @@ void CMainFrame::CheckZmanNotifications()
     if (m_sentZmanNotificationKeys.size() > 256)
         m_sentZmanNotificationKeys.erase(m_sentZmanNotificationKeys.begin(),
             m_sentZmanNotificationKeys.begin() + (m_sentZmanNotificationKeys.size() - 128));
+}
+
+void CMainFrame::CheckSefirahNotification()
+{
+    const AppSettings& s = theApp.m_settings;
+    if (s.notifySefirahStyle <= 0)
+        return;
+
+    int remindHour = 0, remindMinute = 0;
+    if (!ParseUserClockTime(s.notifySefirahTime, remindHour, remindMinute))
+        return;
+
+    SYSTEMTIME st = {};
+    GetLocalTime(&st);
+    if (st.wHour != remindHour || st.wMinute != remindMinute)
+        return;
+
+    GregorianDate today(st.wYear, st.wMonth, st.wDay);
+    HebrewDate h = GregorianToHebrew(today);
+    OmerInfo omer = GetOmer(h);
+    if (!omer.isOmerDay)
+        return;
+
+    wchar_t key[80];
+    swprintf_s(key, L"%04d%02d%02d-sefirah-%02d%02d",
+        today.year, today.month, today.day, remindHour, remindMinute);
+    std::wstring k = key;
+    if (std::find(m_sentZmanNotificationKeys.begin(), m_sentZmanNotificationKeys.end(), k) !=
+        m_sentZmanNotificationKeys.end())
+        return;
+    m_sentZmanNotificationKeys.push_back(k);
+
+    ShowEventNotification(L"Sefiras HaOmer", omer.text, s.notifySefirahStyle);
 }
 
 void CMainFrame::CheckTodayEvents()
