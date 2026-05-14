@@ -172,6 +172,8 @@ private:
     CComboBox m_cmbNotifyZmanim;
     CButton   m_chkNotifyZmanim[15];
     CButton   m_chkTrayTooltipZmanim[15];
+    CComboBox m_cmbNotifySefirah;
+    CEdit     m_editNotifySefirahTime;
     CComboBox m_cmbNotifyMoadim;
     CEdit     m_editNotifyMoadimOffsets;
     CComboBox m_cmbNotifyParsha;

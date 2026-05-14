@@ -107,6 +107,8 @@ struct AppSettings
     int  notifyWebCalEvents   = 0;   // web calendar events
     int  notifyZmanimStyle    = 0;   // zmanim notifications
     uint32_t notifyZmanimMask = 0;   // selectable zmanim checkboxes
+    int  notifySefirahStyle   = 0;   // sefirah reminders
+    std::wstring notifySefirahTime = L"9:00 PM";
     int  notifyMoadimStyle    = 0;   // moadim reminder notifications
     std::wstring notifyMoadimOffsets; // e.g. "1 day; 1 week"
     int  notifyParshaStyle    = 0;

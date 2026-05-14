@@ -176,6 +176,8 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"notifyWebCalEvents\": "   << s.notifyWebCalEvents   << L",\n";
     f << L"  \"notifyZmanimStyle\": " << s.notifyZmanimStyle << L",\n";
     f << L"  \"notifyZmanimMask\": " << s.notifyZmanimMask << L",\n";
+    f << L"  \"notifySefirahStyle\": " << s.notifySefirahStyle << L",\n";
+    f << L"  \"notifySefirahTime\": \"" << JsonEscape(s.notifySefirahTime) << L"\",\n";
     f << L"  \"notifyMoadimStyle\": " << s.notifyMoadimStyle << L",\n";
     f << L"  \"notifyMoadimOffsets\": \"" << JsonEscape(s.notifyMoadimOffsets) << L"\",\n";
     f << L"  \"notifyParshaStyle\": " << s.notifyParshaStyle << L",\n";
@@ -297,6 +299,8 @@ bool LoadSettings(AppSettings& s)
         else if (line.find(L"\"notifyWebCalEvents\"")   != std::wstring::npos) s.notifyWebCalEvents   = (int)ParseJsonNumber(line);
         else if (line.find(L"\"notifyZmanimStyle\"")    != std::wstring::npos) s.notifyZmanimStyle    = (int)ParseJsonNumber(line);
         else if (line.find(L"\"notifyZmanimMask\"")     != std::wstring::npos) s.notifyZmanimMask     = (uint32_t)ParseJsonNumber(line);
+        else if (line.find(L"\"notifySefirahStyle\"")   != std::wstring::npos) s.notifySefirahStyle   = (int)ParseJsonNumber(line);
+        else if (line.find(L"\"notifySefirahTime\"")    != std::wstring::npos) s.notifySefirahTime    = ParseJsonString(line);
         else if (line.find(L"\"notifyMoadimStyle\"")    != std::wstring::npos) s.notifyMoadimStyle    = (int)ParseJsonNumber(line);
         else if (line.find(L"\"notifyMoadimOffsets\"")  != std::wstring::npos) s.notifyMoadimOffsets  = ParseJsonString(line);
         else if (line.find(L"\"notifyParshaStyle\"")    != std::wstring::npos) s.notifyParshaStyle    = (int)ParseJsonNumber(line);
