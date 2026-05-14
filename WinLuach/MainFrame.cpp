@@ -443,7 +443,7 @@ public:
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 410; b.t.cy = 350;
+        b.t.cx = 360; b.t.cy = 285;
         wcscpy_s(b.title, L"Countdown Options");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();

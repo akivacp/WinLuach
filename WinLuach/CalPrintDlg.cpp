@@ -995,9 +995,15 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
     static const wchar_t* kDow[] = {
         L"Sunday",L"Monday",L"Tuesday",L"Wednesday",L"Thursday",L"Friday",L"Shabbos"};
     CString gregStr;
-    gregStr.Format(L"%s,  %s %d,  %d",
-        kDow[(int)GetDayOfWeek(g)],
-        GregorianMonthName(g.month).c_str(), g.day, g.year);
+    if (pFrame && !pFrame->m_location.name.empty())
+        gregStr.Format(L"%s,  %s %d,  %d    |    %s",
+            kDow[(int)GetDayOfWeek(g)],
+            GregorianMonthName(g.month).c_str(), g.day, g.year,
+            pFrame->m_location.name.c_str());
+    else
+        gregStr.Format(L"%s,  %s %d,  %d",
+            kDow[(int)GetDayOfWeek(g)],
+            GregorianMonthName(g.month).c_str(), g.day, g.year);
     DrawTextFit(pDC, gregStr, CRect(x0+8, y0, x0+W-8, y0+hdrH/2+4), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
 
     bool   leap   = IsHebrewLeapYear(h.year);
@@ -1066,78 +1072,145 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         if (!learn.tanachYomi.empty())   drawRow(L"Tanach Yomi:",   learn.tanachYomi,   RGB(70,0,70));
     }
 
-    drawSection(L"Zmanim");
-    auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
-        if (t.IsValid()) drawRow(lbl, FormatTime(t, u24), RGB(20,60,20));
-    };
-    zRow(L"Alot HaShachar:",    z.alot_GRA);
-    zRow(L"Misheyakir:",         z.misheyakir_11);
-    zRow(L"Hanetz (Netz):",      z.hanetz);
-    zRow(L"Sof Shema (MA):",     z.sofShema_MA72);
-    zRow(L"Sof Shema (GRA):",    z.sofShema_GRA);
-    zRow(L"Sof Tefilla (MA):",   z.sofTefilla_MA72);
-    zRow(L"Sof Tefilla (GRA):",  z.sofTefilla_GRA);
-    zRow(L"Chatzot:",            z.chatzot);
-    zRow(L"Mincha Gedola:",      z.minchaGedola_GRA);
-    zRow(L"Mincha Ketana:",      z.minchaKetana_GRA);
-    zRow(L"Plag HaMincha:",      z.plagMincha_GRA);
-    if (z.candleLighting.IsValid()) zRow(L"Candle Lighting:", z.candleLighting);
-    zRow(L"Shkia (Sunset):",     z.shkia);
-    zRow(L"Tzais HaKochavim:",   z.tzeit_GRA);
-    if (y + rowH <= y0+H && z.shaahZmanit_GRA > 0.0) {
-        int szMin = (int)round(z.shaahZmanit_GRA);
-        CString ss; ss.Format(L"%d:%02d  (%d min)", szMin/60, szMin%60, szMin);
-        drawRow(L"Sha'a Zmanit:", (LPCWSTR)ss, RGB(20,60,20));
-    }
-
-    // Special Times section
+    // Special Times section (shown before zmanim, with bold times like CDayViewDlg)
     {
         DayOfWeek sdow = GetDayOfWeek(g);
         bool isShabDP  = (sdow == SHABBAT);
         bool isFriDP   = (sdow == FRIDAY);
-        bool hasFastDP = false;
-        for (const auto& ho : hols) if (ho.flags & HOLIDAY_FAST) { hasFastDP = true; break; }
+        bool hasFastDP = false, hasYTDP = false;
+        for (const auto& ho : hols) {
+            if (ho.flags & HOLIDAY_FAST)    hasFastDP = true;
+            if (ho.flags & HOLIDAY_YOM_TOV) hasYTDP   = true;
+        }
         bool isErevYKDP     = (h.month == TISHREI && h.day == 9);
-        bool isTishaBavDP   = (h.month == AV      && h.day == 9);
+        bool isTishaBavDP   = (h.month == AV      && h.day == 9) && !isShabDP;
         bool is10AvDP       = (h.month == AV      && h.day == 10);
-        bool isErevTBDP     = (h.month == AV      && h.day == 8);
+        bool isErevTBDP     = (h.month == AV      && h.day == 8) && !isShabDP;
         bool isErevPesachDP = (h.month == NISSAN  && h.day == 14);
         bool isLagBaOmerDP  = (h.month == IYAR    && h.day == 18);
 
-        struct SpecTime { const wchar_t* label; TimeOfDay time; };
-        SpecTime stimes[12]; int nst = 0;
-
-        if (isShabDP && z.tzeitShabbat.IsValid())
-            stimes[nst++] = { L"Tzeis Shabbos:", z.tzeitShabbat };
-        if (hasFastDP && !isShabDP && z.tzeit_GRA.IsValid())
-            stimes[nst++] = { L"Fast ends:", z.tzeit_GRA };
-        if (isErevTBDP && !isShabDP && !isFriDP && z.shkia.IsValid())
-            stimes[nst++] = { L"Fast begins:", z.shkia };
-        if (isTishaBavDP && z.chatzot.IsValid())
-            stimes[nst++] = { L"Chatzos:", z.chatzot };
-        if (is10AvDP && z.chatzot.IsValid())
-            stimes[nst++] = { L"Chatzos:", z.chatzot };
-        if (isLagBaOmerDP && z.chatzot.IsValid())
-            stimes[nst++] = { L"Chatzos:", z.chatzot };
-        if (isErevYKDP && z.shkia.IsValid()) {
-            if (z.chatzot.IsValid())
-                stimes[nst++] = { L"Chatzos:", z.chatzot };
-            stimes[nst++] = { L"Fast begins:", z.shkia };
-            if (z.candleLighting.IsValid())
-                stimes[nst++] = { L"Candle lighting:", z.candleLighting };
-        }
-        if (isErevPesachDP && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0) {
-            TimeOfDay sofAchila = AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA));
-            TimeOfDay sofBiur   = AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA));
-            if (sofAchila.IsValid()) stimes[nst++] = { L"Eat chametz by:", sofAchila };
-            if (sofBiur.IsValid())   stimes[nst++] = { L"Burn chametz by:", sofBiur };
-            if (z.chatzot.IsValid()) stimes[nst++] = { L"Chatzos:", z.chatzot };
+        // Fri/Shab after Pesach and after Rosh Hashana
+        bool isFriAfterPes = false, isShabAfterPes = false;
+        bool isFriAfterRH = false, isShabAfterRH = false;
+        {
+            long jn = GregorianToJDN(g);
+            for (int i = 1; i <= 7; i++) {
+                HebrewDate hi = JDNToHebrew(jn - i);
+                if (hi.month == NISSAN && hi.day == 22) { isFriAfterPes = isFriDP; isShabAfterPes = isShabDP; }
+                if (hi.month == TISHREI && hi.day == 2) { isFriAfterRH = isFriDP; isShabAfterRH = isShabDP; }
+            }
         }
 
-        if (nst > 0) {
+        bool anySpecial = isShabDP || (hasFastDP && !isShabDP) || isLagBaOmerDP
+            || isErevTBDP || isTishaBavDP || is10AvDP || isErevYKDP || isErevPesachDP
+            || isFriAfterPes || isShabAfterPes || isFriAfterRH || isShabAfterRH;
+
+        if (anySpecial) {
             drawSection(L"Special Times");
-            for (int si = 0; si < nst; si++)
-                drawRow(stimes[si].label, FormatTime(stimes[si].time, u24), RGB(20, 20, 140));
+            // Bold row helper for key times
+            auto boldRow = [&](const wchar_t* lbl, const TimeOfDay& t, COLORREF clr) {
+                if (!t.IsValid() || y + rowH > y0 + H) return;
+                CFont fBold;
+                fBold.CreateFont(fRow, 0,0,0, FW_BOLD, 0,0,0, DEFAULT_CHARSET,0,0,
+                    CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
+                pDC->SetBkMode(TRANSPARENT);
+                pDC->SelectObject(&fontRow);
+                pDC->SetTextColor(RGB(110,110,110));
+                DrawTextFit(pDC, lbl, CRect(x0+8, y, x0+8+lblW, y+rowH), DT_LEFT|DT_TOP|DT_SINGLELINE);
+                pDC->SelectObject(&fBold);
+                pDC->SetTextColor(clr);
+                DrawTextFit(pDC, FormatTime(t, u24), CRect(x0+8+lblW, y, x0+W-8, y+rowH),
+                    DT_LEFT|DT_TOP|DT_SINGLELINE);
+                y += rowH;
+            };
+            auto noteRow = [&](const wchar_t* txt) {
+                if (y + rowH > y0 + H) return;
+                pDC->SetBkMode(TRANSPARENT);
+                pDC->SelectObject(&fontRow);
+                pDC->SetTextColor(RGB(130, 60, 0));
+                DrawTextFit(pDC, txt, CRect(x0+8, y, x0+W-8, y+rowH*2), DT_LEFT|DT_TOP|DT_WORDBREAK);
+                y += rowH * 2;
+            };
+
+            if (isShabDP && z.tzeitShabbat.IsValid())
+                boldRow(L"Tzeis Shabbos:", z.tzeitShabbat, RGB(0, 120, 40));
+            if (hasFastDP && !isShabDP && z.tzeit_GRA.IsValid())
+                boldRow(L"Fast Ends:", z.tzeit_GRA, RGB(180, 0, 0));
+            if (isLagBaOmerDP && z.chatzot.IsValid())
+                boldRow(L"Chatzos:", z.chatzot, RGB(100, 50, 0));
+            if (isErevTBDP && z.shkia.IsValid())
+                boldRow(L"Shkia (Fast Begins):", z.shkia, RGB(180, 0, 0));
+            if (isTishaBavDP && z.chatzot.IsValid())
+                boldRow(L"Chatzos:", z.chatzot, RGB(100, 50, 0));
+            if (is10AvDP && z.chatzot.IsValid())
+                boldRow(L"Chatzos (Midday):", z.chatzot, RGB(100, 50, 0));
+            if (isErevYKDP) {
+                if (z.chatzot.IsValid())    boldRow(L"Chatzos:",            z.chatzot,          RGB(100, 50, 0));
+                if (z.shkia.IsValid())      boldRow(L"Shkia (Fast Beg.):",  z.shkia,            RGB(180, 0, 0));
+                if (z.candleLighting.IsValid()) boldRow(L"Candle Lighting:", z.candleLighting,   RGB(200, 80, 0));
+            }
+            if (isErevPesachDP && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0) {
+                TimeOfDay sofAchila = AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA));
+                TimeOfDay sofBiur   = AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA));
+                if (sofAchila.IsValid()) boldRow(L"Eat Chametz by:",   sofAchila, RGB(180, 60, 0));
+                if (sofBiur.IsValid())   boldRow(L"Burn Chametz by:",  sofBiur,   RGB(180, 30, 0));
+                if (z.chatzot.IsValid()) boldRow(L"Chatzos:",          z.chatzot, RGB(100, 50, 0));
+            }
+            if (isFriAfterPes || isShabAfterPes)
+                noteRow(L"Key Challah / Shlissel Challah — Fri/Shab after Pesach");
+            if (isFriAfterRH || isShabAfterRH)
+                noteRow(L"Round Challah — Fri/Shab after Rosh Hashana");
+        }
+    }
+
+    // Full zmanim section — all GRA, MA72, MA90 variants (matching CDayViewDlg)
+    {
+        DisplayZmanimTimes dz = pFrame
+            ? pFrame->BuildDisplayZmanim(g, z, dst) : DisplayZmanimTimes{};
+
+        drawSection(L"Zmanim");
+        auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
+            if (t.IsValid()) drawRow(lbl, FormatTime(t, u24), RGB(20,60,20));
+        };
+        zRow(L"Alot (custom):",        dz.alot);
+        zRow(L"Alot GRA 16.1:",        z.alot_GRA);
+        zRow(L"Alot MA72:",            z.alot_MA72);
+        zRow(L"Alot MA90:",            z.alot_MA90);
+        zRow(L"Misheyakir (custom):",  dz.misheyakir);
+        zRow(L"Misheyakir 10.2:",      z.misheyakir_10);
+        zRow(L"Misheyakir 11.5:",      z.misheyakir_11);
+        zRow(L"Hanetz (Netz):",        z.hanetz);
+        zRow(L"Sof Shema (custom):",   dz.sofShema);
+        zRow(L"Sof Shema GRA:",        z.sofShema_GRA);
+        zRow(L"Sof Shema MA72:",       z.sofShema_MA72);
+        zRow(L"Sof Shema MA90:",       z.sofShema_MA90);
+        zRow(L"Sof Tefilla (custom):", dz.sofTefilla);
+        zRow(L"Sof Tefilla GRA:",      z.sofTefilla_GRA);
+        zRow(L"Sof Tefilla MA72:",     z.sofTefilla_MA72);
+        zRow(L"Sof Tefilla MA90:",     z.sofTefilla_MA90);
+        zRow(L"Chatzot:",              z.chatzot);
+        zRow(L"Mincha Gedola (custom):",dz.minchaGedola);
+        zRow(L"Mincha Gedola GRA:",    z.minchaGedola_GRA);
+        zRow(L"Mincha Gedola MA72:",   z.minchaGedola_MA72);
+        zRow(L"Mincha Gedola MA90:",   z.minchaGedola_MA90);
+        zRow(L"Mincha Ketana (custom):",dz.minchaKetana);
+        zRow(L"Mincha Ketana GRA:",    z.minchaKetana_GRA);
+        zRow(L"Mincha Ketana MA72:",   z.minchaKetana_MA72);
+        zRow(L"Mincha Ketana MA90:",   z.minchaKetana_MA90);
+        zRow(L"Plag (custom):",        dz.plagMincha);
+        zRow(L"Plag GRA:",             z.plagMincha_GRA);
+        zRow(L"Plag MA72:",            z.plagMincha_MA72);
+        zRow(L"Plag MA90:",            z.plagMincha_MA90);
+        if (z.candleLighting.IsValid()) zRow(L"Candle Lighting:", z.candleLighting);
+        zRow(L"Shkia (Sunset):",       z.shkia);
+        zRow(L"Tzais (custom):",       dz.tzeit);
+        zRow(L"Tzais GRA 8.5:",        z.tzeit_GRA);
+        zRow(L"Tzais MA72:",           z.tzeit_MA72);
+        zRow(L"Tzais MA90:",           z.tzeit_MA90);
+        if (y + rowH <= y0+H && dz.shaahZmanit > 0.0) {
+            int szMin = (int)round(dz.shaahZmanit);
+            CString ss; ss.Format(L"%d:%02d  (%d min)", szMin/60, szMin%60, szMin);
+            drawRow(L"Sha'a Zmanit:", (LPCWSTR)ss, RGB(20,60,20));
         }
     }
 
