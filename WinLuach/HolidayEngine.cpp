@@ -122,12 +122,6 @@ std::vector<std::wstring> GetYearFacts(int hebrewYear)
         (hebrewYear / 19) + 1);
     facts.push_back(buf);
 
-    // Solar cycle
-    swprintf_s(buf, L"Year %d of cycle %d of the solar (big) cycle",
-        SolarCycleYear(hebrewYear),
-        ((hebrewYear - 1) / 28) + 1);
-    facts.push_back(buf);
-
     // Shmita cycle
     int shmitaYear = ShmitaCycleYear(hebrewYear);
     if (IsShmitaYear(hebrewYear))
