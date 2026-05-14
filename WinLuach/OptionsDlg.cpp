@@ -15,6 +15,7 @@
 #include "OptionsDlg.h"
 #include "MainFrame.h"
 #include <cmath>
+#include <cwctype>
 #include <fstream>
 
 #define IDC_OPT_RAD_AMPM       301
@@ -87,6 +88,8 @@
 #define IDC_OPT_SOFZMAN_DEG      372
 #define IDC_OPT_SOFZMAN_MIN      373
 #define IDC_OPT_SOFZMAN_ZMANIS   374
+#define IDC_OPT_NOTIFY_SEFIRAH_STYLE 375
+#define IDC_OPT_NOTIFY_SEFIRAH_TIME 376
 #define IDC_OPT_NOTIFY_ZMAN_FIRST 380
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
@@ -490,6 +493,36 @@ static std::vector<std::wstring> ReminderSplit(const std::wstring& line)
     return parts;
 }
 
+static void ParseReminderOffsetText(const std::wstring& text, CString& amount, int& unitSel)
+{
+    amount = L"15";
+    unitSel = 0;
+    if (text.empty()) return;
+
+    std::wstring lower;
+    lower.reserve(text.size());
+    for (wchar_t ch : text)
+        lower.push_back((wchar_t)towlower(ch));
+
+    std::wstring digits;
+    for (wchar_t ch : lower)
+    {
+        if ((ch >= L'0' && ch <= L'9') || ch == L'.')
+            digits.push_back(ch);
+        else if (!digits.empty())
+            break;
+    }
+    if (!digits.empty())
+        amount = digits.c_str();
+
+    if (lower.find(L"year") != std::wstring::npos) unitSel = 5;
+    else if (lower.find(L"month") != std::wstring::npos) unitSel = 4;
+    else if (lower.find(L"week") != std::wstring::npos) unitSel = 3;
+    else if (lower.find(L"day") != std::wstring::npos) unitSel = 2;
+    else if (lower.find(L"hour") != std::wstring::npos) unitSel = 1;
+    else unitSel = 0;
+}
+
 class CReminderEditDlg : public CDialog
 {
 public:
@@ -508,7 +541,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
-        b.t.cx = 330; b.t.cy = 190;
+        b.t.cx = 360; b.t.cy = 205;
         wcscpy_s(b.title, L"Reminder");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -548,10 +581,19 @@ protected:
         m_target.SetWindowText(rule.target.c_str());
 
         label(L"Before:", 10, 76, 70);
-        m_offsets.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-            CRect(82, 76, W - 10, 98), this, 6103);
-        m_offsets.SetFont(pF);
-        m_offsets.SetWindowText(rule.offsets.c_str());
+        CString offsetAmount;
+        int offsetUnit = 0;
+        ParseReminderOffsetText(rule.offsets, offsetAmount, offsetUnit);
+        m_offsetAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(82, 76, 136, 98), this, 6103);
+        m_offsetAmount.SetFont(pF);
+        m_offsetAmount.SetWindowText(offsetAmount);
+        m_offsetUnit.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(145, 76, W - 10, 210), this, 6106);
+        m_offsetUnit.SetFont(pF);
+        for (const wchar_t* unit : { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" })
+            m_offsetUnit.AddString(unit);
+        m_offsetUnit.SetCurSel(max(0, min(5, offsetUnit)));
 
         label(L"Notify:", 10, 108, 70);
         m_style.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -591,10 +633,16 @@ protected:
         CString text;
         m_kind.GetWindowText(text); rule.kind = (LPCWSTR)text;
         m_target.GetWindowText(text); rule.target = (LPCWSTR)text;
-        m_offsets.GetWindowText(text); rule.offsets = (LPCWSTR)text;
+        CString amount;
+        m_offsetAmount.GetWindowText(amount);
+        amount.Trim();
+        int unitSel = max(0, m_offsetUnit.GetCurSel());
+        CString unit;
+        m_offsetUnit.GetLBText(unitSel, unit);
+        rule.offsets = std::wstring((LPCWSTR)amount) + L" " + std::wstring((LPCWSTR)unit);
         rule.style = max(0, m_style.GetCurSel());
         rule.enabled = (m_enabled.GetCheck() == BST_CHECKED);
-        if (rule.target.empty() || rule.offsets.empty()) {
+        if (rule.target.empty() || amount.IsEmpty()) {
             MessageBox(L"Please enter a target and reminder time.", L"WinLuach", MB_OK | MB_ICONWARNING);
             return;
         }
@@ -627,15 +675,29 @@ private:
         else if (kind == L"Personal Event")
             addMany({ L"Any personal event", L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" });
         else
-            addMany({ L"Alos", L"Misheyakir", L"Hanetz", L"Sof Shema", L"Sof Tefilla", L"Chatzos",
-                L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"Shkiah", L"Tzeis", L"Candle Lighting",
-                L"Fast start/end", L"Eat chametz", L"Burn chametz" });
+            addMany({
+                L"Alos (GRA 16.1 deg)", L"Alos (MA 72)", L"Alos (MA 90)",
+                L"Alos (MA 72 proportional)", L"Alos (MA 90 proportional)",
+                L"Misheyakir (10.2 deg)", L"Misheyakir (11.5 deg)",
+                L"Hanetz",
+                L"Sof Shema (GRA)", L"Sof Shema (MA 72)", L"Sof Shema (MA 90)",
+                L"Sof Tefilla (GRA)", L"Sof Tefilla (MA 72)", L"Sof Tefilla (MA 90)",
+                L"Chatzos",
+                L"Mincha Gedola (GRA)", L"Mincha Gedola (MA 72)", L"Mincha Gedola (MA 90)",
+                L"Mincha Ketana (GRA)", L"Mincha Ketana (MA 72)", L"Mincha Ketana (MA 90)",
+                L"Plag (GRA)", L"Plag (MA 72)", L"Plag (MA 90)",
+                L"Shkiah",
+                L"Tzeis (GRA 8.5 deg)", L"Tzeis (MA 72)", L"Tzeis (MA 90)",
+                L"Tzeis (MA 72 proportional)", L"Tzeis (MA 90 proportional)",
+                L"Candle Lighting", L"Fast start/end", L"Eat chametz", L"Burn chametz"
+            });
         if (!cur.IsEmpty()) m_target.SetWindowText(cur);
     }
 
     int m_nextId = 0;
     CComboBox m_kind, m_target, m_style;
-    CEdit m_offsets;
+    CComboBox m_offsetUnit;
+    CEdit m_offsetAmount;
     CButton m_enabled;
 };
 
@@ -836,7 +898,7 @@ static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
     t.x = 0;
     t.y = 0;
     t.cx = 442;
-    t.cy = 260;
+    t.cy = 420;
     wcscpy_s(title, 32, L"Options and Preferences");
 }
 
@@ -1157,7 +1219,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Notifications tab
     y = 38;
-    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 84); y += 22;
+    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 114); y += 22;
     mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
     initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
@@ -1168,6 +1230,16 @@ BOOL COptionsDlg::OnInitDialog()
     initCombo(m_pageNotifications, m_cmbNotifyWebCal, 145, y - 1, 126, IDC_OPT_NOTIFY_WEBCAL,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifyWebCalEvents)));
+    y += 28;
+    mkStatic(m_pageNotifications, L"Sefiras HaOmer:", 28, y, 112, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirah, 145, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
+        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+        max(0, min(3, m_current.notifySefirahStyle)));
+    mkStatic(m_pageNotifications, L"at:", 286, y, 24, 22);
+    m_editNotifySefirahTime.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+        CRect(312, y, W - 28, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_TIME);
+    track(m_pageNotifications, &m_editNotifySefirahTime);
+    m_editNotifySefirahTime.SetWindowText(m_current.notifySefirahTime.c_str());
     y += 36;
 
     mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 142); y += 22;
@@ -1897,6 +1969,7 @@ void COptionsDlg::ReadControlsIntoResult()
 
     m_result.notifyPersonalEvents = max(0, m_cmbNotifyPersonal.GetCurSel());
     m_result.notifyWebCalEvents   = max(0, m_cmbNotifyWebCal.GetCurSel());
+    m_result.notifySefirahStyle = max(0, m_cmbNotifySefirah.GetCurSel());
     m_result.notifyZmanimStyle = max(0, m_cmbNotifyZmanim.GetCurSel());
     m_result.notifyZmanimMask = 0;
     for (int i = 0; i < 15; ++i)
@@ -1905,6 +1978,8 @@ void COptionsDlg::ReadControlsIntoResult()
             m_result.notifyZmanimMask |= (1u << i);
     m_result.notifyMoadimStyle = max(0, m_cmbNotifyMoadim.GetCurSel());
     CString txt;
+    m_editNotifySefirahTime.GetWindowText(txt);
+    m_result.notifySefirahTime = (LPCWSTR)txt;
     m_editNotifyMoadimOffsets.GetWindowText(txt);
     m_result.notifyMoadimOffsets = (LPCWSTR)txt;
     m_result.notifyParshaStyle = max(0, m_cmbNotifyParshaStyle.GetCurSel());

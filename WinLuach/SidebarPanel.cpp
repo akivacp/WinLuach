@@ -409,12 +409,10 @@ void CSidebarPanel::OnPaint()
         yOff += 26;
         memDC.SelectObject(&m_pFrame->m_fontNormal);
         memDC.SetTextColor(RGB(60, 40, 110));
-        CRect rcMolad(x, yOff, x + w, yOff + 16);
-        memDC.DrawText(moladText(hm.year, hm.month), rcMolad, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        yOff += 18;
-        CRect rcMoladNext(x, yOff, x + w, yOff + 16);
-        memDC.DrawText(moladText(nextYear, nextMonth), rcMoladNext, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-        yOff += 20;
+        CString currentMolad = moladText(hm.year, hm.month);
+        CString nextMolad = moladText(nextYear, nextMonth);
+        yOff += drawWrapped(currentMolad.GetString(), 70);
+        yOff += drawWrapped(nextMolad.GetString(), 70);
     }
 
     dcScreen.BitBlt(0, 0, cx, cy, &memDC, 0, 0, SRCCOPY);
