@@ -19,6 +19,9 @@ BEGIN_MESSAGE_MAP(CSidebarPanel, CWnd)
     ON_WM_LBUTTONDOWN()
     ON_WM_MOUSEMOVE()
     ON_WM_LBUTTONUP()
+    ON_WM_VSCROLL()
+    ON_WM_MOUSEWHEEL()
+    ON_WM_SIZE()
 END_MESSAGE_MAP()
 
 CSidebarPanel::CSidebarPanel(CMainFrame* pFrame)
@@ -67,6 +70,66 @@ void CSidebarPanel::OnLButtonUp(UINT /*nFlags*/, CPoint /*pt*/)
     }
 }
 
+void CSidebarPanel::OnSize(UINT nType, int cx, int cy)
+{
+    CWnd::OnSize(nType, cx, cy);
+    UpdateScrollBar(cy);
+}
+
+BOOL CSidebarPanel::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
+{
+    int old = m_scrollPos;
+    m_scrollPos = max(0, min(max(0, m_contentHeight - 1), m_scrollPos - zDelta / WHEEL_DELTA * 45));
+    CRect rc; GetClientRect(&rc);
+    if (m_contentHeight > rc.Height())
+        m_scrollPos = min(m_scrollPos, m_contentHeight - rc.Height());
+    else
+        m_scrollPos = 0;
+    if (m_scrollPos != old)
+    {
+        UpdateScrollBar(rc.Height());
+        Invalidate(FALSE);
+    }
+    return TRUE;
+}
+
+void CSidebarPanel::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
+{
+    CRect rc; GetClientRect(&rc);
+    int page = max(20, rc.Height());
+    int maxPos = max(0, m_contentHeight - rc.Height());
+    int pos = m_scrollPos;
+    switch (nSBCode)
+    {
+    case SB_LINEUP: pos -= 24; break;
+    case SB_LINEDOWN: pos += 24; break;
+    case SB_PAGEUP: pos -= page; break;
+    case SB_PAGEDOWN: pos += page; break;
+    case SB_THUMBPOSITION:
+    case SB_THUMBTRACK: pos = (int)nPos; break;
+    case SB_TOP: pos = 0; break;
+    case SB_BOTTOM: pos = maxPos; break;
+    default: break;
+    }
+    m_scrollPos = max(0, min(maxPos, pos));
+    UpdateScrollBar(rc.Height());
+    Invalidate(FALSE);
+}
+
+void CSidebarPanel::UpdateScrollBar(int clientHeight)
+{
+    SCROLLINFO si = {};
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin = 0;
+    si.nMax = max(0, m_contentHeight);
+    si.nPage = max(1, clientHeight);
+    int maxPos = max(0, m_contentHeight - clientHeight);
+    m_scrollPos = max(0, min(m_scrollPos, maxPos));
+    si.nPos = m_scrollPos;
+    SetScrollInfo(SB_VERT, &si, TRUE);
+}
+
 // Draws a thin separator line.
 void CSidebarPanel::DrawSep(CDC* pDC, int x, int& yOff, int w)
 {
@@ -86,6 +149,7 @@ void CSidebarPanel::OnPaint()
     GetClientRect(&rcClient);
     int cx = rcClient.Width();
     int cy = rcClient.Height();
+    int contentLimit = m_scrollPos + cy + 10000;
 
     CDC memDC;
     CBitmap bmp;
@@ -103,6 +167,7 @@ void CSidebarPanel::OnPaint()
     memDC.LineTo(cx - 1, cy);
     memDC.SelectObject(pOldPen);
 
+    memDC.SetViewportOrg(0, -m_scrollPos);
     memDC.SetBkMode(TRANSPARENT);
     int x    = 8;
     int indent = 14;  // left indent for text items
@@ -168,7 +233,7 @@ void CSidebarPanel::OnPaint()
         memDC.SetTextColor(CLR_HOLIDAY_TXT);
         for (const auto& hol : hols)
         {
-            if (yOff > cy - 20) break;
+            if (yOff > contentLimit - 20) break;
             std::wstring txt = hol.name;
             if (!hol.subtitle.empty()) txt += L" - " + hol.subtitle;
             yOff += drawWrapped(txt.c_str(), 48);
@@ -183,7 +248,7 @@ void CSidebarPanel::OnPaint()
         memDC.SetTextColor(RGB(120, 30, 120));
         for (const auto& eventTitle : userEvents)
         {
-            if (yOff > cy - 20) break;
+            if (yOff > contentLimit - 20) break;
             yOff += drawWrapped(eventTitle.c_str(), 48);
         }
         yOff += 2;
@@ -227,7 +292,7 @@ void CSidebarPanel::OnPaint()
     for (int i = 0; i < (int)(sizeof(learnings) / sizeof(learnings[0])); i++)
     {
         const auto& lrn = learnings[i];
-        if (yOff > cy - 20 || lrn.val.empty()) continue;
+        if (yOff > contentLimit - 20 || lrn.val.empty()) continue;
         memDC.SelectObject(&m_pFrame->m_fontSmall);
         memDC.SetTextColor(RGB(80, 80, 80));
         CRect rcLbl(x + indent, yOff, x + indent + 65, yOff + 14);
@@ -243,6 +308,43 @@ void CSidebarPanel::OnPaint()
         memDC.DrawText(lrn.val.c_str(), -1, &rcVal,
             DT_LEFT | DT_TOP | DT_WORDBREAK);
         yOff += rowH + 2;
+    }
+
+    // Zmanim section — sof shema and sof tefila (GRA and MA)
+    if (yOff < contentLimit - 20)
+    {
+        const ZmanimResult& zz = m_pFrame->m_zmanim;
+        DrawSep(&memDC, x, yOff, w);
+        CRect rcZHdr(0, yOff - 2, cx - 1, yOff + 20);
+        memDC.FillSolidRect(rcZHdr, CLR_HEADER_BG);
+        memDC.SelectObject(&m_pFrame->m_fontBold);
+        memDC.SetTextColor(RGB(255, 255, 255));
+        CRect rcZTxt = rcZHdr; rcZTxt.left += 6;
+        memDC.DrawText(L"Zmanim", rcZTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        yOff += 26;
+
+        struct ZRow { const wchar_t* label; TimeOfDay time; };
+        ZRow zrows[] = {
+            { L"Sof Shema (GRA):",  zz.sofShema_GRA   },
+            { L"Sof Shema (MA):",   zz.sofShema_MA72  },
+            { L"Sof Tefila (GRA):", zz.sofTefilla_GRA },
+            { L"Sof Tefila (MA):",  zz.sofTefilla_MA72},
+        };
+        int lblW2 = 110;
+        for (const auto& zr : zrows)
+        {
+            if (yOff > contentLimit - 16) break;
+            memDC.SelectObject(&m_pFrame->m_fontSmall);
+            memDC.SetTextColor(RGB(70, 70, 50));
+            CRect rcL(x + indent, yOff, x + indent + lblW2, yOff + 16);
+            memDC.DrawText(zr.label, -1, rcL, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+            memDC.SelectObject(&m_pFrame->m_fontNormal);
+            memDC.SetTextColor(RGB(20, 20, 140));
+            CRect rcT(x + indent + lblW2, yOff, x + w, yOff + 16);
+            std::wstring ts = FormatTime(zr.time, m_pFrame->m_use24hr);
+            memDC.DrawText(ts.c_str(), -1, rcT, DT_LEFT | DT_TOP | DT_SINGLELINE);
+            yOff += 18;
+        }
     }
 
     // Special times for notable days
@@ -298,7 +400,7 @@ void CSidebarPanel::OnPaint()
         if (isLagBaOmer2 && zs.chatzot.IsValid())
             stimes[nst++] = { L"Chatzos:", zs.chatzot };
 
-        if (nst > 0 && yOff < cy - 20)
+        if (nst > 0 && yOff < contentLimit - 20)
         {
             DrawSep(&memDC, x, yOff, w);
             CRect rcSHdr(0, yOff - 2, cx - 1, yOff + 20);
@@ -311,7 +413,7 @@ void CSidebarPanel::OnPaint()
 
             for (int si = 0; si < nst; si++)
             {
-                if (yOff > cy - 16) break;
+                if (yOff > contentLimit - 16) break;
                 int lblW2 = 100;
                 memDC.SelectObject(&m_pFrame->m_fontSmall);
                 memDC.SetTextColor(RGB(70, 70, 50));
@@ -331,7 +433,7 @@ void CSidebarPanel::OnPaint()
     // Year details header — positioned at m_splitFrac or after day content
     {
         int splitY = (int)(m_splitFrac * cy);
-        yOff = max(yOff + 6, min(splitY, cy - 40));
+        yOff = max(yOff + 6, min(splitY, contentLimit - 40));
         m_yearHdrY = yOff;
         if (yOff + 20 < cy)
         {
@@ -353,7 +455,7 @@ void CSidebarPanel::OnPaint()
     int rowIdx = 0;
     for (const auto& fact : facts)
     {
-        if (yOff > cy - 14) break;
+        if (yOff > contentLimit - 14) break;
         COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
         memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
         rowIdx++;
@@ -377,9 +479,18 @@ void CSidebarPanel::OnPaint()
             long long leapsBeforeY   = (7LL * completedYears + 1LL) / 19LL;
             long long M              = 12LL * completedYears + leapsBeforeY + monthOffset;
             long long totalParts     = M * 765433LL + 57444LL;
-            int dayIdx = (int)((totalParts / 25920LL) % 7LL);
-            int hour   = (int)((totalParts % 25920LL) / 1080LL);
-            int parts  = (int)(totalParts % 1080LL);
+            long long dayCount = totalParts / 25920LL;
+            long long dayParts = totalParts % 25920LL;
+            dayParts -= 6LL * 1080LL; // molad hours are counted from 6pm; convert to civil clock
+            if (dayParts < 0)
+            {
+                dayParts += 25920LL;
+                dayCount--;
+            }
+            int dayIdx = (int)(dayCount % 7LL);
+            if (dayIdx < 0) dayIdx += 7;
+            int hour   = (int)(dayParts / 1080LL);
+            int parts  = (int)(dayParts % 1080LL);
             int mins   = parts / 18;
             int chalak = parts % 18;
             int hr12   = hour % 12; if (hr12 == 0) hr12 = 12;
@@ -415,6 +526,9 @@ void CSidebarPanel::OnPaint()
         yOff += drawWrapped(nextMolad.GetString(), 70);
     }
 
+    m_contentHeight = max(yOff + 12, cy);
+    memDC.SetViewportOrg(0, 0);
+    UpdateScrollBar(cy);
     dcScreen.BitBlt(0, 0, cx, cy, &memDC, 0, 0, SRCCOPY);
     memDC.SelectObject(pOldBmp);
 }
