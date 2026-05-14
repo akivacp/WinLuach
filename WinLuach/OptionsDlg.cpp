@@ -106,6 +106,7 @@
 #define IDC_OPT_NOTIFY_SEFIRAH_OTHER 406
 #define IDC_OPT_NOTIFY_MOADIM_UNIT 407
 #define IDC_OPT_NOTIFY_PERSONAL_UNIT 408
+#define IDC_OPT_NOTIFY_PARSHA_UNIT 409
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
 enum ColorPreviewKind
@@ -177,6 +178,23 @@ static const wchar_t* kZmanCheckboxLabels[] = {
 
 static constexpr int kZmanCheckboxCount =
     (int)(sizeof(kZmanCheckboxLabels) / sizeof(kZmanCheckboxLabels[0]));
+
+static const wchar_t* kTrayTooltipZmanLabels[] = {
+    L"Alos GRA", L"Alos MA72", L"Alos MA90",
+    L"Misheyakir 10.2", L"Misheyakir 11.5", L"Netz",
+    L"Sof Shema MA72", L"Sof Shema MA90", L"Sof Shema GRA",
+    L"Sof Tefilla MA72", L"Sof Tefilla MA90", L"Sof Tefilla GRA",
+    L"Chatzos",
+    L"Mincha Gedola MA72", L"Mincha Gedola MA90", L"Mincha Gedola GRA",
+    L"Mincha Ketana MA72", L"Mincha Ketana MA90", L"Mincha Ketana GRA",
+    L"Plag MA72", L"Plag MA90", L"Plag GRA",
+    L"Shkiah", L"Tzais GRA", L"Tzais MA72", L"Tzais MA90",
+    L"Candles", L"Fast start/end", L"Eat chametz", L"Burn chametz",
+    L"Today's Omer"
+};
+
+static constexpr int kTrayTooltipZmanCount =
+    (int)(sizeof(kTrayTooltipZmanLabels) / sizeof(kTrayTooltipZmanLabels[0]));
 
 static CString ColorToHex(COLORREF c)
 {
@@ -618,7 +636,8 @@ static void SetOffsetControls(const std::wstring& value, CEdit& amount, CComboBo
     int unitSel = 0;
     ParseReminderOffsetText(value, amt, unitSel);
     amount.SetWindowText(amt);
-    unit.SetCurSel(max(0, min(5, unitSel)));
+    int count = unit.GetCount();
+    unit.SetCurSel(max(0, min(max(0, count - 1), unitSel)));
 }
 
 static std::wstring ReadOffsetControls(const CEdit& amount, const CComboBox& unit)
@@ -629,6 +648,8 @@ static std::wstring ReadOffsetControls(const CEdit& amount, const CComboBox& uni
     if (amt.IsEmpty())
         amt = L"15";
     int unitSel = max(0, unit.GetCurSel());
+    if (unitSel >= unit.GetCount())
+        unitSel = max(0, unit.GetCount() - 1);
     CString unitText;
     unit.GetLBText(unitSel, unitText);
     return std::wstring((LPCWSTR)amt) + L" " + std::wstring((LPCWSTR)unitText);
@@ -1215,16 +1236,16 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Tray Tooltip tab
     y = 38;
-    mkGroup(m_pageTrayTooltip, L"Zmanim Shown In Today's Tray Tooltip", 14, y, W - 28, 226); y += 26;
-    for (int i = 0; i < kZmanCheckboxCount; ++i)
+    mkGroup(m_pageTrayTooltip, L"Items Shown In Today's Tray Tooltip", 14, y, W - 28, 336); y += 24;
+    for (int i = 0; i < kTrayTooltipZmanCount; ++i)
     {
-        int col = i / 9;
-        int row = i % 9;
-        int x0 = 28 + col * 190;
-        int yy = y + row * 22;
-        m_chkTrayTooltipZmanim[i].Create(kZmanCheckboxLabels[i],
+        int col = i / 16;
+        int row = i % 16;
+        int x0 = 28 + col * 196;
+        int yy = y + row * 19;
+        m_chkTrayTooltipZmanim[i].Create(kTrayTooltipZmanLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + 178, yy + 20), this, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
+            CRect(x0, yy, x0 + 190, yy + 18), this, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
         track(m_pageTrayTooltip, &m_chkTrayTooltipZmanim[i]);
         m_chkTrayTooltipZmanim[i].SetCheck((m_current.trayTooltipZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
@@ -1364,26 +1385,37 @@ BOOL COptionsDlg::OnInitDialog()
     initCombo(m_pageNotifications, m_cmbNotifySefirah, 145, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifySefirahStyle)));
-    mkStatic(m_pageNotifications, L"mode:", 286, y, 42, 22);
-    initCombo(m_pageNotifications, m_cmbNotifySefirahMode, 330, y - 1, 92, IDC_OPT_NOTIFY_SEFIRAH_MODE,
-        { L"Manual", L"Relative" }, max(0, min(1, m_current.notifySefirahMode)));
+    m_radNotifySefirahSunTzais.Create(L"sunset/tzais", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+        CRect(286, y, 382, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
+    track(m_pageNotifications, &m_radNotifySefirahSunTzais);
     y += 28;
-    mkStatic(m_pageNotifications, L"manual at:", 28, y, 76, 22);
+    m_radNotifySefirahOther.Create(L"other zman", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+        CRect(28, y, 118, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
+    track(m_pageNotifications, &m_radNotifySefirahOther);
+    m_radNotifySefirahManual.Create(L"manual time", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+        CRect(126, y, 226, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
+    track(m_pageNotifications, &m_radNotifySefirahManual);
+    bool isManualOmer = (m_current.notifySefirahMode == 0);
+    bool isOtherOmer = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
+    m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
+    m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+    m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+    mkStatic(m_pageNotifications, L"manual:", 222, y, 66, 22);
     m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(105, y - 1, 154, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
+        CRect(292, y - 1, 332, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
     track(m_pageNotifications, &m_cmbNotifySefirahHour);
     m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(158, y - 1, 207, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
+        CRect(336, y - 1, 376, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
     track(m_pageNotifications, &m_cmbNotifySefirahMinute);
     m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(212, y - 1, 270, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
+        CRect(380, y - 1, 424, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
     track(m_pageNotifications, &m_cmbNotifySefirahAmPm);
     FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
     SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
         m_current.notifySefirahTime, 21, 0);
-    mkStatic(m_pageNotifications, L"relative:", 286, y, 58, 22);
+    mkStatic(m_pageNotifications, L"offset:", 28, y, 48, 22);
     m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(346, y, 386, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
+        CRect(78, y, 118, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
     track(m_pageNotifications, &m_editNotifySefirahOffset);
     {
         CString off;
@@ -1395,7 +1427,7 @@ BOOL COptionsDlg::OnInitDialog()
     initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 84, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
         { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
     initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 164, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
-        { L"sunset", L"tzais", L"zman" }, max(0, min(2, m_current.notifySefirahBase)));
+        { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
     m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
         CRect(256, y - 1, 420, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
     track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
@@ -1461,14 +1493,12 @@ BOOL COptionsDlg::OnInitDialog()
         max(0, min(3, m_current.notifyParshaStyle)));
     y += 28;
     mkStatic(m_pageNotifications, L"Parsha before:", 28, y, 100, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyParshaOffsets, 130, y - 1, 104, IDC_OPT_NOTIFY_PARSHA_OFFSETS,
-        { L"15 minutes", L"30 minutes", L"1 hour", L"1 day", L"1 week", L"1 month" }, 4);
-    for (int i = 0; i < m_cmbNotifyParshaOffsets.GetCount(); ++i)
-    {
-        CString val; m_cmbNotifyParshaOffsets.GetLBText(i, val);
-        if (std::wstring((LPCWSTR)val) == m_current.notifyParshaOffsets)
-            m_cmbNotifyParshaOffsets.SetCurSel(i);
-    }
+    m_editNotifyParshaAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+        CRect(130, y, 170, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
+    track(m_pageNotifications, &m_editNotifyParshaAmount);
+    initCombo(m_pageNotifications, m_cmbNotifyParshaUnit, 176, y - 1, 56, IDC_OPT_NOTIFY_PARSHA_UNIT,
+        { L"minutes", L"hours", L"days", L"weeks", L"months" }, 3);
+    SetOffsetControls(m_current.notifyParshaOffsets, m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
     mkStatic(m_pageNotifications, L"Personal before:", 236, y, 96, 22);
     m_editNotifyPersonalAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
         CRect(328, y, 362, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
@@ -1686,14 +1716,17 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_cmbNotifySefirahHour,  L"Hour for a manual Sefiras HaOmer reminder");
     m_tooltip.AddTool(&m_cmbNotifySefirahMinute,L"Minute for a manual Sefiras HaOmer reminder");
     m_tooltip.AddTool(&m_cmbNotifySefirahAmPm,  L"AM or PM for a manual Sefiras HaOmer reminder");
-    m_tooltip.AddTool(&m_cmbNotifySefirahMode,  L"Choose a fixed time or a reminder relative to a zman");
+    m_tooltip.AddTool(&m_radNotifySefirahSunTzais, L"Base the Omer reminder on sunset or tzais");
+    m_tooltip.AddTool(&m_radNotifySefirahOther,    L"Base the Omer reminder on another zman of the day");
+    m_tooltip.AddTool(&m_radNotifySefirahManual,   L"Show the Omer reminder at a fixed clock time");
     m_tooltip.AddTool(&m_editNotifySefirahOffset, L"Minutes before or after the selected zman for the Omer reminder");
     m_tooltip.AddTool(&m_cmbNotifyZmanim,       L"Notification style for upcoming zmanim alerts");
     m_tooltip.AddTool(&m_cmbNotifyMoadim,       L"Notification style for upcoming holidays and Moadim");
     m_tooltip.AddTool(&m_editNotifyMoadimAmount, L"How far before a holiday or moed to remind you");
     m_tooltip.AddTool(&m_cmbNotifyParsha,       L"Notify for a specific parasha, or any parasha");
     m_tooltip.AddTool(&m_cmbNotifyParshaStyle,  L"Notification style for Shabbos parasha reminders");
-    m_tooltip.AddTool(&m_cmbNotifyParshaOffsets, L"How far before Shabbos to remind you about the selected parasha");
+    m_tooltip.AddTool(&m_editNotifyParshaAmount, L"How far before Shabbos to remind you about the selected parasha");
+    m_tooltip.AddTool(&m_cmbNotifyParshaUnit,    L"Units for the parasha advance reminder");
     m_tooltip.AddTool(&m_editNotifyPersonalAmount, L"How far before personal events to remind you");
     m_tooltip.AddTool(&m_btnPreviewNotify,      L"Preview the selected notification style");
     m_tooltip.AddTool(&m_btnAdvancedReminders,  L"Configure advanced reminder rules and schedules");
@@ -2216,7 +2249,7 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.trayBackEnabled = (m_chkTrayBackEnabled.GetCheck() == BST_CHECKED);
     m_result.trayNumberStyle = max(0, min(1, m_cmbTrayNumber.GetCurSel()));
     m_result.trayTooltipZmanimMask = 0;
-    for (int i = 0; i < kZmanCheckboxCount; ++i)
+    for (int i = 0; i < kTrayTooltipZmanCount; ++i)
         if (m_chkTrayTooltipZmanim[i].GetSafeHwnd() &&
             m_chkTrayTooltipZmanim[i].GetCheck() == BST_CHECKED)
             m_result.trayTooltipZmanimMask |= (1u << i);
@@ -2267,11 +2300,15 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.notifyMoadimStyle = max(0, m_cmbNotifyMoadim.GetCurSel());
     CString txt;
     m_result.notifySefirahTime = ReadClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
-    m_result.notifySefirahMode = max(0, min(1, m_cmbNotifySefirahMode.GetCurSel()));
+    if (m_radNotifySefirahManual.GetCheck() == BST_CHECKED)
+        m_result.notifySefirahMode = 0;
+    else
+        m_result.notifySefirahMode = 1;
     m_editNotifySefirahOffset.GetWindowText(txt);
     m_result.notifySefirahOffsetMinutes = max(0, _wtoi(txt));
     m_result.notifySefirahOffsetDir = max(0, min(1, m_cmbNotifySefirahDir.GetCurSel()));
-    m_result.notifySefirahBase = max(0, min(2, m_cmbNotifySefirahBase.GetCurSel()));
+    m_result.notifySefirahBase = (m_radNotifySefirahOther.GetCheck() == BST_CHECKED)
+        ? 2 : max(0, min(1, m_cmbNotifySefirahBase.GetCurSel()));
     m_result.notifySefirahOtherZman = max(0, min(kZmanCheckboxCount - 1, m_cmbNotifySefirahOtherZman.GetCurSel()));
     m_result.notifyMoadimOffsets = ReadOffsetControls(m_editNotifyMoadimAmount, m_cmbNotifyMoadimUnit);
     m_result.notifyParshaStyle = max(0, m_cmbNotifyParshaStyle.GetCurSel());
@@ -2286,8 +2323,7 @@ void COptionsDlg::ReadControlsIntoResult()
     {
         m_result.notifyParshaName.clear();
     }
-    m_cmbNotifyParshaOffsets.GetWindowText(txt);
-    m_result.notifyParshaOffsets = (LPCWSTR)txt;
+    m_result.notifyParshaOffsets = ReadOffsetControls(m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
     m_result.notifyPersonalOffsets = ReadOffsetControls(m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
 }
 
