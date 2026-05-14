@@ -11,6 +11,7 @@
 // CHANGELOG:
 // v0.1.0 - Initial file. Declares AppSettings struct and
 //          SaveSettings / LoadSettings functions.
+// v0.8.0 - Added zmanim bar mask + per-sub-tab preset fields.
 // =============================================================================
 
 #pragma once
@@ -163,6 +164,24 @@ struct AppSettings
     double       customSofZmanValue = -1.0;  // -1 migrates from legacy zmanimShita
     int          customTzeitMode = 0;        // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
     double       customTzeitValue = 8.5;
+
+    // --- Zmanim bar (which zmanim show in the bottom bar) ---
+    uint32_t     zmanimBarMask = 0xFFFFFFFFu;  // bit per zman, see kZmanimBarLabels
+    // --- Mincha Gedola / Ketana / Plag / End-of-Fast custom modes & values ---
+    int          customMinchaGedolaPreset = 1;   // 0=30 min, 1=GRA default, 2=MA 72
+    int          customMinchaKetanaPreset = 0;   // 0=GRA, 1=MA 72
+    int          customPlagPreset         = 0;   // 0=GRA, 1=MA 72
+    int          customEndFastPreset      = 0;   // 0=R' Tukaccinsky (27 min), 1=R' Moshe Feinstein
+    double       customMinchaGedolaValue  = 30.0;  // fixed minutes after chatzos when preset=custom
+    double       customMinchaKetanaValue  = 570.0; // zmanis minutes after hanetz when preset=custom
+    double       customPlagValue          = 645.0; // zmanis minutes after hanetz when preset=custom
+    double       customEndFastValue       = 27.0;  // fixed minutes after shkiah when preset=custom
+    // --- Per-sub-tab custom Sof Zman MA vs GRA (in addition to existing customSofZman*) ---
+    int          customSofZmanMaPreset    = 0;   // 0=90 min as degrees, 1=fixed 72 min, 2=72 min as 16.1 deg, 3=custom
+    int          customSofZmanGraPreset   = 0;   // 0=90 min as degrees, 1=fixed 72 min, 2=72 min as 16.1 deg, 3=custom
+    int          customMisheyakirPreset   = 0;   // 0=11.5 deg, 1=11 deg, 2=10.2 deg, 3=custom
+    int          customTzeitPreset        = 0;   // 0=42 min, 1=50 min, 2=60 min, 3=72 min, 4=72 min as degrees, 5=custom
+    int          customAlotPreset         = 0;   // 0=GRA 16.1 deg, 1=MA72 fixed, 2=MA90 fixed, 3=custom
 
     // --- Calendar colors ---
     int          colorNormalCell       = 0x00FFFFFF; // RGB(255,255,255)

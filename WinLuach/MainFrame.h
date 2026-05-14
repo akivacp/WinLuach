@@ -11,6 +11,8 @@
 // v0.1.0 - Initial MFC main frame. Hosts CCalendarView, CSidebarPanel,
 //          CZmanimPanel. Menu: File, View, Options, Help.
 // v0.1.1 - Moved fonts to public section so child panels can access them.
+// v0.8.0 - Added ID_FILE_PIN_TASKBAR command, zmanim bar mask member,
+//          and OnPinToTaskbar handler.
 // =============================================================================
 
 #pragma once
@@ -229,6 +231,17 @@ public:
     double        m_customSofZmanValue = 0.0;
     int           m_customTzeitMode = 0;
     double        m_customTzeitValue = 8.5;
+    // v0.8.0 - zmanim bar visibility mask + end-of-fast preset, surfaced for
+    // ZmanimPanel to consult when drawing the bar.
+    uint32_t      m_zmanimBarMask = 0xFFFFFFFFu;
+    int           m_customMinchaGedolaPreset = 1;
+    int           m_customMinchaKetanaPreset = 0;
+    int           m_customPlagPreset = 0;
+    int           m_customEndFastPreset = 0;   // 0=R' Tukaccinsky, 1=R' Moshe Feinstein
+    double        m_customMinchaGedolaValue = 30.0;
+    double        m_customMinchaKetanaValue = 570.0;
+    double        m_customPlagValue = 645.0;
+    double        m_customEndFastValue = 27.0;
     COLORREF      m_colorNormalCell = CLR_NORMAL;
     COLORREF      m_colorOtherMonthCell = CLR_OTHER_MONTH;
     COLORREF      m_colorTodayCell = CLR_TODAY;
@@ -327,6 +340,9 @@ protected:
     afx_msg void OnSidebarToggle();
     afx_msg void OnHebCivilToggle();
     afx_msg void OnFilePrintEvents();
+    // v0.8.0 - Creates a shell .lnk shortcut in the user's Quick Launch
+    // "User Pinned\TaskBar" folder so WinLuach appears as a taskbar pin.
+    afx_msg void OnPinToTaskbar();
     afx_msg LRESULT OnWebCalDone(WPARAM, LPARAM);
     afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     virtual BOOL PreTranslateMessage(MSG* pMsg);
