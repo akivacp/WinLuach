@@ -221,6 +221,17 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
 
     pDC->SetBkMode(TRANSPARENT);
     int margin = 3;
+    auto fontHeight = [&](CFont& font) {
+        CFont* oldFont = pDC->SelectObject(&font);
+        TEXTMETRIC tm = {};
+        pDC->GetTextMetrics(&tm);
+        pDC->SelectObject(oldFont);
+        return max(10, tm.tmHeight + tm.tmExternalLeading + 2);
+    };
+    int boldH = fontHeight(m_pFrame->m_fontBold);
+    int smallH = fontHeight(m_pFrame->m_fontSmall);
+    int headerH = max(boldH, smallH);
+    int lineH = max(12, smallH + 1);
 
     // Gregorian day number (top-left, bold)
     COLORREF clrGreg = cell.isCurrentMonth ? m_pFrame->m_colorGregorianText : RGB(180, 180, 180);
@@ -230,8 +241,8 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
     CString dayNum;
     dayNum.Format(L"%d", cell.greg.day);
     CRect rcGreg(rc.left + margin, rc.top + margin,
-        rc.left + margin + 28, rc.top + margin + 18);
-    pDC->DrawText(dayNum, rcGreg, DT_LEFT | DT_TOP);
+        rc.left + margin + 34, rc.top + margin + boldH);
+    pDC->DrawText(dayNum, rcGreg, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     // Hebrew date (top-right, small blue)
     bool leap = IsHebrewLeapYear(cell.hebrew.year);
@@ -240,14 +251,15 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
     pDC->SelectObject(&m_pFrame->m_fontSmall);
     pDC->SetTextColor(cell.isCurrentMonth ? m_pFrame->m_colorHebrewText : RGB(180, 180, 200));
     CRect rcHeb(rc.left + margin, rc.top + margin,
-        rc.right - margin, rc.top + margin + 14);
-    pDC->DrawText(hebDay.c_str(), -1, rcHeb, DT_RIGHT | DT_TOP);
+        rc.right - margin, rc.top + margin + smallH);
+    pDC->DrawText(hebDay.c_str(), -1, rcHeb,
+        DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     // Holiday names and omer (below dates)
     if (cell.isCurrentMonth)
     {
-        int yOff = rc.top + margin + 16;
-        int maxLines = (rc.Height() - 30) / 13;
+        int yOff = rc.top + margin + headerH + 2;
+        int maxLines = max(0, (rc.bottom - margin - yOff) / lineH);
         int lines = 0;
 
         pDC->SelectObject(&m_pFrame->m_fontSmall);
@@ -265,10 +277,10 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
                 if (!hol.subtitle.empty()) txt += L" - " + hol.subtitle;
 
                 CRect rcHol(rc.left + margin, yOff,
-                    rc.right - margin, yOff + 13);
+                    rc.right - margin, yOff + lineH);
                 pDC->DrawText(txt.c_str(), -1, rcHol,
-                    DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
-                yOff += 13;
+                    DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE);
+                yOff += lineH;
                 lines++;
             }
         }
@@ -285,11 +297,11 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
                     parTxt += L" - " + par.name2;
 
                 CRect rcPar(rc.left + margin, yOff,
-                    rc.right - margin, yOff + 13);
+                    rc.right - margin, yOff + lineH);
                 pDC->SetTextColor(m_pFrame->m_colorParshaText);
                 pDC->DrawText(parTxt.c_str(), -1, rcPar,
-                    DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
-                yOff += 13;
+                    DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE);
+                yOff += lineH;
                 lines++;
             }
         }
@@ -299,14 +311,14 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
         {
             if (lines >= maxLines) break;
             CRect rcEvent(rc.left + margin, yOff,
-                rc.right - margin, yOff + 13);
+                rc.right - margin, yOff + lineH);
             COLORREF evColor = eventLine.isHebrew
                 ? m_pFrame->m_colorHebrewEventText
                 : m_pFrame->m_colorCivilEventText;
             pDC->SetTextColor(evColor);
             pDC->DrawText(eventLine.title.c_str(), -1, rcEvent,
-                DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
-            yOff += 13;
+                DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE);
+            yOff += lineH;
             lines++;
         }
 
@@ -315,11 +327,11 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
             CString omerTxt;
             omerTxt.Format(L"Day %d Omer", cell.omer.day);
             CRect rcOmer(rc.left + margin, yOff,
-                rc.right - margin, yOff + 13);
+                rc.right - margin, yOff + lineH);
             pDC->SetTextColor(m_pFrame->m_colorOmerText);
             pDC->DrawText(omerTxt, rcOmer,
-                DT_LEFT | DT_TOP | DT_SINGLELINE);
-            yOff += 13; lines++;
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            yOff += lineH; lines++;
         }
 
         {
@@ -327,10 +339,10 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
             auto tryLearn = [&](bool show, const std::wstring& txt, COLORREF clr) {
                 if (!show || txt.empty() || lines >= maxLines) return;
                 pDC->SetTextColor(clr);
-                CRect rcL(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+                CRect rcL(rc.left + margin, yOff, rc.right - margin, yOff + lineH);
                 pDC->DrawText(txt.c_str(), -1, rcL,
-                    DT_LEFT | DT_TOP | DT_END_ELLIPSIS | DT_SINGLELINE);
-                yOff += 13; lines++;
+                    DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS | DT_SINGLELINE);
+                yOff += lineH; lines++;
             };
             tryLearn(m_pFrame->m_showDafYomi,      cell.learning.dafYomi,      m_pFrame->m_colorLearningText);
             tryLearn(m_pFrame->m_showYerushalmi,   cell.learning.yerushalmi,   m_pFrame->m_colorLearningText);
@@ -341,18 +353,18 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
 
         if (!cell.candleStr.empty() && lines < maxLines)
         {
-            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + lineH);
             pDC->SetTextColor(m_pFrame->m_colorCandleText);
             pDC->DrawText(cell.candleStr.c_str(), -1, rcZ,
-                DT_LEFT | DT_TOP | DT_SINGLELINE);
-            yOff += 13; lines++;
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            yOff += lineH; lines++;
         }
         if (!cell.motzStr.empty() && lines < maxLines)
         {
-            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + 13);
+            CRect rcZ(rc.left + margin, yOff, rc.right - margin, yOff + lineH);
             pDC->SetTextColor(m_pFrame->m_colorMotzText);
             pDC->DrawText(cell.motzStr.c_str(), -1, rcZ,
-                DT_LEFT | DT_TOP | DT_SINGLELINE);
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
     }
 }

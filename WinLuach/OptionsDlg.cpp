@@ -77,6 +77,16 @@
 #define IDC_OPT_NOTIFY_PARSHA_OFFSETS 362
 #define IDC_OPT_NOTIFY_PERSONAL_OFFSETS 363
 #define IDC_OPT_ADV_REMINDERS 364
+#define IDC_OPT_MISHEYAKIR_SHITA 365
+#define IDC_OPT_MISHEYAKIR_VALUE 366
+#define IDC_OPT_MISHEYAKIR_DEG   367
+#define IDC_OPT_MISHEYAKIR_MIN   368
+#define IDC_OPT_MISHEYAKIR_ZMANIS 369
+#define IDC_OPT_SOFZMAN_SHITA    370
+#define IDC_OPT_SOFZMAN_VALUE    371
+#define IDC_OPT_SOFZMAN_DEG      372
+#define IDC_OPT_SOFZMAN_MIN      373
+#define IDC_OPT_SOFZMAN_ZMANIS   374
 #define IDC_OPT_NOTIFY_ZMAN_FIRST 380
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
@@ -793,10 +803,29 @@ END_MESSAGE_MAP()
 // CONSTRUCTION
 // =============================================================================
 
+static void NormalizeCustomZmanSettings(AppSettings& s)
+{
+    s.customAlotMode = max(0, min(2, s.customAlotMode));
+    if (s.customAlotValue <= 0.0) s.customAlotValue = 16.1;
+    s.customMisheyakirMode = max(0, min(2, s.customMisheyakirMode));
+    if (s.customMisheyakirValue <= 0.0) s.customMisheyakirValue = 10.2;
+    s.customTzeitMode = max(0, min(2, s.customTzeitMode));
+    if (s.customTzeitValue <= 0.0) s.customTzeitValue = 8.5;
+    s.customSofZmanMode = max(0, min(2, s.customSofZmanMode));
+    if (s.customSofZmanValue < 0.0)
+    {
+        if (s.zmanimShita == 1) { s.customSofZmanMode = 1; s.customSofZmanValue = 72.0; }
+        else if (s.zmanimShita == 2) { s.customSofZmanMode = 1; s.customSofZmanValue = 90.0; }
+        else { s.customSofZmanMode = 0; s.customSofZmanValue = 0.0; }
+    }
+}
+
 COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
     : CDialog(), m_current(current), m_result(current)
 {
     m_pParentWnd = pParent;
+    NormalizeCustomZmanSettings(m_current);
+    m_result = m_current;
 }
 
 static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
@@ -873,6 +902,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_pageTrayTooltip.clear();
     m_pageColors.clear();
     m_pageZmanim.clear();
+    m_pageZmanShitos.clear();
     m_pageNotifications.clear();
 
     m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
@@ -886,7 +916,8 @@ BOOL COptionsDlg::OnInitDialog()
     ti.pszText = const_cast<LPWSTR>(L"Tray Tooltip"); m_tab.InsertItem(3, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Colors");    m_tab.InsertItem(4, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Zmanim");    m_tab.InsertItem(5, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(6, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Zman Shitos"); m_tab.InsertItem(6, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(7, &ti);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
         page.push_back(wnd);
@@ -1053,7 +1084,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkChatzosOnFasts.Create(L"Show chatzos on fast-day cells", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(220, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_FASTS); track(m_pageZmanim, &m_chkChatzosOnFasts);
     y += 34;
-    mkStatic(m_pageZmanim, L"Sof zman shema/tefilla and mincha shita:", 28, y, 300, 20); y += 24;
+    mkStatic(m_pageZmanim, L"Mincha and shaah zmanis shita:", 28, y, 300, 20); y += 24;
     m_radGRA.Create(L"GRA / Baal HaTanya", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
         CRect(40, y, 190, y + 20), this, IDC_OPT_RAD_GRA); track(m_pageZmanim, &m_radGRA);
     m_radMA72.Create(L"Magen Avraham (72 min)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
@@ -1089,6 +1120,40 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(310, y, 385, y + 20), this, IDC_OPT_TZEIT_MIN); track(m_pageZmanim, &m_radTzeitMinutes);
     m_radTzeitZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         CRect(230, y + 22, W - 28, y + 42), this, IDC_OPT_TZEIT_ZMANIS); track(m_pageZmanim, &m_radTzeitZmanis);
+
+    // Zman Shitos tab
+    y = 38;
+    mkGroup(m_pageZmanShitos, L"Sof Zman Shema and Tefilla", 14, y, W - 28, 118); y += 24;
+    mkStatic(m_pageZmanShitos, L"Preset:", 28, y, 68, 22);
+    initCombo(m_pageZmanShitos, m_cmbSofZmanShita, 100, y - 1, 238, IDC_OPT_SOFZMAN_SHITA,
+        { L"GRA (netz to shkiah)", L"90 minutes as degrees", L"Fixed 72 minutes",
+          L"72 minutes as 16.1 degrees", L"Custom" },
+        0);
+    y += 32;
+    mkStatic(m_pageZmanShitos, L"Value:", 28, y, 68, 22);
+    setEdit(m_pageZmanShitos, m_editCustomSofZman, 100, y, 60, IDC_OPT_SOFZMAN_VALUE, m_current.customSofZmanValue);
+    m_radSofZmanDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        CRect(175, y, 250, y + 20), this, IDC_OPT_SOFZMAN_DEG); track(m_pageZmanShitos, &m_radSofZmanDegrees);
+    m_radSofZmanMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        CRect(255, y, 330, y + 20), this, IDC_OPT_SOFZMAN_MIN); track(m_pageZmanShitos, &m_radSofZmanMinutes);
+    m_radSofZmanZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        CRect(175, y + 24, W - 28, y + 44), this, IDC_OPT_SOFZMAN_ZMANIS); track(m_pageZmanShitos, &m_radSofZmanZmanis);
+
+    y = 172;
+    mkGroup(m_pageZmanShitos, L"Misheyakir", 14, y, W - 28, 118); y += 24;
+    mkStatic(m_pageZmanShitos, L"Preset:", 28, y, 68, 22);
+    initCombo(m_pageZmanShitos, m_cmbMisheyakirShita, 100, y - 1, 238, IDC_OPT_MISHEYAKIR_SHITA,
+        { L"10.2 degrees", L"11.5 degrees", L"Fixed 60 minutes", L"Fixed 72 minutes", L"Custom" },
+        0);
+    y += 32;
+    mkStatic(m_pageZmanShitos, L"Value:", 28, y, 68, 22);
+    setEdit(m_pageZmanShitos, m_editCustomMisheyakir, 100, y, 60, IDC_OPT_MISHEYAKIR_VALUE, m_current.customMisheyakirValue);
+    m_radMisheyakirDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        CRect(175, y, 250, y + 20), this, IDC_OPT_MISHEYAKIR_DEG); track(m_pageZmanShitos, &m_radMisheyakirDegrees);
+    m_radMisheyakirMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        CRect(255, y, 330, y + 20), this, IDC_OPT_MISHEYAKIR_MIN); track(m_pageZmanShitos, &m_radMisheyakirMinutes);
+    m_radMisheyakirZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        CRect(175, y + 24, W - 28, y + 44), this, IDC_OPT_MISHEYAKIR_ZMANIS); track(m_pageZmanShitos, &m_radMisheyakirZmanis);
 
     // Notifications tab
     y = 38;
@@ -1228,10 +1293,20 @@ BOOL COptionsDlg::OnInitDialog()
     else if (m_current.customAlotMode == 2) m_radAlotZmanis.SetCheck(BST_CHECKED);
     else m_radAlotDegrees.SetCheck(BST_CHECKED);
 
+    if (m_current.customMisheyakirMode == 1) m_radMisheyakirMinutes.SetCheck(BST_CHECKED);
+    else if (m_current.customMisheyakirMode == 2) m_radMisheyakirZmanis.SetCheck(BST_CHECKED);
+    else m_radMisheyakirDegrees.SetCheck(BST_CHECKED);
+
+    if (m_current.customSofZmanMode == 1) m_radSofZmanMinutes.SetCheck(BST_CHECKED);
+    else if (m_current.customSofZmanMode == 2) m_radSofZmanZmanis.SetCheck(BST_CHECKED);
+    else m_radSofZmanDegrees.SetCheck(BST_CHECKED);
+
     if (m_current.customTzeitMode == 1) m_radTzeitMinutes.SetCheck(BST_CHECKED);
     else if (m_current.customTzeitMode == 2) m_radTzeitZmanis.SetCheck(BST_CHECKED);
     else m_radTzeitDegrees.SetCheck(BST_CHECKED);
     m_lastAlotMode = CurrentAlotMode();
+    m_lastMisheyakirMode = CurrentMisheyakirMode();
+    m_lastSofZmanMode = CurrentSofZmanMode();
     m_lastTzeitMode = CurrentTzeitMode();
 
     auto nearValue = [](double a, double b) { return std::fabs(a - b) < 0.5; };
@@ -1243,6 +1318,28 @@ BOOL COptionsDlg::OnInitDialog()
     else if (m_current.customAlotMode == 1 && nearValue(m_current.customAlotValue, 90.0))
         alotPreset = 2;
     m_cmbAlotShita.SetCurSel(alotPreset);
+
+    int misheyakirPreset = 4;
+    if (m_current.customMisheyakirMode == 0 && nearValue(m_current.customMisheyakirValue, 10.2))
+        misheyakirPreset = 0;
+    else if (m_current.customMisheyakirMode == 0 && nearValue(m_current.customMisheyakirValue, 11.5))
+        misheyakirPreset = 1;
+    else if (m_current.customMisheyakirMode == 1 && nearValue(m_current.customMisheyakirValue, 60.0))
+        misheyakirPreset = 2;
+    else if (m_current.customMisheyakirMode == 1 && nearValue(m_current.customMisheyakirValue, 72.0))
+        misheyakirPreset = 3;
+    m_cmbMisheyakirShita.SetCurSel(misheyakirPreset);
+
+    int sofPreset = 4;
+    if (m_current.customSofZmanMode == 0 && nearValue(m_current.customSofZmanValue, 0.0))
+        sofPreset = 0;
+    else if (m_current.customSofZmanMode == 0 && nearValue(m_current.customSofZmanValue, 19.8))
+        sofPreset = 1;
+    else if (m_current.customSofZmanMode == 1 && nearValue(m_current.customSofZmanValue, 72.0))
+        sofPreset = 2;
+    else if (m_current.customSofZmanMode == 0 && nearValue(m_current.customSofZmanValue, 16.1))
+        sofPreset = 3;
+    m_cmbSofZmanShita.SetCurSel(sofPreset);
 
     int tzeitPreset = max(0, min(4, m_current.tzeitShita));
     if (m_current.customTzeitMode == 0 && nearValue(m_current.customTzeitValue, 8.5))
@@ -1291,7 +1388,8 @@ void COptionsDlg::ShowOptionsPage(int page)
     showPage(m_pageTrayTooltip, 3);
     showPage(m_pageColors, 4);
     showPage(m_pageZmanim, 5);
-    showPage(m_pageNotifications, 6);
+    showPage(m_pageZmanShitos, 6);
+    showPage(m_pageNotifications, 7);
 }
 
 void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
@@ -1427,6 +1525,20 @@ int COptionsDlg::CurrentAlotMode() const
     return 0;
 }
 
+int COptionsDlg::CurrentMisheyakirMode() const
+{
+    if (m_radMisheyakirMinutes.GetCheck() == BST_CHECKED) return 1;
+    if (m_radMisheyakirZmanis.GetCheck() == BST_CHECKED) return 2;
+    return 0;
+}
+
+int COptionsDlg::CurrentSofZmanMode() const
+{
+    if (m_radSofZmanMinutes.GetCheck() == BST_CHECKED) return 1;
+    if (m_radSofZmanZmanis.GetCheck() == BST_CHECKED) return 2;
+    return 0;
+}
+
 int COptionsDlg::CurrentTzeitMode() const
 {
     if (m_radTzeitMinutes.GetCheck() == BST_CHECKED) return 1;
@@ -1439,6 +1551,20 @@ void COptionsDlg::SetAlotMode(int mode)
     m_radAlotDegrees.SetCheck(mode == 0 ? BST_CHECKED : BST_UNCHECKED);
     m_radAlotMinutes.SetCheck(mode == 1 ? BST_CHECKED : BST_UNCHECKED);
     m_radAlotZmanis.SetCheck(mode == 2 ? BST_CHECKED : BST_UNCHECKED);
+}
+
+void COptionsDlg::SetMisheyakirMode(int mode)
+{
+    m_radMisheyakirDegrees.SetCheck(mode == 0 ? BST_CHECKED : BST_UNCHECKED);
+    m_radMisheyakirMinutes.SetCheck(mode == 1 ? BST_CHECKED : BST_UNCHECKED);
+    m_radMisheyakirZmanis.SetCheck(mode == 2 ? BST_CHECKED : BST_UNCHECKED);
+}
+
+void COptionsDlg::SetSofZmanMode(int mode)
+{
+    m_radSofZmanDegrees.SetCheck(mode == 0 ? BST_CHECKED : BST_UNCHECKED);
+    m_radSofZmanMinutes.SetCheck(mode == 1 ? BST_CHECKED : BST_UNCHECKED);
+    m_radSofZmanZmanis.SetCheck(mode == 2 ? BST_CHECKED : BST_UNCHECKED);
 }
 
 void COptionsDlg::SetTzeitMode(int mode)
@@ -1473,6 +1599,34 @@ void COptionsDlg::ApplyAlotPreset()
     else if (sel == 1) { SetAlotMode(1); SetEditValue(m_editCustomAlot, 72.0); }
     else { SetAlotMode(1); SetEditValue(m_editCustomAlot, 90.0); }
     m_lastAlotMode = CurrentAlotMode();
+}
+
+void COptionsDlg::ApplyMisheyakirPreset()
+{
+    int sel = max(0, m_cmbMisheyakirShita.GetCurSel());
+    switch (sel)
+    {
+    case 0: SetMisheyakirMode(0); SetEditValue(m_editCustomMisheyakir, 10.2); break;
+    case 1: SetMisheyakirMode(0); SetEditValue(m_editCustomMisheyakir, 11.5); break;
+    case 2: SetMisheyakirMode(1); SetEditValue(m_editCustomMisheyakir, 60.0); break;
+    case 3: SetMisheyakirMode(1); SetEditValue(m_editCustomMisheyakir, 72.0); break;
+    default: break;
+    }
+    m_lastMisheyakirMode = CurrentMisheyakirMode();
+}
+
+void COptionsDlg::ApplySofZmanPreset()
+{
+    int sel = max(0, m_cmbSofZmanShita.GetCurSel());
+    switch (sel)
+    {
+    case 0: SetSofZmanMode(0); SetEditValue(m_editCustomSofZman, 0.0); break;
+    case 1: SetSofZmanMode(0); SetEditValue(m_editCustomSofZman, 19.8); break;
+    case 2: SetSofZmanMode(1); SetEditValue(m_editCustomSofZman, 72.0); break;
+    case 3: SetSofZmanMode(0); SetEditValue(m_editCustomSofZman, 16.1); break;
+    default: break;
+    }
+    m_lastSofZmanMode = CurrentSofZmanMode();
 }
 
 void COptionsDlg::ApplyTzeitPreset()
@@ -1523,6 +1677,34 @@ static double ConvertTzeitValue(int oldMode, int newMode, double value)
     return value;
 }
 
+static double ConvertMisheyakirValue(int oldMode, int newMode, double value)
+{
+    if (oldMode == newMode)
+        return value;
+    if (newMode == 0)
+        return (value >= 70.0) ? 16.1 : 10.2;
+    if (oldMode == 0)
+        return (value >= 15.0) ? 72.0 : 60.0;
+    return value;
+}
+
+static double ConvertSofZmanValue(int oldMode, int newMode, double value)
+{
+    if (oldMode == newMode)
+        return value;
+    if (newMode == 0)
+    {
+        if (value <= 0.01) return 0.0;
+        return (value >= 85.0) ? 19.8 : 16.1;
+    }
+    if (oldMode == 0)
+    {
+        if (value <= 0.01) return 0.0;
+        return (value >= 18.0) ? 90.0 : 72.0;
+    }
+    return value;
+}
+
 void COptionsDlg::ConvertAlotMode(int newMode)
 {
     int oldMode = m_lastAlotMode;
@@ -1530,6 +1712,24 @@ void COptionsDlg::ConvertAlotMode(int newMode)
     SetAlotMode(newMode);
     SetEditValue(m_editCustomAlot, ConvertAlotValue(oldMode, newMode, oldValue));
     m_lastAlotMode = newMode;
+}
+
+void COptionsDlg::ConvertMisheyakirMode(int newMode)
+{
+    int oldMode = m_lastMisheyakirMode;
+    double oldValue = GetEditValue(m_editCustomMisheyakir, oldMode == 0 ? 10.2 : 60.0);
+    SetMisheyakirMode(newMode);
+    SetEditValue(m_editCustomMisheyakir, ConvertMisheyakirValue(oldMode, newMode, oldValue));
+    m_lastMisheyakirMode = newMode;
+}
+
+void COptionsDlg::ConvertSofZmanMode(int newMode)
+{
+    int oldMode = m_lastSofZmanMode;
+    double oldValue = GetEditValue(m_editCustomSofZman, oldMode == 0 ? 0.0 : 72.0);
+    SetSofZmanMode(newMode);
+    SetEditValue(m_editCustomSofZman, ConvertSofZmanValue(oldMode, newMode, oldValue));
+    m_lastSofZmanMode = newMode;
 }
 
 void COptionsDlg::ConvertTzeitMode(int newMode)
@@ -1582,6 +1782,18 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
+    if (id == IDC_OPT_MISHEYAKIR_SHITA && code == CBN_SELCHANGE)
+    {
+        ApplyMisheyakirPreset();
+        SetDirty(true);
+        return TRUE;
+    }
+    if (id == IDC_OPT_SOFZMAN_SHITA && code == CBN_SELCHANGE)
+    {
+        ApplySofZmanPreset();
+        SetDirty(true);
+        return TRUE;
+    }
     if (id == IDC_OPT_TZEIT_SHITA && code == CBN_SELCHANGE)
     {
         ApplyTzeitPreset();
@@ -1597,6 +1809,12 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (id == IDC_OPT_ALOT_DEG)    { ConvertAlotMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_MIN)    { ConvertAlotMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_ZMANIS) { ConvertAlotMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_DEG)    { ConvertMisheyakirMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_MIN)    { ConvertMisheyakirMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_ZMANIS) { ConvertMisheyakirMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_DEG)    { ConvertSofZmanMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_MIN)    { ConvertSofZmanMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_ZMANIS) { ConvertSofZmanMode(2); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_TZEIT_DEG)    { ConvertTzeitMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_TZEIT_MIN)    { ConvertTzeitMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_TZEIT_ZMANIS) { ConvertTzeitMode(2); SetDirty(true); return TRUE; }
@@ -1656,12 +1874,20 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.showChatzosOnFasts = (m_chkChatzosOnFasts.GetCheck() == BST_CHECKED);
     m_result.customAlotMode = (m_radAlotMinutes.GetCheck() == BST_CHECKED) ? 1
         : (m_radAlotZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
+    m_result.customMisheyakirMode = (m_radMisheyakirMinutes.GetCheck() == BST_CHECKED) ? 1
+        : (m_radMisheyakirZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
+    m_result.customSofZmanMode = (m_radSofZmanMinutes.GetCheck() == BST_CHECKED) ? 1
+        : (m_radSofZmanZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
     m_result.customTzeitMode = (m_radTzeitMinutes.GetCheck() == BST_CHECKED) ? 1
         : (m_radTzeitZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
 
     CString customValue;
     m_editCustomAlot.GetWindowText(customValue);
     m_result.customAlotValue = max(0.1, _wtof(customValue));
+    m_editCustomMisheyakir.GetWindowText(customValue);
+    m_result.customMisheyakirValue = max(0.1, _wtof(customValue));
+    m_editCustomSofZman.GetWindowText(customValue);
+    m_result.customSofZmanValue = max(0.0, _wtof(customValue));
     m_editCustomTzeit.GetWindowText(customValue);
     m_result.customTzeitValue = max(0.1, _wtof(customValue));
 
