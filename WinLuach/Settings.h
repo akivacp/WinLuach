@@ -94,6 +94,13 @@ struct AppSettings
     bool         minimizeToTray = false;
     int          minimizeTrayWhen = 0; // 0=minimized, 1=closed, 2=minimized or closed
     int          trayTextColor = 0x00FFFF; // COLORREF-style RGB, default yellow
+    bool         trayBackEnabled = false;
+    int          trayBackColor = 0x000000; // COLORREF-style RGB
+    std::wstring trayFontFace = L"Arial";
+    int          trayFontSize = 0; // 0 = fit icon automatically
+    bool         trayFontBold = true;
+    bool         trayFontItalic = false;
+    int          trayNumberStyle = 0; // 0=Hebrew letters, 1=English digits
     uint32_t     trayTooltipZmanimMask = (1u << 2) | (1u << 9) | (1u << 10); // netz, shkiah, tzais
     bool         minimizeOnStartup = false;
     bool         startWithWindows = false;
@@ -109,6 +116,11 @@ struct AppSettings
     uint32_t notifyZmanimMask = 0;   // selectable zmanim checkboxes
     int  notifySefirahStyle   = 0;   // sefirah reminders
     std::wstring notifySefirahTime = L"9:00 PM";
+    int  notifySefirahMode = 0;      // 0=manual time, 1=relative to zman
+    int  notifySefirahOffsetMinutes = 0;
+    int  notifySefirahOffsetDir = 1; // 0=before, 1=after
+    int  notifySefirahBase = 1;      // 0=sunset, 1=tzais, 2=other selected zman
+    int  notifySefirahOtherZman = 9; // zman bit index when base=other
     int  notifyMoadimStyle    = 0;   // moadim reminder notifications
     std::wstring notifyMoadimOffsets; // e.g. "1 day; 1 week"
     int  notifyParshaStyle    = 0;
@@ -134,8 +146,8 @@ struct AppSettings
     bool         printShowFooter   = true;
 
     // --- Zmanim shita ---
-    // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90
-    int          zmanimShita = 0;
+    // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90 (default)
+    int          zmanimShita = 2;
     // alotShita: 0=16.1deg(GRA), 1=72min, 2=90min
     int          alotShita   = 0;
     // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop
@@ -182,18 +194,26 @@ struct AppSettings
     int          countdownTitleFontSize = 14;
     int          countdownTitleTextColor = 0x00323232;
     int          countdownTitleBackColor = 0x00FFFFFF;
+    bool         countdownTitleBold = true;
+    bool         countdownTitleItalic = false;
     std::wstring countdownClockFontFace = L"Segoe UI";
     int          countdownClockFontSize = 28;
     int          countdownClockTextColor = 0x000000FF;
     int          countdownClockBackColor = 0x00FFFFFF;
+    bool         countdownClockBold = true;
+    bool         countdownClockItalic = false;
     std::wstring countdownCurrentFontFace = L"Segoe UI";
     int          countdownCurrentFontSize = 13;
     int          countdownCurrentTextColor = 0x00323232;
     int          countdownCurrentBackColor = 0x00FFFFFF;
+    bool         countdownCurrentBold = false;
+    bool         countdownCurrentItalic = false;
     std::wstring countdownLiveFontFace = L"Segoe UI";
     int          countdownLiveFontSize = 12;
     int          countdownLiveTextColor = 0x00505050;
     int          countdownLiveBackColor = 0x00FFFFFF;
+    bool         countdownLiveBold = false;
+    bool         countdownLiveItalic = false;
 
     // --- Window ---
     int          windowX = -1;   // -1 = use default

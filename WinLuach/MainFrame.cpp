@@ -27,14 +27,18 @@
 #include <commctrl.h>
 #include <cmath>
 #include <cwctype>
+#include <shlobj.h>
+#include <shobjidl.h>
 #pragma comment(lib, "Urlmon.lib")
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "Ole32.lib")
 
 #define ID_COUNTDOWN_OPTIONS    6101
 #define ID_COUNTDOWN_FULLSCREEN 6102
 #define ID_COUNTDOWN_MINIMIZE   6103
 #define ID_COUNTDOWN_MAXIMIZE   6104
 #define ID_COUNTDOWN_RESTORE    6105
+#define ID_COUNTDOWN_TOPMOST    6106
 
 static std::wstring WebCalTrim(const std::wstring& s)
 {
@@ -42,6 +46,73 @@ static std::wstring WebCalTrim(const std::wstring& s)
     if (first == std::wstring::npos) return L"";
     size_t last = s.find_last_not_of(L" \t\r\n");
     return s.substr(first, last - first + 1);
+}
+
+static std::wstring GetKnownFolderPathString(REFKNOWNFOLDERID folderId)
+{
+    PWSTR raw = nullptr;
+    if (FAILED(SHGetKnownFolderPath(folderId, 0, nullptr, &raw)) || !raw)
+        return L"";
+    std::wstring path = raw;
+    CoTaskMemFree(raw);
+    return path;
+}
+
+static std::wstring GetExePathString()
+{
+    wchar_t path[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, path, ARRAYSIZE(path));
+    return path;
+}
+
+static bool WriteWinLuachShortcut(const std::wstring& linkPath)
+{
+    std::wstring exe = GetExePathString();
+    if (exe.empty())
+        return false;
+
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    bool shouldUninit = SUCCEEDED(hrInit);
+    if (hrInit == RPC_E_CHANGED_MODE)
+        shouldUninit = false;
+
+    IShellLinkW* link = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+        IID_IShellLinkW, (void**)&link);
+    if (FAILED(hr) || !link)
+    {
+        if (shouldUninit) CoUninitialize();
+        return false;
+    }
+
+    link->SetPath(exe.c_str());
+    size_t slash = exe.find_last_of(L"\\/");
+    if (slash != std::wstring::npos)
+        link->SetWorkingDirectory(exe.substr(0, slash).c_str());
+    link->SetDescription(L"WinLuach Hebrew Calendar");
+
+    IPersistFile* file = nullptr;
+    hr = link->QueryInterface(IID_IPersistFile, (void**)&file);
+    if (SUCCEEDED(hr) && file)
+    {
+        hr = file->Save(linkPath.c_str(), TRUE);
+        file->Release();
+    }
+    link->Release();
+    if (shouldUninit) CoUninitialize();
+    return SUCCEEDED(hr);
+}
+
+static void ApplyWinLuachShortcut(REFKNOWNFOLDERID folderId, const wchar_t* fileName, bool enabled)
+{
+    std::wstring folder = GetKnownFolderPathString(folderId);
+    if (folder.empty())
+        return;
+    std::wstring path = folder + L"\\" + fileName;
+    if (enabled)
+        WriteWinLuachShortcut(path);
+    else
+        DeleteFileW(path.c_str());
 }
 
 static std::wstring DecodeUtf8(const std::string& bytes)
@@ -339,7 +410,7 @@ static std::wstring BoundaryLabel(const wchar_t* base, int mode, double value, b
     return (LPCWSTR)s;
 }
 
-static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int weight)
+static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int weight, bool italic = false)
 {
     font.DeleteObject();
     font.CreatePointFont(max(60, pointSize * 10), face.empty() ? L"Segoe UI" : face.c_str());
@@ -348,6 +419,7 @@ static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int w
     {
         font.DeleteObject();
         lf.lfWeight = weight;
+        lf.lfItalic = italic ? TRUE : FALSE;
         wcscpy_s(lf.lfFaceName, face.empty() ? L"Segoe UI" : face.c_str());
         HDC screen = ::GetDC(nullptr);
         int dpiY = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
@@ -370,6 +442,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 410; b.t.cy = 350;
         wcscpy_s(b.title, L"Countdown Options");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -431,7 +504,7 @@ protected:
 
         mkStatic(L"Use the color buttons to choose text and background colors.", 10, y, W - 20, 20);
         y += 28;
-        mkBtn(m_btnRestoreColors, L"Restore Default Colors", 10, y, 170, 5202);
+        mkBtn(m_btnRestoreColors, L"Restore Defaults", 10, y, 170, 5202);
 
         mkBtn(m_btnOK, L"OK", W - 238, rc.Height() - 34, 64, IDOK);
         mkBtn(m_btnApply, L"Apply", W - 166, rc.Height() - 34, 70, 5201);
@@ -456,7 +529,7 @@ protected:
             CRect(205, y, 246, y + 22), this, 5500 + m_nextId++);
         size.SetFont(pF);
         size.SetWindowText(sz);
-        colorBtn.Create(L"Color", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        colorBtn.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
             CRect(252, y, 302, y + 24), this, 5600 + m_nextId++);
         colorBtn.SetFont(pF);
         backBtn.Create(L"Back", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -469,13 +542,13 @@ protected:
         HWND h = (HWND)lParam;
         if (HIWORD(wParam) == BN_CLICKED && h)
         {
-            if (h == m_btnTitleColor.GetSafeHwnd()) return Pick(m_settings.countdownTitleTextColor);
+            if (h == m_btnTitleColor.GetSafeHwnd()) return PickFont(m_settings.countdownTitleFontFace, m_settings.countdownTitleFontSize, m_settings.countdownTitleTextColor, m_settings.countdownTitleBold, m_settings.countdownTitleItalic);
             if (h == m_btnTitleBack.GetSafeHwnd()) return Pick(m_settings.countdownTitleBackColor);
-            if (h == m_btnClockColor.GetSafeHwnd()) return Pick(m_settings.countdownClockTextColor);
+            if (h == m_btnClockColor.GetSafeHwnd()) return PickFont(m_settings.countdownClockFontFace, m_settings.countdownClockFontSize, m_settings.countdownClockTextColor, m_settings.countdownClockBold, m_settings.countdownClockItalic);
             if (h == m_btnClockBack.GetSafeHwnd()) return Pick(m_settings.countdownClockBackColor);
-            if (h == m_btnCurrentColor.GetSafeHwnd()) return Pick(m_settings.countdownCurrentTextColor);
+            if (h == m_btnCurrentColor.GetSafeHwnd()) return PickFont(m_settings.countdownCurrentFontFace, m_settings.countdownCurrentFontSize, m_settings.countdownCurrentTextColor, m_settings.countdownCurrentBold, m_settings.countdownCurrentItalic);
             if (h == m_btnCurrentBack.GetSafeHwnd()) return Pick(m_settings.countdownCurrentBackColor);
-            if (h == m_btnLiveColor.GetSafeHwnd()) return Pick(m_settings.countdownLiveTextColor);
+            if (h == m_btnLiveColor.GetSafeHwnd()) return PickFont(m_settings.countdownLiveFontFace, m_settings.countdownLiveFontSize, m_settings.countdownLiveTextColor, m_settings.countdownLiveBold, m_settings.countdownLiveItalic);
             if (h == m_btnLiveBack.GetSafeHwnd()) return Pick(m_settings.countdownLiveBackColor);
         }
         if (LOWORD(wParam) == 5201)
@@ -485,7 +558,7 @@ protected:
         }
         if (LOWORD(wParam) == 5202)
         {
-            RestoreDefaultColors();
+            RestoreDefaults();
             Apply();
             return TRUE;
         }
@@ -503,6 +576,34 @@ protected:
         CColorDialog dlg((COLORREF)target, CC_FULLOPEN, this);
         if (dlg.DoModal() == IDOK)
             target = (int)dlg.GetColor();
+        return TRUE;
+    }
+
+    BOOL PickFont(std::wstring& face, int& size, int& color, bool& bold, bool& italic)
+    {
+        LOGFONT lf = {};
+        wcscpy_s(lf.lfFaceName, face.empty() ? L"Segoe UI" : face.c_str());
+        HDC screen = ::GetDC(nullptr);
+        int dpiY = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
+        if (screen) ::ReleaseDC(nullptr, screen);
+        lf.lfHeight = -MulDiv(max(6, size), dpiY, 72);
+        lf.lfWeight = bold ? FW_BOLD : FW_NORMAL;
+        lf.lfItalic = italic ? TRUE : FALSE;
+
+        CFontDialog dlg(&lf, CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT, nullptr, this);
+        dlg.m_cf.rgbColors = (COLORREF)color;
+        if (dlg.DoModal() == IDOK)
+        {
+            LOGFONT chosen = {};
+            dlg.GetCurrentFont(&chosen);
+            face = chosen.lfFaceName;
+            size = max(6, (int)dlg.GetSize() / 10);
+            color = (int)dlg.GetColor();
+            bold = chosen.lfWeight >= FW_SEMIBOLD;
+            italic = chosen.lfItalic != 0;
+            SyncFontEdits();
+            if (m_btnApply.GetSafeHwnd()) m_btnApply.EnableWindow(TRUE);
+        }
         return TRUE;
     }
 
@@ -525,9 +626,23 @@ protected:
         Read();
         if (m_pFrame)
             m_pFrame->ApplyAndSaveSettings(m_settings);
+        if (m_btnApply.GetSafeHwnd()) m_btnApply.EnableWindow(FALSE);
     }
 
-    void RestoreDefaultColors()
+    void SyncFontEdits()
+    {
+        auto setSize = [](CEdit& e, int v) { CString s; s.Format(L"%d", v); e.SetWindowText(s); };
+        m_editTitleFace.SetWindowText(m_settings.countdownTitleFontFace.c_str());
+        setSize(m_editTitleSize, m_settings.countdownTitleFontSize);
+        m_editClockFace.SetWindowText(m_settings.countdownClockFontFace.c_str());
+        setSize(m_editClockSize, m_settings.countdownClockFontSize);
+        m_editCurrentFace.SetWindowText(m_settings.countdownCurrentFontFace.c_str());
+        setSize(m_editCurrentSize, m_settings.countdownCurrentFontSize);
+        m_editLiveFace.SetWindowText(m_settings.countdownLiveFontFace.c_str());
+        setSize(m_editLiveSize, m_settings.countdownLiveFontSize);
+    }
+
+    void RestoreDefaults()
     {
         AppSettings defaults;
         m_settings.countdownTitleTextColor = defaults.countdownTitleTextColor;
@@ -538,6 +653,23 @@ protected:
         m_settings.countdownCurrentBackColor = defaults.countdownCurrentBackColor;
         m_settings.countdownLiveTextColor = defaults.countdownLiveTextColor;
         m_settings.countdownLiveBackColor = defaults.countdownLiveBackColor;
+        m_settings.countdownTitleFontFace = defaults.countdownTitleFontFace;
+        m_settings.countdownTitleFontSize = defaults.countdownTitleFontSize;
+        m_settings.countdownTitleBold = defaults.countdownTitleBold;
+        m_settings.countdownTitleItalic = defaults.countdownTitleItalic;
+        m_settings.countdownClockFontFace = defaults.countdownClockFontFace;
+        m_settings.countdownClockFontSize = defaults.countdownClockFontSize;
+        m_settings.countdownClockBold = defaults.countdownClockBold;
+        m_settings.countdownClockItalic = defaults.countdownClockItalic;
+        m_settings.countdownCurrentFontFace = defaults.countdownCurrentFontFace;
+        m_settings.countdownCurrentFontSize = defaults.countdownCurrentFontSize;
+        m_settings.countdownCurrentBold = defaults.countdownCurrentBold;
+        m_settings.countdownCurrentItalic = defaults.countdownCurrentItalic;
+        m_settings.countdownLiveFontFace = defaults.countdownLiveFontFace;
+        m_settings.countdownLiveFontSize = defaults.countdownLiveFontSize;
+        m_settings.countdownLiveBold = defaults.countdownLiveBold;
+        m_settings.countdownLiveItalic = defaults.countdownLiveItalic;
+        SyncFontEdits();
     }
 
 private:
@@ -565,10 +697,10 @@ public:
         LPCTSTR cls = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW,
             ::LoadCursor(nullptr, IDC_ARROW), (HBRUSH)(COLOR_WINDOW + 1),
             ::LoadIcon(nullptr, IDI_APPLICATION));
-        return CFrameWnd::Create(cls, L"WinLuach Countdown Clock",
+        return CFrameWnd::CreateEx(WS_EX_APPWINDOW, cls, L"WinLuach Countdown Clock",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
                 WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-            CRect(180, 180, 560, 370), m_pFrame);
+            CRect(180, 180, 560, 370), nullptr, 0);
     }
 
 protected:
@@ -581,6 +713,7 @@ protected:
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_OPTIONS, L"&Options...");
         opt.AppendMenu(MF_SEPARATOR);
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_FULLSCREEN, L"&Full Screen\tF11");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_TOPMOST, L"Always on &Top\tAlt+T");
         opt.AppendMenu(MF_SEPARATOR);
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MINIMIZE, L"Mi&nimize");
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MAXIMIZE, L"Ma&ximize");
@@ -619,13 +752,20 @@ protected:
 
     afx_msg void OnClockOptions()
     {
-        CCountdownOptionsDlg dlg(m_pFrame, this);
+        CCountdownOptionsDlg dlg(m_pFrame, nullptr);
         dlg.DoModal();
     }
 
     afx_msg void OnClockFullscreen()
     {
         ToggleFullscreen();
+    }
+
+    afx_msg void OnClockTopmost()
+    {
+        m_alwaysOnTop = !m_alwaysOnTop;
+        SetWindowPos(m_alwaysOnTop ? &wndTopMost : &wndNoTopMost,
+            0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     }
 
     afx_msg void OnClockMinimize()
@@ -653,6 +793,11 @@ protected:
         if (pMsg && pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_F11)
         {
             ToggleFullscreen();
+            return TRUE;
+        }
+        if (pMsg && pMsg->message == WM_SYSKEYDOWN && pMsg->wParam == 'T')
+        {
+            OnClockTopmost();
             return TRUE;
         }
         return CFrameWnd::PreTranslateMessage(pMsg);
@@ -716,18 +861,31 @@ protected:
             DisplayZmanimTimes dz = m_pFrame->BuildDisplayZmanim(g, z, isDst);
             struct Item { const wchar_t* label; TimeOfDay time; };
             std::vector<Item> items = {
-                { L"Alos Hashachar", dz.alot },
-                { L"Misheyakir", dz.misheyakir },
-                { L"Hanetz", z.hanetz },
-                { L"Sof Shema", dz.sofShema },
-                { L"Sof Tefilla", dz.sofTefilla },
-                { L"Chatzos", z.chatzot },
-                { L"Mincha Gedola", dz.minchaGedola },
-                { L"Mincha Ketana", dz.minchaKetana },
-                { L"Plag HaMincha", dz.plagMincha },
-                { L"Shkiah", z.shkia },
-                { L"Tzeis", dz.tzeit },
-                { L"Candle Lighting", z.candleLighting },
+                { L"Alos Hashachar (GRA)",   z.alot_GRA          },
+                { L"Alos Hashachar (MA72)",  z.alot_MA72         },
+                { L"Alos Hashachar (MA90)",  z.alot_MA90         },
+                { L"Misheyakir",             dz.misheyakir       },
+                { L"Hanetz",                 z.hanetz            },
+                { L"Sof Shema (GRA)",        z.sofShema_GRA      },
+                { L"Sof Shema (MA72)",       z.sofShema_MA72     },
+                { L"Sof Shema (MA90)",       z.sofShema_MA90     },
+                { L"Sof Tefilla (GRA)",      z.sofTefilla_GRA    },
+                { L"Sof Tefilla (MA72)",     z.sofTefilla_MA72   },
+                { L"Sof Tefilla (MA90)",     z.sofTefilla_MA90   },
+                { L"Chatzos",                z.chatzot           },
+                { L"Mincha Gedola (GRA)",    z.minchaGedola_GRA  },
+                { L"Mincha Gedola (MA72)",   z.minchaGedola_MA72 },
+                { L"Mincha Gedola (MA90)",   z.minchaGedola_MA90 },
+                { L"Mincha Ketana (GRA)",    z.minchaKetana_GRA  },
+                { L"Mincha Ketana (MA72)",   z.minchaKetana_MA72 },
+                { L"Plag HaMincha (GRA)",    z.plagMincha_GRA    },
+                { L"Plag HaMincha (MA72)",   z.plagMincha_MA72   },
+                { L"Plag HaMincha (MA90)",   z.plagMincha_MA90   },
+                { L"Shkiah",                 z.shkia             },
+                { L"Tzeit (GRA)",            z.tzeit_GRA         },
+                { L"Tzeit (MA72)",           z.tzeit_MA72        },
+                { L"Tzeit (MA90)",           z.tzeit_MA90        },
+                { L"Candle Lighting",        z.candleLighting    },
             };
             for (const auto& item : items)
             {
@@ -765,10 +923,14 @@ protected:
 
         double scale = min(max(0.55, rc.Width() / 380.0), max(0.55, rc.Height() / 190.0));
         CFont fTitle, fClock, fCurrent, fLive;
-        MakeFont(fTitle, s.countdownTitleFontFace, (int)round(s.countdownTitleFontSize * scale), FW_BOLD);
-        MakeFont(fClock, s.countdownClockFontFace, (int)round(s.countdownClockFontSize * scale), FW_BOLD);
-        MakeFont(fCurrent, s.countdownCurrentFontFace, (int)round(s.countdownCurrentFontSize * scale), FW_NORMAL);
-        MakeFont(fLive, s.countdownLiveFontFace, (int)round(s.countdownLiveFontSize * scale), FW_NORMAL);
+        MakeFont(fTitle, s.countdownTitleFontFace, (int)round(s.countdownTitleFontSize * scale),
+            s.countdownTitleBold ? FW_BOLD : FW_NORMAL, s.countdownTitleItalic);
+        MakeFont(fClock, s.countdownClockFontFace, (int)round(s.countdownClockFontSize * scale),
+            s.countdownClockBold ? FW_BOLD : FW_NORMAL, s.countdownClockItalic);
+        MakeFont(fCurrent, s.countdownCurrentFontFace, (int)round(s.countdownCurrentFontSize * scale),
+            s.countdownCurrentBold ? FW_BOLD : FW_NORMAL, s.countdownCurrentItalic);
+        MakeFont(fLive, s.countdownLiveFontFace, (int)round(s.countdownLiveFontSize * scale),
+            s.countdownLiveBold ? FW_BOLD : FW_NORMAL, s.countdownLiveItalic);
         dc.SetBkMode(OPAQUE);
 
         auto draw = [&](const CString& text, CFont& font, COLORREF textColor, COLORREF bg, const CRect& area, UINT flags) {
@@ -802,6 +964,7 @@ protected:
 private:
     CMainFrame* m_pFrame = nullptr;
     bool m_fullScreen = false;
+    bool m_alwaysOnTop = false;
     DWORD m_restoreStyle = 0;
     WINDOWPLACEMENT m_restorePlacement = { sizeof(WINDOWPLACEMENT) };
 };
@@ -814,6 +977,7 @@ BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
     ON_WM_PAINT()
     ON_COMMAND(ID_COUNTDOWN_OPTIONS, &CCountdownClockWnd::OnClockOptions)
     ON_COMMAND(ID_COUNTDOWN_FULLSCREEN, &CCountdownClockWnd::OnClockFullscreen)
+    ON_COMMAND(ID_COUNTDOWN_TOPMOST, &CCountdownClockWnd::OnClockTopmost)
     ON_COMMAND(ID_COUNTDOWN_MINIMIZE, &CCountdownClockWnd::OnClockMinimize)
     ON_COMMAND(ID_COUNTDOWN_MAXIMIZE, &CCountdownClockWnd::OnClockMaximize)
     ON_COMMAND(ID_COUNTDOWN_RESTORE, &CCountdownClockWnd::OnClockRestore)
@@ -1797,7 +1961,8 @@ public:
     INT_PTR DoModal() override {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
-        b.t.cx = 260; b.t.cy = 400;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
+        b.t.cx = 320; b.t.cy = 520;
         wcscpy_s(b.title, L"Day Details");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -2060,18 +2225,41 @@ protected:
         auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
             if (t.IsValid()) drawRow(lbl, FormatTime(t, m_use24hr), RGB(20, 60, 20));
         };
-        zRow(L"Alot HaShachar:",     dz.alot);
-        zRow(L"Misheyakir:",          dz.misheyakir);
+        zRow(L"Alot (custom):",       dz.alot);
+        zRow(L"Alot GRA 16.1:",       m_z.alot_GRA);
+        zRow(L"Alot MA72:",           m_z.alot_MA72);
+        zRow(L"Alot MA90:",           m_z.alot_MA90);
+        zRow(L"Misheyakir (custom):", dz.misheyakir);
+        zRow(L"Misheyakir 10.2:",     m_z.misheyakir_10);
+        zRow(L"Misheyakir 11.5:",     m_z.misheyakir_11);
         zRow(L"Hanetz (Netz):",       m_z.hanetz);
-        zRow(L"Sof Shema:",           dz.sofShema);
-        zRow(L"Sof Tefilla:",         dz.sofTefilla);
+        zRow(L"Sof Shema custom:",    dz.sofShema);
+        zRow(L"Sof Shema GRA:",       m_z.sofShema_GRA);
+        zRow(L"Sof Shema MA72:",      m_z.sofShema_MA72);
+        zRow(L"Sof Shema MA90:",      m_z.sofShema_MA90);
+        zRow(L"Sof Tefilla custom:",  dz.sofTefilla);
+        zRow(L"Sof Tefilla GRA:",     m_z.sofTefilla_GRA);
+        zRow(L"Sof Tefilla MA72:",    m_z.sofTefilla_MA72);
+        zRow(L"Sof Tefilla MA90:",    m_z.sofTefilla_MA90);
         zRow(L"Chatzot:",             m_z.chatzot);
-        zRow(L"Mincha Gedola:",       dz.minchaGedola);
-        zRow(L"Mincha Ketana:",       dz.minchaKetana);
-        zRow(L"Plag HaMincha:",       dz.plagMincha);
+        zRow(L"Mincha Gedola custom:",dz.minchaGedola);
+        zRow(L"Mincha Gedola GRA:",   m_z.minchaGedola_GRA);
+        zRow(L"Mincha Gedola MA72:",  m_z.minchaGedola_MA72);
+        zRow(L"Mincha Gedola MA90:",  m_z.minchaGedola_MA90);
+        zRow(L"Mincha Ketana custom:",dz.minchaKetana);
+        zRow(L"Mincha Ketana GRA:",   m_z.minchaKetana_GRA);
+        zRow(L"Mincha Ketana MA72:",  m_z.minchaKetana_MA72);
+        zRow(L"Mincha Ketana MA90:",  m_z.minchaKetana_MA90);
+        zRow(L"Plag custom:",         dz.plagMincha);
+        zRow(L"Plag GRA:",            m_z.plagMincha_GRA);
+        zRow(L"Plag MA72:",           m_z.plagMincha_MA72);
+        zRow(L"Plag MA90:",           m_z.plagMincha_MA90);
         if (m_z.candleLighting.IsValid()) zRow(L"Candle Lighting:", m_z.candleLighting);
         zRow(L"Shkia (Sunset):",      m_z.shkia);
-        zRow(L"Tzais HaKochavim:",    dz.tzeit);
+        zRow(L"Tzais (custom):",      dz.tzeit);
+        zRow(L"Tzais GRA 8.5:",       m_z.tzeit_GRA);
+        zRow(L"Tzais MA72:",          m_z.tzeit_MA72);
+        zRow(L"Tzais MA90:",          m_z.tzeit_MA90);
         if (y + 17 < H - 40 && dz.shaahZmanit > 0.0) {
             int szMin = (int)round(dz.shaahZmanit);
             CString szs; szs.Format(L"%d:%02d  (%d min)", szMin/60, szMin%60, szMin);
@@ -2114,6 +2302,7 @@ public:
     INT_PTR DoModal() override {
         struct Tmpl { DLGTEMPLATE t; WORD m, c; wchar_t title[30]; } b = {};
         b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 230; b.t.cy = 440;
         wcscpy_s(b.title, L"Print Zmanim Month");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
@@ -2630,7 +2819,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     m_pSidebar = new CSidebarPanel(this);
     m_pSidebar->Create(nullptr, nullptr,
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL,
         CRect(0, 0, 100, 100), this, 1002);
 
     m_pZmanim = new CZmanimPanel(this);
@@ -3018,7 +3207,7 @@ void CMainFrame::OnCalPrintMonth()
 
 void CMainFrame::OnCalPrintZmanim()
 {
-    CZmanimPrintDlg dlg(m_viewYear, m_viewMonth, this, this);
+    CZmanimPrintDlg dlg(m_viewYear, m_viewMonth, this, nullptr);
     dlg.DoModal();
 }
 
@@ -3902,8 +4091,8 @@ void CMainFrame::CheckZmanNotifications()
         { 0, L"Alos Hashachar", z.alot_GRA },
         { 1, L"Misheyakir", z.misheyakir_10 },
         { 2, L"Hanetz", z.hanetz },
-        { 3, L"Sof Zman Shema", z.sofShema_GRA },
-        { 4, L"Sof Zman Tefilla", z.sofTefilla_GRA },
+        { 3, L"Sof Zman Shema (GRA)", z.sofShema_GRA },
+        { 4, L"Sof Zman Tefilla (GRA)", z.sofTefilla_GRA },
         { 5, L"Chatzos", z.chatzot },
         { 6, L"Mincha Gedola", z.minchaGedola_GRA },
         { 7, L"Mincha Ketana", z.minchaKetana_GRA },
@@ -3911,6 +4100,8 @@ void CMainFrame::CheckZmanNotifications()
         { 9, L"Shkiah", z.shkia },
         { 10, L"Tzeis", z.tzeit_GRA },
         { 11, L"Candle Lighting", z.candleLighting },
+        { 15, L"Sof Zman Shema (MA)", z.sofShema_MA72 },
+        { 16, L"Sof Zman Tefilla (MA)", z.sofTefilla_MA72 },
     };
 
     DayOfWeek dow = GetDayOfWeek(today);
@@ -3956,30 +4147,103 @@ void CMainFrame::CheckZmanNotifications()
             m_sentZmanNotificationKeys.begin() + (m_sentZmanNotificationKeys.size() - 128));
 }
 
+static int TimeMinutesOfDay(const TimeOfDay& t)
+{
+    return t.IsValid() ? (t.hour * 60 + t.minute) : -1;
+}
+
+static TimeOfDay PickNotificationZmanByBit(int bit, const ZmanimResult& z, const DisplayZmanimTimes& dz)
+{
+    switch (bit)
+    {
+    case 0:  return dz.alot;
+    case 1:  return dz.misheyakir;
+    case 2:  return z.hanetz;
+    case 3:  return z.sofShema_GRA;
+    case 4:  return z.sofTefilla_GRA;
+    case 5:  return z.chatzot;
+    case 6:  return dz.minchaGedola;
+    case 7:  return dz.minchaKetana;
+    case 8:  return dz.plagMincha;
+    case 9:  return z.shkia;
+    case 10: return dz.tzeit;
+    case 11: return z.candleLighting;
+    case 15: return z.sofShema_MA72;
+    case 16: return z.sofTefilla_MA72;
+    default: return TimeOfDay();
+    }
+}
+
 void CMainFrame::CheckSefirahNotification()
 {
     const AppSettings& s = theApp.m_settings;
     if (s.notifySefirahStyle <= 0)
         return;
 
-    int remindHour = 0, remindMinute = 0;
-    if (!ParseUserClockTime(s.notifySefirahTime, remindHour, remindMinute))
-        return;
-
     SYSTEMTIME st = {};
     GetLocalTime(&st);
+    GregorianDate today(st.wYear, st.wMonth, st.wDay);
+    bool isDst = IsDST(today, m_location);
+    ZmanimResult z = CalculateZmanim(today, m_location, isDst);
+    z.candleLighting = AddMinutes(z.shkia, -s.candleLightingMinutes);
+    DisplayZmanimTimes dz = BuildDisplayZmanim(today, z, isDst);
+
+    int remindHour = 0;
+    int remindMinute = 0;
+    bool countTomorrow = false;
+    if (s.notifySefirahMode == 1)
+    {
+        TimeOfDay base;
+        if (s.notifySefirahBase == 0)
+        {
+            base = z.shkia;
+            countTomorrow = true;
+        }
+        else if (s.notifySefirahBase == 1)
+        {
+            base = dz.tzeit;
+            countTomorrow = true;
+        }
+        else
+        {
+            base = PickNotificationZmanByBit(s.notifySefirahOtherZman, z, dz);
+            int shkiaMin = TimeMinutesOfDay(z.shkia);
+            int baseMin = TimeMinutesOfDay(base);
+            countTomorrow = (shkiaMin >= 0 && baseMin >= shkiaMin);
+        }
+        if (!base.IsValid())
+            return;
+        TimeOfDay remind = AddMinutes(base,
+            (s.notifySefirahOffsetDir == 0 ? -1 : 1) * max(0, s.notifySefirahOffsetMinutes));
+        if (!remind.IsValid())
+            return;
+        remindHour = remind.hour;
+        remindMinute = remind.minute;
+    }
+    else
+    {
+        if (!ParseUserClockTime(s.notifySefirahTime, remindHour, remindMinute))
+            return;
+        int manualMin = remindHour * 60 + remindMinute;
+        int shkiaMin = TimeMinutesOfDay(z.shkia);
+        countTomorrow = (shkiaMin >= 0 && manualMin >= shkiaMin);
+    }
+
     if (st.wHour != remindHour || st.wMinute != remindMinute)
         return;
 
-    GregorianDate today(st.wYear, st.wMonth, st.wDay);
-    HebrewDate h = GregorianToHebrew(today);
+    GregorianDate omerDate = today;
+    if (countTomorrow)
+        omerDate = JDNToGregorian(GregorianToJDN(today) + 1);
+    HebrewDate h = GregorianToHebrew(omerDate);
     OmerInfo omer = GetOmer(h);
     if (!omer.isOmerDay)
         return;
 
     wchar_t key[80];
-    swprintf_s(key, L"%04d%02d%02d-sefirah-%02d%02d",
-        today.year, today.month, today.day, remindHour, remindMinute);
+    swprintf_s(key, L"%04d%02d%02d-sefirah-%04d%02d%02d-%02d%02d",
+        today.year, today.month, today.day,
+        omerDate.year, omerDate.month, omerDate.day, remindHour, remindMinute);
     std::wstring k = key;
     if (std::find(m_sentZmanNotificationKeys.begin(), m_sentZmanNotificationKeys.end(), k) !=
         m_sentZmanNotificationKeys.end())
@@ -4131,8 +4395,8 @@ CString CMainFrame::BuildTrayTooltip()
         { 0, L"Alos", dz.alot },
         { 1, L"Misheyakir", dz.misheyakir },
         { 2, L"Netz", z.hanetz },
-        { 3, L"Sof Shema", dz.sofShema },
-        { 4, L"Sof Tefilla", dz.sofTefilla },
+        { 3, L"Sof Shema GRA", z.sofShema_GRA },
+        { 4, L"Sof Tefilla GRA", z.sofTefilla_GRA },
         { 5, L"Chatzos", z.chatzot },
         { 6, L"Mincha Gedola", dz.minchaGedola },
         { 7, L"Mincha Ketana", dz.minchaKetana },
@@ -4140,6 +4404,8 @@ CString CMainFrame::BuildTrayTooltip()
         { 9, L"Shkiah", z.shkia },
         { 10, L"Tzais", dz.tzeit },
         { 11, L"Candles", z.candleLighting },
+        { 15, L"Sof Shema MA", z.sofShema_MA72 },
+        { 16, L"Sof Tefilla MA", z.sofTefilla_MA72 },
     };
 
     HebrewDate h = GregorianToHebrew(g);
@@ -4266,27 +4532,36 @@ HICON CMainFrame::CreateTrayDateIcon(const HebrewDate& h) const
     HBITMAP hOld = (HBITMAP)SelectObject(hdc, hBmp);
     HBITMAP hOldMask = (HBITMAP)SelectObject(hdcMask, hMask);
 
+    const AppSettings& s = theApp.m_settings;
     RECT fill = { 0, 0, size, size };
-    FillRect(hdc, &fill, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    FillRect(hdcMask, &fill, (HBRUSH)GetStockObject(WHITE_BRUSH));
+    HBRUSH backBrush = CreateSolidBrush((COLORREF)s.trayBackColor);
+    FillRect(hdc, &fill, s.trayBackEnabled && backBrush ? backBrush : (HBRUSH)GetStockObject(BLACK_BRUSH));
+    FillRect(hdcMask, &fill, (HBRUSH)GetStockObject(s.trayBackEnabled ? BLACK_BRUSH : WHITE_BRUSH));
+    if (backBrush)
+        DeleteObject(backBrush);
 
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, (COLORREF)theApp.m_settings.trayTextColor);
+    SetTextColor(hdc, (COLORREF)s.trayTextColor);
     SetBkMode(hdcMask, TRANSPARENT);
     SetTextColor(hdcMask, RGB(0, 0, 0));
 
-    std::wstring txt = HebrewDayLetters(h.day);
+    std::wstring txt = (s.trayNumberStyle == 1) ? std::to_wstring(h.day) : HebrewDayLetters(h.day);
     HFONT hFont = nullptr;
     HFONT hOldFont = nullptr;
     HFONT hOldMaskFont = nullptr;
     SIZE textSize = {};
 
-    for (int height = size + 10; height >= size - 2; height--)
+    int firstHeight = s.trayFontSize > 0 ? max(6, s.trayFontSize) : size + 10;
+    int lastHeight = s.trayFontSize > 0 ? max(6, s.trayFontSize) : size - 2;
+    int weight = s.trayFontBold ? FW_HEAVY : FW_NORMAL;
+    BOOL italic = s.trayFontItalic ? TRUE : FALSE;
+    const wchar_t* face = s.trayFontFace.empty() ? L"Arial" : s.trayFontFace.c_str();
+    for (int height = firstHeight; height >= lastHeight; height--)
     {
         HFONT testFont = CreateFontW(
-            -height, 0, 0, 0, FW_HEAVY, FALSE, FALSE, FALSE,
+            -height, 0, 0, 0, weight, italic, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Arial");
+            NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
         HFONT old = (HFONT)SelectObject(hdc, testFont);
         SIZE measured = {};
         GetTextExtentPoint32W(hdc, txt.c_str(), (int)txt.size(), &measured);
@@ -4304,9 +4579,9 @@ HICON CMainFrame::CreateTrayDateIcon(const HebrewDate& h) const
     if (!hFont)
     {
         hFont = CreateFontW(
-            -size, 0, 0, 0, FW_HEAVY, FALSE, FALSE, FALSE,
+            -size, 0, 0, 0, weight, italic, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Arial");
+            NONANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
         hOldFont = (HFONT)SelectObject(hdc, hFont);
         GetTextExtentPoint32W(hdc, txt.c_str(), (int)txt.size(), &textSize);
     }
@@ -4448,7 +4723,7 @@ void CMainFrame::OnOptionsPrefs()
     }
 
     COptionsDlg* dlg = new COptionsDlg(theApp.m_settings, this);
-    if (!dlg->CreateModeless(this))
+    if (!dlg->CreateModeless(nullptr))
     {
         delete dlg;
         MessageBox(L"Could not open Preferences.", L"WinLuach", MB_OK | MB_ICONERROR);
@@ -4463,6 +4738,8 @@ void CMainFrame::ApplyAndSaveSettings(const AppSettings& s)
     theApp.m_settings = s;
     ApplySettings(theApp.m_settings);
     SaveSettings(theApp.m_settings);
+    ApplyWinLuachShortcut(FOLDERID_Startup, L"WinLuach.lnk", theApp.m_settings.startWithWindows);
+    ApplyWinLuachShortcut(FOLDERID_Desktop, L"WinLuach.lnk", theApp.m_settings.desktopShortcut);
     PopulateMonthCombo();
     UpdateMonthYearControls();
     if (m_minimizeToTray || m_showTrayIcon)
@@ -4750,7 +5027,7 @@ BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 
 void CMainFrame::OnCalPrint()
 {
-    CCalPrintDlg dlg(this, this);
+    CCalPrintDlg dlg(this, nullptr);
     if (dlg.DoModal() == IDOK)
         DoPrint(dlg.GetOptions(), this);
 }
@@ -4769,7 +5046,7 @@ void CMainFrame::OnCalPreview()
     opts.zmanimColumns = ps.printZmanimColMask;
     opts.showFooter    = ps.printShowFooter;
     opts.use24hr       = ps.use24Hour;
-    CCalPreviewDlg dlg(opts, this, this);
+    CCalPreviewDlg dlg(opts, this, nullptr);
     dlg.DoModal();
 }
 
@@ -4856,7 +5133,7 @@ void CMainFrame::OnCalGoTo()
 
 void CMainFrame::OpenDayViewForDate(const GregorianDate& g)
 {
-    CDayViewDlg dlg(g, this, this);
+    CDayViewDlg dlg(g, this, nullptr);
     dlg.DoModal();
 }
 

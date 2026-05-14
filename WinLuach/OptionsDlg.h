@@ -47,6 +47,9 @@ protected:
     virtual void PostNcDestroy() override;
     afx_msg void OnApply();
     afx_msg void OnTrayTextColor();
+    afx_msg void OnTrayBackColor();
+    afx_msg void OnTrayFont();
+    afx_msg void OnTrayDefaults();
     afx_msg void OnManageCals();
     afx_msg void OnPreviewNotification();
     afx_msg void OnAdvancedReminders();
@@ -86,6 +89,11 @@ private:
     CButton m_chkStartWithWindows;
     CButton m_chkDesktopShortcut;
     CButton m_btnTrayTextColor;
+    CButton m_chkTrayBackEnabled;
+    CButton m_btnTrayBackColor;
+    CButton m_btnTrayFont;
+    CComboBox m_cmbTrayNumber;
+    CButton m_btnTrayDefaults;
     CComboBox m_cmbFontSize;
     CComboBox m_cmbTrayWhen;
     CComboBox m_cmbCandleMinutes;
@@ -170,16 +178,25 @@ private:
     int       m_lastTzeitMode = 0;
 
     CComboBox m_cmbNotifyZmanim;
-    CButton   m_chkNotifyZmanim[15];
-    CButton   m_chkTrayTooltipZmanim[15];
+    CButton   m_chkNotifyZmanim[17];
+    CButton   m_chkTrayTooltipZmanim[17];
     CComboBox m_cmbNotifySefirah;
-    CEdit     m_editNotifySefirahTime;
+    CComboBox m_cmbNotifySefirahHour;
+    CComboBox m_cmbNotifySefirahMinute;
+    CComboBox m_cmbNotifySefirahAmPm;
+    CComboBox m_cmbNotifySefirahMode;
+    CEdit     m_editNotifySefirahOffset;
+    CComboBox m_cmbNotifySefirahDir;
+    CComboBox m_cmbNotifySefirahBase;
+    CComboBox m_cmbNotifySefirahOtherZman;
     CComboBox m_cmbNotifyMoadim;
-    CEdit     m_editNotifyMoadimOffsets;
+    CEdit     m_editNotifyMoadimAmount;
+    CComboBox m_cmbNotifyMoadimUnit;
     CComboBox m_cmbNotifyParsha;
     CComboBox m_cmbNotifyParshaStyle;
-    CEdit     m_editNotifyParshaOffsets;
-    CEdit     m_editNotifyPersonalOffsets;
+    CComboBox m_cmbNotifyParshaOffsets;
+    CEdit     m_editNotifyPersonalAmount;
+    CComboBox m_cmbNotifyPersonalUnit;
     CButton   m_btnAdvancedReminders;
     void UpdateNotificationControls();
     void SetDirty(bool dirty);
@@ -187,4 +204,7 @@ private:
     bool      m_modeless = false;
     bool      m_initialized = false;
     bool      m_dirty = false;
+    CToolTipCtrl m_tooltip;
+
+    virtual BOOL PreTranslateMessage(MSG* pMsg) override;
 };
