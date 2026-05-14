@@ -101,7 +101,7 @@ struct AppSettings
     bool         trayFontBold = true;
     bool         trayFontItalic = false;
     int          trayNumberStyle = 0; // 0=Hebrew letters, 1=English digits
-    uint32_t     trayTooltipZmanimMask = (1u << 2) | (1u << 9) | (1u << 10); // netz, shkiah, tzais
+    uint32_t     trayTooltipZmanimMask = (1u << 5) | (1u << 22) | (1u << 23); // netz, shkiah, tzais GRA
     bool         minimizeOnStartup = false;
     bool         startWithWindows = false;
     bool         desktopShortcut = false;
