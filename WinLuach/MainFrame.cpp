@@ -8,6 +8,8 @@
 // v0.1.0 - Initial MFC main frame.
 // v0.1.1 - Fixed flashing on cell click: only child panels invalidated,
 //          not the full frame. Added Invalidate(FALSE) throughout.
+// v0.8.0 - Added "Pin WinLuach to Taskbar" command + handler.  Propagated
+//          new zmanim bar mask / end-of-fast preset into the frame state.
 // =============================================================================
 
 #include "pch.h"
@@ -29,9 +31,11 @@
 #include <cwctype>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <shlwapi.h>
 #pragma comment(lib, "Urlmon.lib")
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "Ole32.lib")
+#pragma comment(lib, "Shlwapi.lib")
 
 #define ID_COUNTDOWN_OPTIONS    6101
 #define ID_COUNTDOWN_FULLSCREEN 6102
@@ -2702,6 +2706,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_SIDEBAR_TOGGLE,    &CMainFrame::OnSidebarToggle)
     ON_COMMAND(ID_HEB_CIVIL_TOGGLE,  &CMainFrame::OnHebCivilToggle)
     ON_COMMAND(ID_FILE_PRINT_EVENTS, &CMainFrame::OnFilePrintEvents)
+    ON_COMMAND(ID_FILE_PIN_TASKBAR,  &CMainFrame::OnPinToTaskbar)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -2750,6 +2755,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_EXPORT_EVT,  L"Export &Events...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_IMPORT_EVT,  L"&Import Events...");
+    fileMenu.AppendMenu(MF_SEPARATOR);
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_PIN_TASKBAR, L"Pin WinLuach to Taskbar");
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_APP_EXIT,         L"E&xit");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)fileMenu.Detach(), L"&File");
@@ -3495,15 +3502,33 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
     out.sofShema = AddShaot(sofStart, out.shaahZmanit, 3.0);
     out.sofTefilla = AddShaot(sofStart, out.shaahZmanit, 4.0);
 
-    out.minchaGedola = (zmanSh == 1) ? z.minchaGedola_MA72
-        : (zmanSh == 2) ? z.minchaGedola_MA90
-        : z.minchaGedola_GRA;
-    out.minchaKetana = (zmanSh == 1) ? z.minchaKetana_MA72
-        : (zmanSh == 2) ? z.minchaKetana_MA90
-        : z.minchaKetana_GRA;
-    out.plagMincha = (zmanSh == 1) ? z.plagMincha_MA72
-        : (zmanSh == 2) ? z.plagMincha_MA90
-        : z.plagMincha_GRA;
+    switch (max(0, min(3, m_customMinchaGedolaPreset)))
+    {
+    case 0:  out.minchaGedola = AddMinutes(z.chatzot, 30); break;
+    case 1:  out.minchaGedola = z.minchaGedola_GRA; break;
+    case 2:  out.minchaGedola = z.minchaGedola_MA72; break;
+    case 3:  out.minchaGedola = AddMinutes(z.chatzot, (int)round(max(0.0, m_customMinchaGedolaValue))); break;
+    default: out.minchaGedola = (zmanSh == 1) ? z.minchaGedola_MA72
+        : (zmanSh == 2) ? z.minchaGedola_MA90 : z.minchaGedola_GRA; break;
+    }
+
+    switch (max(0, min(2, m_customMinchaKetanaPreset)))
+    {
+    case 0:  out.minchaKetana = z.minchaKetana_GRA; break;
+    case 1:  out.minchaKetana = z.minchaKetana_MA72; break;
+    case 2:  out.minchaKetana = AddShaot(z.hanetz, z.shaahZmanit_GRA, max(0.0, m_customMinchaKetanaValue) / 60.0); break;
+    default: out.minchaKetana = (zmanSh == 1) ? z.minchaKetana_MA72
+        : (zmanSh == 2) ? z.minchaKetana_MA90 : z.minchaKetana_GRA; break;
+    }
+
+    switch (max(0, min(2, m_customPlagPreset)))
+    {
+    case 0:  out.plagMincha = z.plagMincha_GRA; break;
+    case 1:  out.plagMincha = z.plagMincha_MA72; break;
+    case 2:  out.plagMincha = AddShaot(z.hanetz, z.shaahZmanit_GRA, max(0.0, m_customPlagValue) / 60.0); break;
+    default: out.plagMincha = (zmanSh == 1) ? z.plagMincha_MA72
+        : (zmanSh == 2) ? z.plagMincha_MA90 : z.plagMincha_GRA; break;
+    }
 
     out.alotLabel = BoundaryLabel(L"Alos Hashachar", m_customAlotMode, m_customAlotValue, false);
     out.misheyakirLabel = BoundaryLabel(L"Misheyakir", m_customMisheyakirMode, m_customMisheyakirValue, false);
@@ -3545,6 +3570,17 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     }
     m_customTzeitMode = max(0, min(2, s.customTzeitMode));
     m_customTzeitValue = s.customTzeitValue > 0.0 ? s.customTzeitValue : 8.5;
+    // v0.8.0 - mirror zmanim bar mask + end-of-fast preset onto the frame
+    // so ZmanimPanel can read them without going back through the settings.
+    m_zmanimBarMask = s.zmanimBarMask;
+    m_customMinchaGedolaPreset = max(0, min(3, s.customMinchaGedolaPreset));
+    m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
+    m_customPlagPreset = max(0, min(2, s.customPlagPreset));
+    m_customEndFastPreset = max(0, min(2, s.customEndFastPreset));
+    m_customMinchaGedolaValue = s.customMinchaGedolaValue > 0.0 ? s.customMinchaGedolaValue : 30.0;
+    m_customMinchaKetanaValue = s.customMinchaKetanaValue > 0.0 ? s.customMinchaKetanaValue : 570.0;
+    m_customPlagValue = s.customPlagValue > 0.0 ? s.customPlagValue : 645.0;
+    m_customEndFastValue = s.customEndFastValue > 0.0 ? s.customEndFastValue : 27.0;
 
     m_colorNormalCell = (COLORREF)s.colorNormalCell;
     m_colorOtherMonthCell = (COLORREF)s.colorOtherMonthCell;
@@ -4039,6 +4075,77 @@ void CMainFrame::OnFilePrintEvents()
     DoPrintEventsList(this);
 }
 
+// v0.8.0 - Creates a .lnk shortcut targeting this exe and drops it into the
+// user's Quick Launch "User Pinned\TaskBar" folder so WinLuach appears in
+// the taskbar pinned items list. Uses IShellLinkW + IPersistFile via COM.
+void CMainFrame::OnPinToTaskbar()
+{
+    wchar_t exePath[MAX_PATH] = {};
+    if (!GetModuleFileNameW(nullptr, exePath, MAX_PATH))
+    {
+        MessageBox(L"Could not determine the WinLuach executable path.",
+            L"Pin to Taskbar", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    wchar_t workDir[MAX_PATH] = {};
+    wcscpy_s(workDir, exePath);
+    PathRemoveFileSpecW(workDir);
+
+    wchar_t appData[MAX_PATH] = {};
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appData)))
+    {
+        MessageBox(L"Could not locate the AppData folder.",
+            L"Pin to Taskbar", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    std::wstring linkDir = std::wstring(appData) +
+        L"\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar";
+    SHCreateDirectoryExW(nullptr, linkDir.c_str(), nullptr);
+    std::wstring linkPath = linkDir + L"\\WinLuach.lnk";
+
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    bool initialized = SUCCEEDED(hrInit);
+
+    HRESULT hr = E_FAIL;
+    IShellLinkW* pLink = nullptr;
+    hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+        IID_IShellLinkW, reinterpret_cast<void**>(&pLink));
+    if (SUCCEEDED(hr) && pLink)
+    {
+        pLink->SetPath(exePath);
+        pLink->SetWorkingDirectory(workDir);
+        pLink->SetIconLocation(exePath, 0);
+        pLink->SetDescription(L"WinLuach - Hebrew Calendar");
+
+        IPersistFile* pPersist = nullptr;
+        hr = pLink->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&pPersist));
+        if (SUCCEEDED(hr) && pPersist)
+        {
+            hr = pPersist->Save(linkPath.c_str(), TRUE);
+            pPersist->Release();
+        }
+        pLink->Release();
+    }
+
+    if (initialized)
+        CoUninitialize();
+
+    if (SUCCEEDED(hr))
+    {
+        MessageBox(
+            L"WinLuach has been added to your taskbar pinned items. "
+            L"You may need to sign out and back in for it to appear.",
+            L"Pin to Taskbar", MB_OK | MB_ICONINFORMATION);
+    }
+    else
+    {
+        MessageBox(L"Could not create the taskbar pin shortcut.",
+            L"Pin to Taskbar", MB_OK | MB_ICONERROR);
+    }
+}
+
 void CMainFrame::ShowEventNotification(const std::wstring& title,
                                        const std::wstring& body, int style)
 {
@@ -4100,8 +4207,10 @@ void CMainFrame::CheckZmanNotifications()
         { 9, L"Shkiah", z.shkia },
         { 10, L"Tzeis", z.tzeit_GRA },
         { 11, L"Candle Lighting", z.candleLighting },
-        { 15, L"Sof Zman Shema (MA)", z.sofShema_MA72 },
-        { 16, L"Sof Zman Tefilla (MA)", z.sofTefilla_MA72 },
+        { 15, L"Sof Zman Shema (MA 72 proportional)", z.sofShema_MA72 },
+        { 16, L"Sof Zman Tefilla (MA 72 proportional)", z.sofTefilla_MA72 },
+        { 17, L"Sof Zman Shema (MA 90 proportional)", z.sofShema_MA90 },
+        { 18, L"Sof Zman Tefilla (MA 90 proportional)", z.sofTefilla_MA90 },
     };
 
     DayOfWeek dow = GetDayOfWeek(today);
@@ -4170,6 +4279,8 @@ static TimeOfDay PickNotificationZmanByBit(int bit, const ZmanimResult& z, const
     case 11: return z.candleLighting;
     case 15: return z.sofShema_MA72;
     case 16: return z.sofTefilla_MA72;
+    case 17: return z.sofShema_MA90;
+    case 18: return z.sofTefilla_MA90;
     default: return TimeOfDay();
     }
 }

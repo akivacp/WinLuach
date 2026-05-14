@@ -8,6 +8,9 @@
 // v0.1.0 - Initial MFC CDialog options dialog.
 // v0.1.1 - Added DoModal() override using InitModalIndirect.
 // v0.1.2 - Moved DoModal() to public so MainFrame can call it.
+// v0.8.0 - Added "Zmanim Bar" tab + Zmanim sub-tab structure (Alos,
+//          Misheyakir, Sof Zman MA, Sof Zman GRA, Mincha Gedola/Ketana,
+//          Plag, End of Fast, Tzais).  Zman Shitos tab merged in.
 // =============================================================================
 
 #pragma once
@@ -54,6 +57,8 @@ protected:
     afx_msg void OnPreviewNotification();
     afx_msg void OnAdvancedReminders();
     afx_msg void OnTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
+    // v0.8.0 - Notification handler for the Zmanim sub-tab control.
+    afx_msg void OnZmanimSubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
 
@@ -129,8 +134,36 @@ private:
     std::vector<CWnd*> m_pageTrayTooltip;
     std::vector<CWnd*> m_pageColors;
     std::vector<CWnd*> m_pageZmanim;
-    std::vector<CWnd*> m_pageZmanShitos;
+    std::vector<CWnd*> m_pageZmanShitos;        // legacy; retained for compatibility but not used after v0.8.0
     std::vector<CWnd*> m_pageNotifications;
+    // v0.8.0 - new Zmanim Bar tab + Zmanim sub-pages.
+    std::vector<CWnd*> m_pageZmanimBar;
+    std::vector<CWnd*> m_subPageAlos;
+    std::vector<CWnd*> m_subPageMisheyakir;
+    std::vector<CWnd*> m_subPageSofMA;
+    std::vector<CWnd*> m_subPageSofGRA;
+    std::vector<CWnd*> m_subPageMinchaGedola;
+    std::vector<CWnd*> m_subPageMinchaKetana;
+    std::vector<CWnd*> m_subPagePlag;
+    std::vector<CWnd*> m_subPageEndFast;
+    std::vector<CWnd*> m_subPageTzais;
+    CTabCtrl m_zmanimSubTab;
+    std::vector<CButton*> m_zmanimBarChecks;     // one per kZmanimBarLabels entry
+    // Sub-tab preset radio groups (created dynamically). We keep pointers so
+    // ReadControlsIntoResult can ask "which radio is checked" on each tab.
+    std::vector<CButton*> m_radAlosPreset;       // 4 entries
+    std::vector<CButton*> m_radMisheyakirPreset; // 4 entries
+    std::vector<CButton*> m_radSofMAPreset;      // 4 entries
+    std::vector<CButton*> m_radSofGRAPreset;     // 4 entries
+    std::vector<CButton*> m_radMinchaGedolaPreset; // 4 entries (incl. Custom)
+    std::vector<CButton*> m_radMinchaKetanaPreset; // 3 entries
+    std::vector<CButton*> m_radPlagPreset;       // 3 entries
+    std::vector<CButton*> m_radEndFastPreset;    // 3 entries
+    std::vector<CButton*> m_radTzaisPreset;      // 6 entries
+    CEdit m_editCustomMinchaGedola;
+    CEdit m_editCustomMinchaKetana;
+    CEdit m_editCustomPlag;
+    CEdit m_editCustomEndFast;
     CButton m_btnOK;
     CButton m_btnCancel;
     CButton m_btnApply;
@@ -138,6 +171,10 @@ private:
     void ReadControlsIntoResult();
     bool ApplyToParent();
     void ShowOptionsPage(int page);
+    // v0.8.0 - Show only one of the Zmanim sub-pages; hide the rest.
+    void ShowZmanimSubPage(int sub);
+    // v0.8.0 - Helper that hides every Zmanim sub-page + the sub-tab.
+    void HideAllZmanimSubPages();
     void UpdateColorButtons();
     bool ChooseCalendarColor(UINT id);
     void RestoreDefaultCalendarColors();
@@ -178,7 +215,7 @@ private:
     int       m_lastTzeitMode = 0;
 
     CComboBox m_cmbNotifyZmanim;
-    CButton   m_chkNotifyZmanim[17];
+    CButton   m_chkNotifyZmanim[24];
     CButton   m_chkTrayTooltipZmanim[31];
     CComboBox m_cmbNotifySefirah;
     CComboBox m_cmbNotifySefirahHour;
