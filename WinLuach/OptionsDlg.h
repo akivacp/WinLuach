@@ -179,12 +179,14 @@ private:
 
     CComboBox m_cmbNotifyZmanim;
     CButton   m_chkNotifyZmanim[17];
-    CButton   m_chkTrayTooltipZmanim[17];
+    CButton   m_chkTrayTooltipZmanim[31];
     CComboBox m_cmbNotifySefirah;
     CComboBox m_cmbNotifySefirahHour;
     CComboBox m_cmbNotifySefirahMinute;
     CComboBox m_cmbNotifySefirahAmPm;
-    CComboBox m_cmbNotifySefirahMode;
+    CButton   m_radNotifySefirahSunTzais;
+    CButton   m_radNotifySefirahOther;
+    CButton   m_radNotifySefirahManual;
     CEdit     m_editNotifySefirahOffset;
     CComboBox m_cmbNotifySefirahDir;
     CComboBox m_cmbNotifySefirahBase;
@@ -194,7 +196,8 @@ private:
     CComboBox m_cmbNotifyMoadimUnit;
     CComboBox m_cmbNotifyParsha;
     CComboBox m_cmbNotifyParshaStyle;
-    CComboBox m_cmbNotifyParshaOffsets;
+    CEdit     m_editNotifyParshaAmount;
+    CComboBox m_cmbNotifyParshaUnit;
     CEdit     m_editNotifyPersonalAmount;
     CComboBox m_cmbNotifyPersonalUnit;
     CButton   m_btnAdvancedReminders;
