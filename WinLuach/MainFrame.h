@@ -31,6 +31,7 @@ class CZmanimPanel;
 class CSplitterBar;
 class CCountdownClockWnd;
 class COptionsDlg;
+class CWinLuachToastWnd;
 
 struct UserEventInfo
 {
@@ -142,6 +143,7 @@ struct DisplayZmanimTimes
 #define IDC_YEAR_SPIN       2004
 #define WM_WINLUACH_TRAY    (WM_APP + 101)
 #define WM_WEBCAL_DONE      (WM_APP + 102)
+#define WM_WINLUACH_COMMAND (WM_APP + 103)  // wParam: 0=show, 1=countdown, 2=options
 
 // =============================================================================
 // CMainFrame
@@ -359,6 +361,7 @@ protected:
     // "User Pinned\TaskBar" folder so WinLuach appears as a taskbar pin.
     afx_msg void OnPinToTaskbar();
     afx_msg LRESULT OnWebCalDone(WPARAM, LPARAM);
+    afx_msg LRESULT OnWinLuachCommand(WPARAM wParam, LPARAM lParam);
     afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
     virtual BOOL PreTranslateMessage(MSG* pMsg);
 
@@ -411,6 +414,7 @@ protected:
     CButton        m_btnSidebarToggle;
     CCountdownClockWnd* m_pCountdownClock = nullptr;
     COptionsDlg*    m_pOptionsDlg = nullptr;
+    CWinLuachToastWnd*  m_pToast = nullptr;
 
     NOTIFYICONDATA m_trayIcon = {};
     bool m_isInTray = false;
