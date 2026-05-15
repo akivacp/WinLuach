@@ -254,6 +254,10 @@ private:
     CComboBox m_cmbNotifyParshaUnit;
     CEdit     m_editNotifyPersonalAmount;
     CComboBox m_cmbNotifyPersonalUnit;
+    CButton   m_radUseWindowsNotify;
+    CButton   m_radUseWinLuachToast;
+    CEdit     m_editToastDuration;
+    CComboBox m_cmbToastDurationUnit;
     CButton   m_btnAdvancedReminders;
     void UpdateNotificationControls();
     void SetDirty(bool dirty);
