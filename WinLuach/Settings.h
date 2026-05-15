@@ -240,8 +240,8 @@ struct AppSettings
     int          countdownLiveBackColor = 0x00FFFFFF;
     bool         countdownLiveBold = false;
     bool         countdownLiveItalic = false;
-    // Which of the 25 zmanim (matching GetUpcoming item order) appear in countdown
-    uint32_t     countdownZmanimMask  = 0x1FFFFFFu; // all 25 bits set by default
+    // Which of 32 zmanim appear in countdown (0-24 = built-in, 25-31 = custom shita zmanim)
+    uint32_t     countdownZmanimMask  = 0x1FFFFFFu; // built-in 25 on by default; custom 7 off
     // Per-area visibility in the countdown clock window
     bool         countdownShowTitle    = true;
     bool         countdownShowClock    = true;
@@ -255,6 +255,16 @@ struct AppSettings
     float        dayDetailMarginBot   = 0.5f;
     float        dayDetailMarginLeft  = 0.5f;
     float        dayDetailMarginRight = 0.5f;
+
+    // --- Year Details sidebar mask (12 facts, bit i = show fact i) ---
+    uint16_t     yearDetailsMask      = 0x0FFF;  // all 12 facts shown by default
+
+    // --- Print events settings ---
+    uint8_t      printEventCategoryMask       = 0x0F;   // bits 0-3: Birthday/Anniversary/Yahrzeit/Custom
+    bool         printEventSeparateCategories = false;  // if true, sort and group by category
+
+    // --- Tray tooltip custom zmanim (user-configured shita) ---
+    uint32_t     trayTooltipCustomZmanimMask  = 0x7F;   // bits 0-6: 7 custom zmanim
 
     // --- Window ---
     int          windowX = -1;   // -1 = use default

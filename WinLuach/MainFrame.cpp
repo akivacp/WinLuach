@@ -439,9 +439,13 @@ class CCountdownOptionsDlg : public CDialog
     static constexpr UINT IDC_CDOPT_APPLY   = 5201;
     static constexpr UINT IDC_CDOPT_RESTORE = 5202;
 
+    static constexpr int kBuiltinZmanCount = 25;
+    static constexpr int kTotalZmanCount  = 32;
+
     static const wchar_t* kZmanLabels(int i)
     {
         static const wchar_t* k[] = {
+            // 0-24: built-in fixed zmanim
             L"Alos HaShachar (GRA)",  L"Alos HaShachar (MA72)", L"Alos HaShachar (MA90)",
             L"Misheyakir",            L"Hanetz (Sunrise)",
             L"Sof Shema (GRA)",       L"Sof Shema (MA72)",      L"Sof Shema (MA90)",
@@ -452,9 +456,13 @@ class CCountdownOptionsDlg : public CDialog
             L"Plag HaMincha (GRA)",   L"Plag HaMincha (MA72)",  L"Plag HaMincha (MA90)",
             L"Shkiah (Sunset)",
             L"Tzeit (GRA)",           L"Tzeit (MA72)",          L"Tzeit (MA90)",
-            L"Candle Lighting"
+            L"Candle Lighting",
+            // 25-31: custom (user-configured shita) zmanim
+            L"Custom Alos",           L"Custom Sof Shema",      L"Custom Sof Tefilla",
+            L"Custom Mincha Gedola",  L"Custom Mincha Ketana",  L"Custom Plag HaMincha",
+            L"Custom Tzeit"
         };
-        return (i >= 0 && i < 25) ? k[i] : L"";
+        return (i >= 0 && i < kTotalZmanCount) ? k[i] : L"";
     }
 
 public:
@@ -607,7 +615,8 @@ protected:
             m_page2.push_back(znote);
         }
         int colW = (W - 20) / 2;
-        for (int i = 0; i < 25; ++i)
+        // Built-in zmanim: 2 columns of 13, then custom zmanim below with separator label
+        for (int i = 0; i < kBuiltinZmanCount; ++i)
         {
             int col = i / 13;
             int row = i % 13;
@@ -619,6 +628,30 @@ protected:
             m_chkZmanim[i].SetCheck(((m_settings.countdownZmanimMask >> i) & 1) ? BST_CHECKED : BST_UNCHECKED);
             m_page2.push_back(&m_chkZmanim[i]);
             m_tooltip.AddTool(&m_chkZmanim[i], L"Include this zman when searching for the next countdown target");
+        }
+        // Custom (user-configured shita) zmanim
+        {
+            int baseY = 62 + 13 * 20 + 6;
+            CStatic* sep = new CStatic;
+            sep->Create(L"Custom zmanim (your configured shita):",
+                WS_CHILD | SS_LEFT, CRect(10, baseY, W - 10, baseY + 16), this, 5100 + m_nextId++);
+            sep->SetFont(pF);
+            m_page2.push_back(sep);
+            baseY += 18;
+            for (int i = kBuiltinZmanCount; i < kTotalZmanCount; ++i)
+            {
+                int ci = i - kBuiltinZmanCount;
+                int col = ci / 4;
+                int row = ci % 4;
+                int zx = 10 + col * colW;
+                int zy = baseY + row * 20;
+                m_chkZmanim[i].Create(kZmanLabels(i), WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+                    CRect(zx, zy, zx + colW - 4, zy + 18), this, 5900 + i);
+                m_chkZmanim[i].SetFont(pF);
+                m_chkZmanim[i].SetCheck(((m_settings.countdownZmanimMask >> i) & 1) ? BST_CHECKED : BST_UNCHECKED);
+                m_page2.push_back(&m_chkZmanim[i]);
+                m_tooltip.AddTool(&m_chkZmanim[i], L"Include this custom zman when searching for the next countdown target");
+            }
         }
 
         // ── Buttons (always visible) ────────────────────────────────
@@ -736,9 +769,9 @@ protected:
             if (showChks[i]->GetSafeHwnd())
                 *showFlags[i] = (showChks[i]->GetCheck() == BST_CHECKED);
 
-        // Zmanim mask
+        // Zmanim mask (all 32 entries)
         uint32_t mask = 0;
-        for (int i = 0; i < 25; ++i)
+        for (int i = 0; i < kTotalZmanCount; ++i)
             if (m_chkZmanim[i].GetSafeHwnd() && m_chkZmanim[i].GetCheck() == BST_CHECKED)
                 mask |= (1u << i);
         m_settings.countdownZmanimMask = mask;
@@ -814,7 +847,7 @@ private:
     CButton m_chkShowTitle, m_chkShowClock, m_chkShowZmanTime, m_chkShowLive;
 
     // Zmanim tab
-    CButton m_chkZmanim[25];
+    CButton m_chkZmanim[32];
 
     // Dialog buttons
     CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
@@ -1015,6 +1048,14 @@ protected:
                 { L"Tzeit (MA72)",           z.tzeit_MA72        },
                 { L"Tzeit (MA90)",           z.tzeit_MA90        },
                 { L"Candle Lighting",        z.candleLighting    },
+                // Custom (user-configured shita) zmanim (indices 25-31)
+                { dz.alotLabel.c_str(),           dz.alot         },
+                { dz.sofShemaLabel.c_str(),        dz.sofShema     },
+                { dz.sofTefillaLabel.c_str(),      dz.sofTefilla   },
+                { L"Mincha Gedola (custom)",       dz.minchaGedola },
+                { L"Mincha Ketana (custom)",       dz.minchaKetana },
+                { L"Plag HaMincha (custom)",       dz.plagMincha   },
+                { dz.tzeitLabel.c_str(),           dz.tzeit        },
             };
             uint32_t zmask = theApp.m_settings.countdownZmanimMask;
             for (int idx = 0; idx < (int)items.size(); ++idx)
@@ -4924,6 +4965,34 @@ CString CMainFrame::BuildTrayTooltip()
         hToday.day,
         HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
         hToday.year);
+
+    // Custom (user-configured shita) zmanim — separate mask
+    DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDst);
+    uint32_t customMask = theApp.m_settings.trayTooltipCustomZmanimMask;
+    struct CustomItem { int bit; const wchar_t* label; TimeOfDay time; };
+    std::vector<CustomItem> customItems = {
+        { 0, L"Custom Alos",          dz.alot         },
+        { 1, L"Custom Sof Shema",     dz.sofShema     },
+        { 2, L"Custom Sof Tefilla",   dz.sofTefilla   },
+        { 3, L"Custom Mincha Gedola", dz.minchaGedola },
+        { 4, L"Custom Mincha Ketana", dz.minchaKetana },
+        { 5, L"Custom Plag",          dz.plagMincha   },
+        { 6, L"Custom Tzeit",         dz.tzeit        },
+    };
+    // Override labels with descriptive shita labels where available
+    if (!dz.alotLabel.empty())        customItems[0].label = dz.alotLabel.c_str();
+    if (!dz.sofShemaLabel.empty())    customItems[1].label = dz.sofShemaLabel.c_str();
+    if (!dz.sofTefillaLabel.empty())  customItems[2].label = dz.sofTefillaLabel.c_str();
+    if (!dz.tzeitLabel.empty())       customItems[6].label = dz.tzeitLabel.c_str();
+    for (const auto& ci : customItems)
+    {
+        if ((customMask & (1u << ci.bit)) && ci.time.IsValid())
+        {
+            CString line;
+            line.Format(L"\n%s: %s", ci.label, FormatTime(ci.time, m_use24hr).c_str());
+            tip += line;
+        }
+    }
 
     uint32_t mask = theApp.m_settings.trayTooltipZmanimMask;
     for (const auto& item : items)

@@ -149,6 +149,7 @@ private:
     std::vector<CWnd*> m_pageZmanim;
     std::vector<CWnd*> m_pageZmanShitos;        // legacy; retained for compatibility but not used after v0.8.0
     std::vector<CWnd*> m_pageNotifications;
+    std::vector<CWnd*> m_pageYearDetails;
     // v0.8.0 - new Zmanim Bar tab + Zmanim sub-pages.
     std::vector<CWnd*> m_pageZmanimBar;
     std::vector<CWnd*> m_subPageAlos;
@@ -228,6 +229,8 @@ private:
     int       m_lastSofZmanMode = 0;
     int       m_lastTzeitMode = 0;
 
+    CButton   m_chkYearDetails[12];
+    CButton   m_chkTrayTooltipCustomZmanim[7];
     CComboBox m_cmbNotifyZmanim;
     CButton   m_chkNotifyZmanim[24];
     CButton   m_chkTrayTooltipZmanim[31];

@@ -734,7 +734,7 @@ void MainWindow::DrawSidebar(HDC hdc, const RECT& rc)
     }
 
     // Year facts
-    auto facts = GetYearFacts(m_selectedHebrew.year);
+    auto facts = GetYearFacts(m_selectedHebrew.year, m_settings.yearDetailsMask);
     SelectObject(hdc, m_fontSmall);
     SetTextColor(hdc, RGB(60, 60, 60));
     for (const auto& fact : facts)

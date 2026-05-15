@@ -12,6 +12,7 @@
 #include "pch.h"
 #include "SidebarPanel.h"
 #include "HolidayEngine.h"
+#include "WinLuachApp.h"
 
 BEGIN_MESSAGE_MAP(CSidebarPanel, CWnd)
     ON_WM_PAINT()
@@ -475,7 +476,7 @@ void CSidebarPanel::OnPaint()
     // Year facts with alternating row shading
     if (showYearDetails)
     {
-        auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
+        auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year, theApp.m_settings.yearDetailsMask);
         memDC.SelectObject(&m_pFrame->m_fontSmall);
         memDC.SetTextColor(RGB(60, 60, 60));
         int rowIdx = 0;
