@@ -42,7 +42,7 @@ struct UserEventEntry
     // For yahrzeit: display on the evening BEFORE the Hebrew date
     bool afterSunset = false;
 
-    // Optional: lock to a specific year (0 = recurring every year)
+    // Optional: year of first occurrence (0 = recurring every year; >0 = show from this year onward)
     int  gregYear    = 0;
     int  hebYear     = 0;
 
@@ -239,6 +239,21 @@ struct AppSettings
     int          countdownLiveBackColor = 0x00FFFFFF;
     bool         countdownLiveBold = false;
     bool         countdownLiveItalic = false;
+    // Which of the 25 zmanim (matching GetUpcoming item order) appear in countdown
+    uint32_t     countdownZmanimMask  = 0x1FFFFFFu; // all 25 bits set by default
+    // Per-area visibility in the countdown clock window
+    bool         countdownShowTitle    = true;
+    bool         countdownShowClock    = true;
+    bool         countdownShowZmanTime = true;  // "zman time" area (actual time of upcoming zman)
+    bool         countdownShowLive     = true;  // live time + date area
+
+    // --- Day-detail print options (persisted separately from monthly print) ---
+    bool         dayDetailLandscape   = false;
+    bool         dayDetailShowFooter  = true;
+    float        dayDetailMarginTop   = 0.5f;
+    float        dayDetailMarginBot   = 0.5f;
+    float        dayDetailMarginLeft  = 0.5f;
+    float        dayDetailMarginRight = 0.5f;
 
     // --- Window ---
     int          windowX = -1;   // -1 = use default
