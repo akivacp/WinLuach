@@ -1927,12 +1927,27 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
         [=](CDC* pDC, const CRect& rc, bool sf){
             DrawDayPage(pDC, rc, g, pFrame, sf, *pMask);
         },
-        L"WinLuach Day Details", false /* defaultLandscape */, pFrame);
+        L"WinLuach Day Details", theApp.m_settings.dayDetailLandscape, pFrame);
+    SimplePageOpts dayOpts;
+    dayOpts.landscape = theApp.m_settings.dayDetailLandscape;
+    dayOpts.mTop      = theApp.m_settings.dayDetailMarginTop;
+    dayOpts.mBot      = theApp.m_settings.dayDetailMarginBot;
+    dayOpts.mLeft     = theApp.m_settings.dayDetailMarginLeft;
+    dayOpts.mRight    = theApp.m_settings.dayDetailMarginRight;
+    dlg.SetInitialOpts(dayOpts);
+    dlg.SetInitialShowFooter(theApp.m_settings.dayDetailShowFooter);
     dlg.SetDayZmanimMaskPtr(pMask);
     INT_PTR result = dlg.DoModal();
     if (result == IDOK)
     {
-        theApp.m_settings.printDayZmanimMask = NormalizeDayPrintZmanMask(*pMask);
+        const SimplePageOpts& fo = dlg.GetFinalOpts();
+        theApp.m_settings.dayDetailLandscape   = fo.landscape;
+        theApp.m_settings.dayDetailMarginTop   = fo.mTop;
+        theApp.m_settings.dayDetailMarginBot   = fo.mBot;
+        theApp.m_settings.dayDetailMarginLeft  = fo.mLeft;
+        theApp.m_settings.dayDetailMarginRight = fo.mRight;
+        theApp.m_settings.dayDetailShowFooter  = dlg.GetFinalShowFooter();
+        theApp.m_settings.printDayZmanimMask   = NormalizeDayPrintZmanMask(*pMask);
         SaveSettings(theApp.m_settings);
     }
     return result == IDOK;
@@ -2191,9 +2206,13 @@ public:
         : CDialog(), m_pages(pages), m_pFrame(frame)
     {
         m_pParentWnd = parent;
-        opts.landscape = false;
-        opts.mTop = opts.mBot = opts.mLeft = opts.mRight = 0.50f;
-        dayZmanimMask = NormalizeDayPrintZmanMask(theApp.m_settings.printDayZmanimMask);
+        opts.landscape = theApp.m_settings.dayDetailLandscape;
+        opts.mTop      = theApp.m_settings.dayDetailMarginTop;
+        opts.mBot      = theApp.m_settings.dayDetailMarginBot;
+        opts.mLeft     = theApp.m_settings.dayDetailMarginLeft;
+        opts.mRight    = theApp.m_settings.dayDetailMarginRight;
+        showFooter     = theApp.m_settings.dayDetailShowFooter;
+        dayZmanimMask  = NormalizeDayPrintZmanMask(theApp.m_settings.printDayZmanimMask);
     }
 
     INT_PTR DoModal() override
@@ -2238,8 +2257,8 @@ protected:
         };
         int y = 10;
         mkStatic(L"Orientation", 8, y, 120, 16); y += 20;
-        mkRadio(m_radPortrait, L"Portrait", 1001, 20, y, 100, true, true);
-        mkRadio(m_radLandscape, L"Landscape", 1002, 140, y, 120, false, false);
+        mkRadio(m_radPortrait,  L"Portrait",   1001, 20,  y, 100, true,  !opts.landscape);
+        mkRadio(m_radLandscape, L"Landscape",  1002, 140, y, 120, false,  opts.landscape);
         y += 28;
         mkStatic(L"Margins (inches)", 8, y, 160, 16); y += 20;
         mkStatic(L"Top:", 8, y + 2, 34, 16); mkEdit(m_top, 1003, opts.mTop, 46, y, 50);
@@ -2251,7 +2270,7 @@ protected:
         m_footer.Create(L"Show footer", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
             CRect(8, y, 160, y+20), this, 1007);
         m_footer.SetFont(pF);
-        m_footer.SetCheck(BST_CHECKED);
+        m_footer.SetCheck(showFooter ? BST_CHECKED : BST_UNCHECKED);
         y += 28;
 
         CButton* group = new CButton;
@@ -2362,7 +2381,13 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     if (setup.DoModal() != IDOK)
         return false;
 
-    theApp.m_settings.printDayZmanimMask = NormalizeDayPrintZmanMask(setup.dayZmanimMask);
+    theApp.m_settings.printDayZmanimMask   = NormalizeDayPrintZmanMask(setup.dayZmanimMask);
+    theApp.m_settings.dayDetailLandscape   = setup.opts.landscape;
+    theApp.m_settings.dayDetailShowFooter  = setup.showFooter;
+    theApp.m_settings.dayDetailMarginTop   = setup.opts.mTop;
+    theApp.m_settings.dayDetailMarginBot   = setup.opts.mBot;
+    theApp.m_settings.dayDetailMarginLeft  = setup.opts.mLeft;
+    theApp.m_settings.dayDetailMarginRight = setup.opts.mRight;
     SaveSettings(theApp.m_settings);
     return PrintDayPages(pages, pFrame, setup.opts, setup.showFooter,
         setup.dayZmanimMask);
@@ -2450,7 +2475,7 @@ BOOL CSimplePageSetupDlg::OnInitDialog()
     m_chkFooter.Create(L"Show footer", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
         CRect(8, y, 200, y+18), this, IDC_SPS_CHK_FOOTER);
     m_chkFooter.SetFont(pF);
-    m_chkFooter.SetCheck(BST_CHECKED);
+    m_chkFooter.SetCheck(m_initialShowFooter ? BST_CHECKED : BST_UNCHECKED);
     y += 26;
 
     // 12/24-hr checkbox (only when caller passes a shared_ptr)
@@ -2537,6 +2562,7 @@ void CSimplePageSetupDlg::ReadControls()
                 mask |= (1ull << i);
         *m_pDayZmanimMask = NormalizeDayPrintZmanMask(mask);
     }
+    m_finalShowFooter = (!m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED);
 }
 
 void CSimplePageSetupDlg::OnPreview()
