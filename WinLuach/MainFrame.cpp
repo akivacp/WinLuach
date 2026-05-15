@@ -2937,6 +2937,137 @@ BEGIN_MESSAGE_MAP(CSplitterBar, CWnd)
     ON_WM_LBUTTONUP()
 END_MESSAGE_MAP()
 
+// =============================================================================
+// CWinLuachToastWnd — custom toast notification window
+// A small frameless popup in the bottom-right corner that auto-dismisses.
+// =============================================================================
+
+class CWinLuachToastWnd : public CWnd
+{
+public:
+    static CWinLuachToastWnd* Show(const std::wstring& title, const std::wstring& body,
+                                   DWORD durationMs, CWinLuachToastWnd** ppSelf)
+    {
+        auto* w = new CWinLuachToastWnd(title, body, durationMs, ppSelf);
+        if (!w->CreateToast()) { delete w; return nullptr; }
+        return w;
+    }
+
+protected:
+    afx_msg void OnPaint()
+    {
+        CPaintDC dc(this);
+        CRect rc; GetClientRect(&rc);
+
+        // Background
+        dc.FillSolidRect(rc, RGB(30, 30, 30));
+        // Top accent line
+        dc.FillSolidRect(CRect(0, 0, rc.Width(), 3), RGB(0, 120, 215));
+
+        CFont fBold, fBody;
+        LOGFONT lf = {};
+        lf.lfHeight = -15; lf.lfWeight = FW_BOLD;
+        wcscpy_s(lf.lfFaceName, L"Segoe UI");
+        fBold.CreateFontIndirect(&lf);
+        lf.lfHeight = -13; lf.lfWeight = FW_NORMAL;
+        fBody.CreateFontIndirect(&lf);
+
+        dc.SetBkMode(TRANSPARENT);
+        dc.SetTextColor(RGB(255, 255, 255));
+
+        // Close button area (top-right 24x24)
+        CRect rcClose(rc.right - 26, 4, rc.right - 4, 28);
+        dc.SetTextColor(RGB(180, 180, 180));
+        dc.SelectObject(&fBody);
+        dc.DrawText(L"X", 1, rcClose, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        // Title
+        CRect rcTitle(12, 8, rc.right - 30, 30);
+        dc.SetTextColor(RGB(255, 255, 255));
+        dc.SelectObject(&fBold);
+        dc.DrawText(m_title.c_str(), (int)m_title.size(), rcTitle,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+        // Body
+        CRect rcBody(12, 32, rc.right - 12, rc.bottom - 8);
+        dc.SelectObject(&fBody);
+        dc.SetTextColor(RGB(210, 210, 210));
+        dc.DrawText(m_body.c_str(), (int)m_body.size(), rcBody,
+            DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
+    }
+
+    afx_msg void OnLButtonDown(UINT, CPoint pt)
+    {
+        CRect rcClose; GetClientRect(&rcClose);
+        rcClose.left = rcClose.right - 28; rcClose.bottom = 30;
+        if (rcClose.PtInRect(pt)) { Close(); return; }
+        Close(); // click anywhere closes
+    }
+
+    afx_msg void OnTimer(UINT_PTR id)
+    {
+        if (id == 1) Close();
+    }
+
+    afx_msg void OnDestroy()
+    {
+        KillTimer(1);
+        if (m_ppSelf && *m_ppSelf == this) *m_ppSelf = nullptr;
+        CWnd::OnDestroy();
+    }
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    std::wstring       m_title, m_body;
+    DWORD              m_durationMs;
+    CWinLuachToastWnd** m_ppSelf;
+
+    CWinLuachToastWnd(const std::wstring& title, const std::wstring& body,
+                      DWORD durationMs, CWinLuachToastWnd** ppSelf)
+        : m_title(title), m_body(body), m_durationMs(durationMs), m_ppSelf(ppSelf) {}
+
+    bool CreateToast()
+    {
+        // Size and position: bottom-right above taskbar
+        const int W = 340, H = 100;
+        RECT wa = {};
+        SystemParametersInfo(SPI_GETWORKAREA, 0, &wa, 0);
+        int x = wa.right - W - 12;
+        int y = wa.bottom - H - 12;
+
+        WNDCLASSEX wc = { sizeof(wc) };
+        wc.lpfnWndProc   = ::DefWindowProcW;
+        wc.hInstance     = AfxGetInstanceHandle();
+        wc.lpszClassName = L"WinLuachToast";
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        RegisterClassEx(&wc); // OK if already registered
+
+        if (!CreateEx(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            L"WinLuachToast", L"", WS_POPUP,
+            x, y, W, H, nullptr, nullptr))
+            return false;
+
+        ShowWindow(SW_SHOWNOACTIVATE);
+        UpdateWindow();
+        SetTimer(1, m_durationMs > 0 ? m_durationMs : 5000, nullptr);
+        return true;
+    }
+
+    void Close()
+    {
+        DestroyWindow();
+        delete this;
+    }
+};
+
+BEGIN_MESSAGE_MAP(CWinLuachToastWnd, CWnd)
+    ON_WM_PAINT()
+    ON_WM_LBUTTONDOWN()
+    ON_WM_TIMER()
+    ON_WM_DESTROY()
+END_MESSAGE_MAP()
+
 BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_CREATE()
     ON_WM_SIZE()
@@ -2989,6 +3120,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_HEB_CIVIL_TOGGLE,  &CMainFrame::OnHebCivilToggle)
     ON_COMMAND(ID_FILE_PRINT_EVENTS, &CMainFrame::OnFilePrintEvents)
     ON_COMMAND(ID_FILE_PIN_TASKBAR,  &CMainFrame::OnPinToTaskbar)
+    ON_MESSAGE(WM_WINLUACH_COMMAND,  &CMainFrame::OnWinLuachCommand)
 END_MESSAGE_MAP()
 
 CMainFrame::CMainFrame() {}
@@ -4549,24 +4681,35 @@ void CMainFrame::ShowEventNotification(const std::wstring& title,
 {
     if (style <= 0 || body.empty()) return;
 
-    // Toast via tray balloon tip
+    // Toast notification
     if (style == 1 || style == 3) {
-        bool addedTemp = false;
-        if (!m_isInTray) { AddTrayIcon(); addedTemp = true; }
+        const AppSettings& s = theApp.m_settings;
+        if (s.useWinLuachToast) {
+            // Convert duration to milliseconds
+            static const DWORD kUnitMs[] = { 60000u, 3600000u, 86400000u, 604800000u, 2592000000u };
+            int unit = max(0, min(4, s.winLuachToastDurationUnit));
+            DWORD ms = (DWORD)max(1, s.winLuachToastDuration) * kUnitMs[unit];
+            if (m_pToast && m_pToast->GetSafeHwnd())
+                m_pToast->DestroyWindow();
+            m_pToast = CWinLuachToastWnd::Show(title, body, ms, &m_pToast);
+        } else {
+            bool addedTemp = false;
+            if (!m_isInTray) { AddTrayIcon(); addedTemp = true; }
 
-        NOTIFYICONDATAW nid = {};
-        nid.cbSize = sizeof(nid);
-        nid.hWnd   = m_hWnd;
-        nid.uID    = 1;
-        nid.uFlags = NIF_INFO;
-        nid.dwInfoFlags = NIIF_INFO;
-        nid.uTimeout    = 8000;
-        wcsncpy_s(nid.szInfoTitle, title.c_str(),  ARRAYSIZE(nid.szInfoTitle) - 1);
-        wcsncpy_s(nid.szInfo,      body.c_str(),   ARRAYSIZE(nid.szInfo)      - 1);
-        Shell_NotifyIconW(NIM_MODIFY, &nid);
+            NOTIFYICONDATAW nid = {};
+            nid.cbSize = sizeof(nid);
+            nid.hWnd   = m_hWnd;
+            nid.uID    = 1;
+            nid.uFlags = NIF_INFO;
+            nid.dwInfoFlags = NIIF_INFO;
+            nid.uTimeout    = 8000;
+            wcsncpy_s(nid.szInfoTitle, title.c_str(),  ARRAYSIZE(nid.szInfoTitle) - 1);
+            wcsncpy_s(nid.szInfo,      body.c_str(),   ARRAYSIZE(nid.szInfo)      - 1);
+            Shell_NotifyIconW(NIM_MODIFY, &nid);
 
-        if (addedTemp)
-            SetTimer(2, 10000, nullptr); // cleanup timer removes temp icon
+            if (addedTemp)
+                SetTimer(2, 10000, nullptr); // cleanup timer removes temp icon
+        }
     }
 
     // Popup dialog
@@ -5732,4 +5875,21 @@ void CMainFrame::OnFileRestore()
     }
     else
         MessageBox(L"Restore failed.", L"WinLuach", MB_OK | MB_ICONERROR);
+}
+
+// Handles commands forwarded from a second instance via the Jump List.
+// wParam: 0=show, 1=countdown clock, 2=options
+LRESULT CMainFrame::OnWinLuachCommand(WPARAM wParam, LPARAM)
+{
+    RestoreFromTray();
+    ShowWindow(SW_SHOWNORMAL);
+    SetForegroundWindow();
+
+    switch ((int)wParam)
+    {
+    case 1: OnViewCountdownClock(); break;
+    case 2: OnOptionsPrefs();       break;
+    default: break;  // 0 = just show
+    }
+    return 0;
 }

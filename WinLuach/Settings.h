@@ -130,6 +130,10 @@ struct AppSettings
     std::wstring notifyParshaName;    // e.g. "Emor"
     std::wstring notifyParshaOffsets; // e.g. "1 week"
     std::wstring notifyPersonalOffsets; // global offsets for personal events
+    // --- WinLuach custom toast ---
+    bool useWinLuachToast         = false; // false=Windows built-in, true=WinLuach custom
+    int  winLuachToastDuration    = 5;     // numeric duration
+    int  winLuachToastDurationUnit = 0;   // 0=minutes,1=hours,2=days,3=weeks,4=months
     std::vector<ReminderRule> advancedReminders;
 
     // --- Print / location defaults ---
