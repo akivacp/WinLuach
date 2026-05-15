@@ -9,6 +9,9 @@
 // v0.1.1 - Fixed: use InitModalIndirect + in-memory template.
 // v0.1.2 - Fixed CreateEx call to use 10 arguments (removed 2 extra nullptrs).
 //          Moved DoModal() to public in header.
+// v0.8.1 - Sub-page widgets are raised to the top of z-order on show so the
+//          Zmanim sub-tab control doesn't paint over them, and the Omer
+//          'manual time' radio is no longer clipped by its sibling label.
 // v0.8.0 - Added "Zmanim Bar" tab with one checkbox per kZmanimBarLabels
 //          entry; restructured "Zmanim" tab into a TCS sub-tab with pages
 //          for Alos, Misheyakir, Sof Zman MA, Sof Zman GRA, Mincha Gedola,
@@ -1454,15 +1457,17 @@ BOOL COptionsDlg::OnInitDialog()
     m_radNotifySefirahOther.Create(L"other zman", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         CRect(28, y, 118, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
     track(m_pageNotifications, &m_radNotifySefirahOther);
+    // v0.8.1 - Shrank 'manual time' radio width and moved 'manual:' static
+    // right so they no longer overlap (the radio text was being clipped).
     m_radNotifySefirahManual.Create(L"manual time", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(126, y, 226, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
+        CRect(126, y, 218, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
     track(m_pageNotifications, &m_radNotifySefirahManual);
     bool isManualOmer = (m_current.notifySefirahMode == 0);
     bool isOtherOmer = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
     m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
     m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
     m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
-    mkStatic(m_pageNotifications, L"manual:", 222, y, 66, 22);
+    mkStatic(m_pageNotifications, L"at:", 230, y, 22, 22);
     m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
         CRect(292, y - 1, 332, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
     track(m_pageNotifications, &m_cmbNotifySefirahHour);
@@ -2106,6 +2111,10 @@ void COptionsDlg::HideAllZmanimSubPages()
     hide(m_subPageTzais);
 }
 
+// v0.8.1 - Show the requested Zmanim sub-page and ALSO raise each of its
+// widgets to the top of the dialog's z-order.  Without this lift, the sibling
+// CTabCtrl (m_zmanimSubTab) repaints its body over the radios so they look
+// invisible even though they were set SW_SHOW (the bug reported in v0.8.0).
 void COptionsDlg::ShowZmanimSubPage(int sub)
 {
     std::vector<CWnd*>* pages[] = {
@@ -2124,8 +2133,15 @@ void COptionsDlg::ShowZmanimSubPage(int sub)
     if (sub < 0 || sub >= count)
         return;
     for (CWnd* c : *pages[sub])
-        if (c && c->GetSafeHwnd())
-            c->ShowWindow(SW_SHOW);
+    {
+        if (!c || !c->GetSafeHwnd()) continue;
+        c->ShowWindow(SW_SHOW);
+        // Raise each widget above the sub-tab control so the tab body does
+        // not overpaint it. SWP_NOACTIVATE keeps focus where it was.
+        c->SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        c->Invalidate();
+    }
 }
 
 void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
