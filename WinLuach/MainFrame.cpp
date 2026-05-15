@@ -711,20 +711,7 @@ protected:
     afx_msg int OnCreate(LPCREATESTRUCT lp)
     {
         if (CFrameWnd::OnCreate(lp) == -1) return -1;
-        CMenu menu, opt;
-        menu.CreateMenu();
-        opt.CreatePopupMenu();
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_OPTIONS, L"&Options...");
-        opt.AppendMenu(MF_SEPARATOR);
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_FULLSCREEN, L"&Full Screen\tF11");
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_TOPMOST, L"Always on &Top\tAlt+T");
-        opt.AppendMenu(MF_SEPARATOR);
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MINIMIZE, L"Mi&nimize");
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MAXIMIZE, L"Ma&ximize");
-        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_RESTORE, L"&Restore");
-        menu.AppendMenu(MF_POPUP, (UINT_PTR)opt.Detach(), L"&Clock");
-        SetMenu(&menu);
-        menu.Detach();
+        RebuildMenuBar();
         UpdateTopmostUi(false);
         SetTimer(1, 1000, nullptr);
         return 0;
@@ -771,6 +758,7 @@ protected:
         m_alwaysOnTop = !m_alwaysOnTop;
         SetWindowPos(m_alwaysOnTop ? &wndTopMost : &wndNoTopMost,
             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        RebuildMenuBar();
         UpdateTopmostUi(true);
     }
 
@@ -919,19 +907,6 @@ protected:
         dc.FillSolidRect(rc, (COLORREF)s.countdownClockBackColor);
 
         CRect content = rc;
-        if (m_alwaysOnTop)
-        {
-            CRect topBar(rc.left, rc.top, rc.right, rc.top + 24);
-            dc.FillSolidRect(topBar, RGB(230, 248, 232));
-            CFont fTop;
-            MakeFont(fTop, L"Segoe UI", 12, FW_BOLD, false);
-            dc.SelectObject(&fTop);
-            dc.SetBkMode(TRANSPARENT);
-            dc.SetTextColor(RGB(0, 128, 0));
-            dc.DrawText(L"Always on Top Enabled", topBar,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            content.top = topBar.bottom;
-        }
 
         UpcomingZman next = GetUpcoming();
         CTime now = CTime::GetCurrentTime();
@@ -990,6 +965,31 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
+    void RebuildMenuBar()
+    {
+        CMenu menu, opt;
+        menu.CreateMenu();
+        opt.CreatePopupMenu();
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_OPTIONS, L"&Options...");
+        opt.AppendMenu(MF_SEPARATOR);
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_FULLSCREEN, L"&Full Screen\tF11");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_TOPMOST, L"Always on &Top\tAlt+T");
+        opt.AppendMenu(MF_SEPARATOR);
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MINIMIZE, L"Mi&nimize");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_MAXIMIZE, L"Ma&ximize");
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_RESTORE, L"&Restore");
+        menu.AppendMenu(MF_POPUP, (UINT_PTR)opt.Detach(), L"&Clock");
+        if (m_alwaysOnTop)
+            menu.AppendMenu(MF_STRING, ID_COUNTDOWN_TOPMOST, L"Always on top enabled");
+
+        HMENU oldMenu = ::GetMenu(GetSafeHwnd());
+        SetMenu(&menu);
+        menu.Detach();
+        DrawMenuBar();
+        if (oldMenu)
+            ::DestroyMenu(oldMenu);
+    }
+
     void UpdateTopmostUi(bool repaint)
     {
         CMenu* menu = GetMenu();
@@ -2703,6 +2703,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_CLOSE()
     ON_WM_SYSCOMMAND()
     ON_WM_TIMER()
+    ON_WM_INITMENUPOPUP()
     ON_MESSAGE(WM_WINLUACH_TRAY, &CMainFrame::OnTrayNotify)
     ON_COMMAND(ID_VIEW_PREVDAY, &CMainFrame::OnViewPrevDay)
     ON_COMMAND(ID_VIEW_NEXTDAY, &CMainFrame::OnViewNextDay)
@@ -2732,6 +2733,9 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_VIEW_ZOOM_OUT,    &CMainFrame::OnViewZoomOut)
     ON_COMMAND(ID_VIEW_ZOOM_RESET,  &CMainFrame::OnViewZoomReset)
     ON_COMMAND(ID_VIEW_COUNTDOWN,   &CMainFrame::OnViewCountdownClock)
+    ON_COMMAND(ID_VIEW_PANE_SPECIAL, &CMainFrame::OnViewPaneSpecialTimes)
+    ON_COMMAND(ID_VIEW_PANE_YEAR,    &CMainFrame::OnViewPaneYearDetails)
+    ON_COMMAND(ID_VIEW_PANE_MOLAD,   &CMainFrame::OnViewPaneMolad)
     ON_COMMAND(ID_CAL_GOTO,          &CMainFrame::OnCalGoTo)
     ON_COMMAND(ID_CAL_EVENTS,        &CMainFrame::OnCalEvents)
     ON_COMMAND(ID_FILE_EXPORT_EVT,   &CMainFrame::OnFileExportEvents)
@@ -2821,6 +2825,13 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_IN,    L"Zoom &In\tCtrl++");
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_OUT,   L"Zoom &Out\tCtrl+-");
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_ZOOM_RESET, L"Reset Text &Size\tCtrl+0");
+    viewMenu.AppendMenu(MF_SEPARATOR);
+    CMenu panesMenu;
+    panesMenu.CreatePopupMenu();
+    panesMenu.AppendMenu(MF_STRING, ID_VIEW_PANE_SPECIAL, L"&Special Times");
+    panesMenu.AppendMenu(MF_STRING, ID_VIEW_PANE_YEAR,    L"&Year Details");
+    panesMenu.AppendMenu(MF_STRING, ID_VIEW_PANE_MOLAD,   L"&Molad");
+    viewMenu.AppendMenu(MF_POPUP, (UINT_PTR)panesMenu.Detach(), L"&Panes");
     viewMenu.AppendMenu(MF_SEPARATOR);
     viewMenu.AppendMenu(MF_STRING, ID_VIEW_COUNTDOWN,  L"&Countdown Clock...");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)viewMenu.Detach(), L"&View");
@@ -2969,6 +2980,9 @@ void CMainFrame::OnDestroy()
     s.sidebarCollapsed = m_sidebarCollapsed;
     s.sidebarWidth     = m_sidebarCollapsed ? m_lastSidebarW : m_sidebarW;
     s.zmanimHeight     = m_zmanimH;
+    s.paneSpecialTimesVisible = m_paneSpecialTimesVisible;
+    s.paneYearDetailsVisible  = m_paneYearDetailsVisible;
+    s.paneMoladVisible        = m_paneMoladVisible;
     SaveSettings(s);
     CFrameWnd::OnDestroy();
 }
@@ -3006,6 +3020,20 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         return;
     }
     CFrameWnd::OnTimer(nIDEvent);
+}
+
+void CMainFrame::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
+{
+    CFrameWnd::OnInitMenuPopup(pPopupMenu, nIndex, bSysMenu);
+    if (!pPopupMenu || bSysMenu)
+        return;
+
+    pPopupMenu->CheckMenuItem(ID_VIEW_PANE_SPECIAL,
+        MF_BYCOMMAND | (m_paneSpecialTimesVisible ? MF_CHECKED : MF_UNCHECKED));
+    pPopupMenu->CheckMenuItem(ID_VIEW_PANE_YEAR,
+        MF_BYCOMMAND | (m_paneYearDetailsVisible ? MF_CHECKED : MF_UNCHECKED));
+    pPopupMenu->CheckMenuItem(ID_VIEW_PANE_MOLAD,
+        MF_BYCOMMAND | (m_paneMoladVisible ? MF_CHECKED : MF_UNCHECKED));
 }
 
 void CMainFrame::OnClose()
@@ -3231,6 +3259,57 @@ void CMainFrame::OnSidebarToggle()
     Invalidate(FALSE);
 }
 
+bool CMainFrame::IsSidebarPaneVisible(SidebarPaneId pane) const
+{
+    switch (pane)
+    {
+    case PANE_SPECIAL_TIMES: return m_paneSpecialTimesVisible;
+    case PANE_YEAR_DETAILS:  return m_paneYearDetailsVisible;
+    case PANE_MOLAD:         return m_paneMoladVisible;
+    default:                 return true;
+    }
+}
+
+void CMainFrame::SetSidebarPaneVisible(SidebarPaneId pane, bool visible)
+{
+    switch (pane)
+    {
+    case PANE_SPECIAL_TIMES:
+        m_paneSpecialTimesVisible = visible;
+        theApp.m_settings.paneSpecialTimesVisible = visible;
+        break;
+    case PANE_YEAR_DETAILS:
+        m_paneYearDetailsVisible = visible;
+        theApp.m_settings.paneYearDetailsVisible = visible;
+        break;
+    case PANE_MOLAD:
+        m_paneMoladVisible = visible;
+        theApp.m_settings.paneMoladVisible = visible;
+        break;
+    default:
+        return;
+    }
+
+    SaveSettings(theApp.m_settings);
+    if (m_pSidebar)
+        m_pSidebar->Invalidate(FALSE);
+}
+
+void CMainFrame::OnViewPaneSpecialTimes()
+{
+    SetSidebarPaneVisible(PANE_SPECIAL_TIMES, !m_paneSpecialTimesVisible);
+}
+
+void CMainFrame::OnViewPaneYearDetails()
+{
+    SetSidebarPaneVisible(PANE_YEAR_DETAILS, !m_paneYearDetailsVisible);
+}
+
+void CMainFrame::OnViewPaneMolad()
+{
+    SetSidebarPaneVisible(PANE_MOLAD, !m_paneMoladVisible);
+}
+
 void CMainFrame::OnCalPrintMonth()
 {
     CalPrintOptions opts;
@@ -3244,6 +3323,7 @@ void CMainFrame::OnCalPrintMonth()
     opts.zmanimColumns = theApp.m_settings.printZmanimColMask;
     opts.showFooter    = theApp.m_settings.printShowFooter;
     opts.use24hr       = theApp.m_settings.use24Hour;
+    opts.twoColumns    = theApp.m_settings.printTwoColumns;
     DoPrint(opts, this);
 }
 
@@ -3652,6 +3732,9 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_showTrayIcon   = s.showTrayIcon;
     m_minimizeToTray = s.minimizeToTray;
     m_minimizeTrayWhen = s.minimizeTrayWhen;
+    m_paneSpecialTimesVisible = s.paneSpecialTimesVisible;
+    m_paneYearDetailsVisible  = s.paneYearDetailsVisible;
+    m_paneMoladVisible        = s.paneMoladVisible;
     m_hebrewMonthView = s.defaultHebrewMonth;
     RefreshZmanim();
     RecreateFonts();
@@ -4629,6 +4712,9 @@ void CMainFrame::AddTrayIcon()
     m_trayIcon.hWnd = GetSafeHwnd();
     m_trayIcon.uID = 1;
     m_trayIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+#ifdef NIF_SHOWTIP
+    m_trayIcon.uFlags |= NIF_SHOWTIP;
+#endif
     m_trayIcon.uCallbackMessage = WM_WINLUACH_TRAY;
     HebrewDate hToday = CurrentHebrewDateForTray();
     m_hTrayDateIcon = CreateTrayDateIcon(hToday);
@@ -4660,6 +4746,9 @@ void CMainFrame::UpdateTrayIcon()
     {
         m_trayIcon.uFlags = NIF_TIP;
     }
+#ifdef NIF_SHOWTIP
+    m_trayIcon.uFlags |= NIF_SHOWTIP;
+#endif
     Shell_NotifyIcon(NIM_MODIFY, &m_trayIcon);
 }
 
@@ -5215,6 +5304,7 @@ void CMainFrame::OnCalPreview()
     opts.zmanimColumns = ps.printZmanimColMask;
     opts.showFooter    = ps.printShowFooter;
     opts.use24hr       = ps.use24Hour;
+    opts.twoColumns    = ps.printTwoColumns;
     CCalPreviewDlg dlg(opts, this, nullptr);
     dlg.DoModal();
 }

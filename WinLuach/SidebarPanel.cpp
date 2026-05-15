@@ -40,7 +40,27 @@ BOOL CSidebarPanel::OnEraseBkgnd(CDC* pDC)
 
 void CSidebarPanel::OnLButtonDown(UINT /*nFlags*/, CPoint pt)
 {
-    if (m_yearHdrY >= 0 && abs(pt.y - m_yearHdrY) <= 8)
+    CPoint contentPt(pt.x, pt.y + m_scrollPos);
+    if (m_rcSpecialClose.PtInRect(contentPt))
+    {
+        m_pFrame->SetSidebarPaneVisible(CMainFrame::PANE_SPECIAL_TIMES, false);
+        return;
+    }
+    if (m_rcYearClose.PtInRect(contentPt))
+    {
+        m_pFrame->SetSidebarPaneVisible(CMainFrame::PANE_YEAR_DETAILS, false);
+        return;
+    }
+    if (m_rcMoladClose.PtInRect(contentPt))
+    {
+        m_pFrame->SetSidebarPaneVisible(CMainFrame::PANE_MOLAD, false);
+        return;
+    }
+
+    if (m_rcSpecialDrag.PtInRect(contentPt) ||
+        m_rcYearDrag.PtInRect(contentPt) ||
+        m_rcMoladDrag.PtInRect(contentPt) ||
+        (m_yearHdrY >= 0 && abs(contentPt.y - m_yearHdrY) <= 8))
     {
         SetCapture();
         m_dragging   = true;
@@ -51,7 +71,17 @@ void CSidebarPanel::OnLButtonDown(UINT /*nFlags*/, CPoint pt)
 
 void CSidebarPanel::OnMouseMove(UINT /*nFlags*/, CPoint pt)
 {
-    if (!m_dragging) return;
+    CPoint contentPt(pt.x, pt.y + m_scrollPos);
+    if (!m_dragging)
+    {
+        if (m_rcSpecialDrag.PtInRect(contentPt) ||
+            m_rcYearDrag.PtInRect(contentPt) ||
+            m_rcMoladDrag.PtInRect(contentPt))
+            SetCursor(LoadCursor(nullptr, IDC_SIZENS));
+        else
+            SetCursor(LoadCursor(nullptr, IDC_ARROW));
+        return;
+    }
     CRect rc; GetClientRect(&rc);
     int cy = rc.Height();
     if (cy > 40)
@@ -173,6 +203,13 @@ void CSidebarPanel::OnPaint()
     int indent = 14;  // left indent for text items
     int yOff = 10;
     int w = cx - 16;
+    m_rcSpecialClose.SetRectEmpty();
+    m_rcYearClose.SetRectEmpty();
+    m_rcMoladClose.SetRectEmpty();
+    m_rcSpecialDrag.SetRectEmpty();
+    m_rcYearDrag.SetRectEmpty();
+    m_rcMoladDrag.SetRectEmpty();
+    m_yearHdrY = -1;
 
     // Helper: draw word-wrapped text at (x+indent, yOff), returns height used
     auto drawWrapped = [&](const wchar_t* txt, int maxH) -> int {
@@ -182,6 +219,37 @@ void CSidebarPanel::OnPaint()
         rc.top = yOff; rc.bottom = yOff + h;
         memDC.DrawText(txt, -1, &rc, DT_LEFT | DT_TOP | DT_WORDBREAK);
         return h + 3;
+    };
+
+    auto drawPaneHeader = [&](const wchar_t* title, int& y, CRect& closeRc, CRect& dragRc) {
+        CRect rcGrip(0, y - 5, cx - 1, y);
+        memDC.FillSolidRect(rcGrip, RGB(178, 188, 204));
+        CPen gripPen(PS_SOLID, 1, RGB(105, 120, 145));
+        CPen* oldGrip = memDC.SelectObject(&gripPen);
+        int gy = y - 3;
+        memDC.MoveTo(cx / 2 - 12, gy);
+        memDC.LineTo(cx / 2 + 12, gy);
+        memDC.SelectObject(oldGrip);
+        dragRc = rcGrip;
+
+        CRect rcHdr(0, y, cx - 1, y + 20);
+        memDC.FillSolidRect(rcHdr, CLR_HEADER_BG);
+        memDC.SelectObject(&m_pFrame->m_fontBold);
+        memDC.SetTextColor(RGB(255, 255, 255));
+        CRect rcTxt = rcHdr;
+        rcTxt.left += 6;
+        rcTxt.right -= 26;
+        memDC.DrawText(title, rcTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        closeRc = CRect(cx - 22, y + 3, cx - 6, y + 17);
+        CPen xPen(PS_SOLID, 2, RGB(255, 255, 255));
+        CPen* oldX = memDC.SelectObject(&xPen);
+        memDC.MoveTo(closeRc.left + 4, closeRc.top + 4);
+        memDC.LineTo(closeRc.right - 4, closeRc.bottom - 4);
+        memDC.MoveTo(closeRc.right - 4, closeRc.top + 4);
+        memDC.LineTo(closeRc.left + 4, closeRc.bottom - 4);
+        memDC.SelectObject(oldX);
+        y += 24;
     };
 
     // "Day details" header bar
@@ -363,16 +431,12 @@ void CSidebarPanel::OnPaint()
         if (isLagBaOmer2 && zs.chatzot.IsValid())
             stimes[nst++] = { L"Chatzos:", zs.chatzot };
 
-        if (nst > 0 && yOff < contentLimit - 20)
+        if (nst > 0 &&
+            m_pFrame->IsSidebarPaneVisible(CMainFrame::PANE_SPECIAL_TIMES) &&
+            yOff < contentLimit - 20)
         {
             DrawSep(&memDC, x, yOff, w);
-            CRect rcSHdr(0, yOff - 2, cx - 1, yOff + 20);
-            memDC.FillSolidRect(rcSHdr, CLR_HEADER_BG);
-            memDC.SelectObject(&m_pFrame->m_fontBold);
-            memDC.SetTextColor(RGB(255, 255, 255));
-            CRect rcSTxt = rcSHdr; rcSTxt.left += 6;
-            memDC.DrawText(L"Special Times", rcSTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            yOff += 26;
+            drawPaneHeader(L"Special Times", yOff, m_rcSpecialClose, m_rcSpecialDrag);
 
             for (int si = 0; si < nst; si++)
             {
@@ -393,39 +457,40 @@ void CSidebarPanel::OnPaint()
         }
     }
 
+    bool showYearDetails = m_pFrame->IsSidebarPaneVisible(CMainFrame::PANE_YEAR_DETAILS);
+    bool showMolad = m_pFrame->IsSidebarPaneVisible(CMainFrame::PANE_MOLAD);
+
     // Year details header — positioned at m_splitFrac or after day content
     {
-        int splitY = (int)(m_splitFrac * cy);
-        yOff = max(yOff + 6, min(splitY, contentLimit - 40));
-        m_yearHdrY = yOff;
-        if (yOff + 20 < cy)
+        if (showYearDetails || showMolad)
         {
-            CRect rcYHdr(0, yOff, cx - 1, yOff + 20);
-            memDC.FillSolidRect(rcYHdr, CLR_HEADER_BG);
-            memDC.SelectObject(&m_pFrame->m_fontBold);
-            memDC.SetTextColor(RGB(255, 255, 255));
-            CRect rcYTxt = rcYHdr; rcYTxt.left += 6;
-            memDC.DrawText(L"Year details", rcYTxt,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            yOff += 24;
+            int splitY = (int)(m_splitFrac * cy);
+            yOff = max(yOff + 6, min(splitY, contentLimit - 40));
+            m_yearHdrY = yOff;
+            if (showYearDetails && yOff + 20 < cy)
+                drawPaneHeader(L"Year details", yOff, m_rcYearClose, m_rcYearDrag);
         }
     }
 
     // Year facts with alternating row shading
-    auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
-    memDC.SelectObject(&m_pFrame->m_fontSmall);
-    memDC.SetTextColor(RGB(60, 60, 60));
-    int rowIdx = 0;
-    for (const auto& fact : facts)
+    if (showYearDetails)
     {
-        if (yOff > contentLimit - 14) break;
-        COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
-        memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
-        rowIdx++;
-        yOff += drawWrapped(fact.c_str(), 48);
+        auto facts = GetYearFacts(m_pFrame->m_selectedHebrew.year);
+        memDC.SelectObject(&m_pFrame->m_fontSmall);
+        memDC.SetTextColor(RGB(60, 60, 60));
+        int rowIdx = 0;
+        for (const auto& fact : facts)
+        {
+            if (yOff > contentLimit - 14) break;
+            COLORREF rowBg = (rowIdx % 2 == 0) ? RGB(235, 240, 250) : RGB(220, 228, 245);
+            memDC.FillSolidRect(CRect(0, yOff, cx, yOff + 16), rowBg);
+            rowIdx++;
+            yOff += drawWrapped(fact.c_str(), 48);
+        }
     }
 
     // Molad box
+    if (showMolad)
     {
         const HebrewDate& hm = m_pFrame->m_selectedHebrew;
         static const wchar_t* kDayNames[7] = {
@@ -474,13 +539,7 @@ void CSidebarPanel::OnPaint()
         }
 
         DrawSep(&memDC, x, yOff, w);
-        CRect rcMHdr(0, yOff - 2, cx - 1, yOff + 20);
-        memDC.FillSolidRect(rcMHdr, CLR_HEADER_BG);
-        memDC.SelectObject(&m_pFrame->m_fontBold);
-        memDC.SetTextColor(RGB(255, 255, 255));
-        CRect rcMHdrTxt = rcMHdr; rcMHdrTxt.left += 6;
-        memDC.DrawText(L"Molad", rcMHdrTxt, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        yOff += 26;
+        drawPaneHeader(L"Molad", yOff, m_rcMoladClose, m_rcMoladDrag);
         memDC.SelectObject(&m_pFrame->m_fontNormal);
         memDC.SetTextColor(RGB(60, 40, 110));
         CString currentMolad = moladText(hm.year, hm.month);
