@@ -147,6 +147,7 @@ struct AppSettings
     uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
     uint64_t     printDayZmanimMask = 0xFFFFFFFFFull; // bitmask of day-detail zmanim rows
     bool         printShowFooter   = true;
+    bool         printTwoColumns   = false;
 
     // --- Zmanim shita ---
     // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90 (default)
@@ -209,6 +210,9 @@ struct AppSettings
     int          sidebarWidth     = 190;   // persisted splitter position
     int          zmanimHeight     = 110;   // persisted zmanim panel height
     bool         sidebarCollapsed = false;
+    bool         paneSpecialTimesVisible = true;
+    bool         paneYearDetailsVisible  = true;
+    bool         paneMoladVisible        = true;
 
     // --- Countdown clock ---
     std::wstring countdownTitleFontFace = L"Segoe UI";

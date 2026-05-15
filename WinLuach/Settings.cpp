@@ -154,6 +154,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printZmanimColMask\": " << s.printZmanimColMask << L",\n";
     f << L"  \"printDayZmanimMask\": " << (unsigned long long)s.printDayZmanimMask << L",\n";
     f << L"  \"printShowFooter\": " << (s.printShowFooter ? L"true" : L"false") << L",\n";
+    f << L"  \"printTwoColumns\": " << (s.printTwoColumns ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnFasts\": " << (s.showChatzosOnFasts ? L"true" : L"false") << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
     f << L"  \"customAlotValue\": " << s.customAlotValue << L",\n";
@@ -225,6 +226,9 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
     f << L"  \"zmanimHeight\": "     << s.zmanimHeight                              << L",\n";
     f << L"  \"sidebarCollapsed\": " << (s.sidebarCollapsed ? L"true" : L"false")   << L",\n";
+    f << L"  \"paneSpecialTimesVisible\": " << (s.paneSpecialTimesVisible ? L"true" : L"false") << L",\n";
+    f << L"  \"paneYearDetailsVisible\": " << (s.paneYearDetailsVisible ? L"true" : L"false") << L",\n";
+    f << L"  \"paneMoladVisible\": " << (s.paneMoladVisible ? L"true" : L"false") << L",\n";
     f << L"  \"countdownTitleFontFace\": \"" << JsonEscape(s.countdownTitleFontFace) << L"\",\n";
     f << L"  \"countdownTitleFontSize\": " << s.countdownTitleFontSize << L",\n";
     f << L"  \"countdownTitleTextColor\": " << s.countdownTitleTextColor << L",\n";
@@ -389,6 +393,7 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"printZmanimColMask\"")!= std::wstring::npos) s.printZmanimColMask = (uint32_t)ParseJsonNumber(line);
         if (line.find(L"\"printDayZmanimMask\"")!= std::wstring::npos) s.printDayZmanimMask = (uint64_t)ParseJsonNumber(line);
         if (line.find(L"\"printShowFooter\"")   != std::wstring::npos) s.printShowFooter   = ParseJsonBool(line);
+        if (line.find(L"\"printTwoColumns\"")   != std::wstring::npos) s.printTwoColumns   = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnFasts\"") != std::wstring::npos) s.showChatzosOnFasts = ParseJsonBool(line);
         if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customAlotValue\"")    != std::wstring::npos) s.customAlotValue = ParseJsonNumber(line);
@@ -433,6 +438,9 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"sidebarWidth\"")     != std::wstring::npos) s.sidebarWidth     = (int)ParseJsonNumber(line);
         if (line.find(L"\"zmanimHeight\"")     != std::wstring::npos) s.zmanimHeight     = (int)ParseJsonNumber(line);
         if (line.find(L"\"sidebarCollapsed\"") != std::wstring::npos) s.sidebarCollapsed = ParseJsonBool(line);
+        if (line.find(L"\"paneSpecialTimesVisible\"") != std::wstring::npos) s.paneSpecialTimesVisible = ParseJsonBool(line);
+        if (line.find(L"\"paneYearDetailsVisible\"")  != std::wstring::npos) s.paneYearDetailsVisible  = ParseJsonBool(line);
+        if (line.find(L"\"paneMoladVisible\"")        != std::wstring::npos) s.paneMoladVisible        = ParseJsonBool(line);
         if (line.find(L"\"countdownTitleFontFace\"") != std::wstring::npos) s.countdownTitleFontFace = ParseJsonString(line);
         if (line.find(L"\"countdownTitleFontSize\"") != std::wstring::npos) s.countdownTitleFontSize = (int)ParseJsonNumber(line);
         if (line.find(L"\"countdownTitleTextColor\"") != std::wstring::npos) s.countdownTitleTextColor = (int)ParseJsonNumber(line);
