@@ -213,6 +213,9 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"notifyParshaName\": \"" << JsonEscape(s.notifyParshaName) << L"\",\n";
     f << L"  \"notifyParshaOffsets\": \"" << JsonEscape(s.notifyParshaOffsets) << L"\",\n";
     f << L"  \"notifyPersonalOffsets\": \"" << JsonEscape(s.notifyPersonalOffsets) << L"\",\n";
+    f << L"  \"useWinLuachToast\": " << (s.useWinLuachToast ? L"true" : L"false") << L",\n";
+    f << L"  \"winLuachToastDuration\": " << s.winLuachToastDuration << L",\n";
+    f << L"  \"winLuachToastDurationUnit\": " << s.winLuachToastDurationUnit << L",\n";
     f << L"  \"advancedReminderCount\": " << s.advancedReminders.size() << L",\n";
     for (int i = 0; i < (int)s.advancedReminders.size(); ++i)
     {
@@ -374,6 +377,9 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"notifyParshaName\"")     != std::wstring::npos) s.notifyParshaName     = ParseJsonString(line);
         if (line.find(L"\"notifyParshaOffsets\"")  != std::wstring::npos) s.notifyParshaOffsets  = ParseJsonString(line);
         if (line.find(L"\"notifyPersonalOffsets\"")!= std::wstring::npos) s.notifyPersonalOffsets= ParseJsonString(line);
+        if (line.find(L"\"useWinLuachToast\"") != std::wstring::npos) s.useWinLuachToast = ParseJsonBool(line);
+        if (line.find(L"\"winLuachToastDuration\"") != std::wstring::npos) s.winLuachToastDuration = (int)ParseJsonNumber(line);
+        if (line.find(L"\"winLuachToastDurationUnit\"") != std::wstring::npos) s.winLuachToastDurationUnit = (int)ParseJsonNumber(line);
         if (line.find(L"\"advancedReminderCount\"") != std::wstring::npos) s.advancedReminders.resize((int)ParseJsonNumber(line));
         if (line.find(L"\"advancedReminder") != std::wstring::npos)
         {

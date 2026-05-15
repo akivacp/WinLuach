@@ -124,6 +124,10 @@
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST       420
 #define IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST 451  // 451..457 (7 custom zmanim)
 #define IDC_OPT_YEAR_DETAIL_FIRST          500  // 500..511 (12 year facts)
+#define IDC_OPT_RAD_WINNOTIFY      520
+#define IDC_OPT_RAD_WINLUACHTOAST  521
+#define IDC_OPT_TOAST_DURATION     522
+#define IDC_OPT_TOAST_UNIT         523
 
 enum ColorPreviewKind
 {
@@ -1512,6 +1516,30 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Notifications tab
     y = 38;
+    mkGroup(m_pageNotifications, L"Toast notification type", 14, y, W - 28, 76); y += 22;
+    m_radUseWindowsNotify.Create(L"Windows built-in notifications",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+        CRect(28, y, 230, y + 20), this, IDC_OPT_RAD_WINNOTIFY);
+    track(m_pageNotifications, &m_radUseWindowsNotify);
+    m_radUseWinLuachToast.Create(L"WinLuach Toast",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+        CRect(236, y, 380, y + 20), this, IDC_OPT_RAD_WINLUACHTOAST);
+    track(m_pageNotifications, &m_radUseWinLuachToast);
+    bool isWLToast = m_current.useWinLuachToast;
+    m_radUseWindowsNotify.SetCheck(!isWLToast ? BST_CHECKED : BST_UNCHECKED);
+    m_radUseWinLuachToast.SetCheck(isWLToast ? BST_CHECKED : BST_UNCHECKED);
+    y += 26;
+    mkStatic(m_pageNotifications, L"Display for:", 28, y, 80, 22);
+    m_editToastDuration.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+        CRect(110, y, 152, y + 22), this, IDC_OPT_TOAST_DURATION);
+    track(m_pageNotifications, &m_editToastDuration);
+    { CString dur; dur.Format(L"%d", max(1, m_current.winLuachToastDuration)); m_editToastDuration.SetWindowText(dur); }
+    initCombo(m_pageNotifications, m_cmbToastDurationUnit, 158, y - 1, 100, IDC_OPT_TOAST_UNIT,
+        { L"minutes", L"hours", L"days", L"weeks", L"months" },
+        max(0, min(4, m_current.winLuachToastDurationUnit)));
+    m_editToastDuration.EnableWindow(isWLToast ? TRUE : FALSE);
+    m_cmbToastDurationUnit.EnableWindow(isWLToast ? TRUE : FALSE);
+    y += 30;
     mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 178); y += 22;
     mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
     initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
@@ -2736,6 +2764,14 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
+    if (code == BN_CLICKED && (id == IDC_OPT_RAD_WINNOTIFY || id == IDC_OPT_RAD_WINLUACHTOAST))
+    {
+        bool wlToast = (id == IDC_OPT_RAD_WINLUACHTOAST);
+        if (m_editToastDuration.GetSafeHwnd()) m_editToastDuration.EnableWindow(wlToast ? TRUE : FALSE);
+        if (m_cmbToastDurationUnit.GetSafeHwnd()) m_cmbToastDurationUnit.EnableWindow(wlToast ? TRUE : FALSE);
+        SetDirty(true);
+        return TRUE;
+    }
     if (id == IDC_OPT_TRAY_BACK_ENABLED && code == BN_CLICKED)
     {
         if (m_btnTrayBackColor.GetSafeHwnd())
@@ -2972,6 +3008,12 @@ void COptionsDlg::ReadControlsIntoResult()
     }
     m_result.notifyParshaOffsets = ReadOffsetControls(m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
     m_result.notifyPersonalOffsets = ReadOffsetControls(m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
+    m_result.useWinLuachToast = (m_radUseWinLuachToast.GetSafeHwnd() &&
+                                  m_radUseWinLuachToast.GetCheck() == BST_CHECKED);
+    { CString dur; m_editToastDuration.GetWindowText(dur);
+      m_result.winLuachToastDuration = max(1, _wtoi(dur)); }
+    m_result.winLuachToastDurationUnit = max(0, min(4, m_cmbToastDurationUnit.GetSafeHwnd() ?
+        m_cmbToastDurationUnit.GetCurSel() : 0));
 
     // v0.8.0 - Zmanim bar mask: one bit per checkbox.
     uint32_t mask = 0;
