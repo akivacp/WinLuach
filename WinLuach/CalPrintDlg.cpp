@@ -590,6 +590,79 @@ std::vector<std::pair<int, int>> BuildPageList(
     return pages;
 }
 
+static bool UseTwoColumnCalendarPrint(const CalPrintOptions& opts,
+                                      const std::vector<std::pair<int, int>>& months)
+{
+    return months.size() > 1 && (opts.twoColumns || months.size() > 1);
+}
+
+static int CalendarPrintSheetCount(const CalPrintOptions& opts,
+                                   const std::vector<std::pair<int, int>>& months)
+{
+    int perSheet = UseTwoColumnCalendarPrint(opts, months) ? 2 : 1;
+    return max(1, ((int)months.size() + perSheet - 1) / perSheet);
+}
+
+static void DrawCalendarPrintSheet(CDC* pDC, const CRect& rcContent,
+                                   const std::vector<std::pair<int, int>>& months,
+                                   int sheetIndex, CMainFrame* pFrame,
+                                   const CalPrintOptions& opts)
+{
+    if (months.empty())
+        return;
+
+    if (!UseTwoColumnCalendarPrint(opts, months))
+    {
+        auto [yr, mo] = months[min(sheetIndex, (int)months.size() - 1)];
+        DrawCalMonthPage(pDC, rcContent, yr, mo, pFrame, opts);
+        return;
+    }
+
+    pDC->FillSolidRect(rcContent, RGB(255, 255, 255));
+    int gap = max(10, rcContent.Width() / 45);
+    int colW = (rcContent.Width() - gap) / 2;
+    int start = sheetIndex * 2;
+    int fFoot = -(rcContent.Height() * 16 / 1000);
+    if (fFoot > -4) fFoot = -4;
+    int footH = opts.showFooter ? (-fFoot + 4) : 0;
+
+    CalPrintOptions colOpts = opts;
+    colOpts.showFooter = false;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        int idx = start + i;
+        if (idx >= (int)months.size())
+            break;
+
+        int left = rcContent.left + i * (colW + gap);
+        CRect rcCol(left, rcContent.top, left + colW, rcContent.bottom - footH);
+        auto [yr, mo] = months[idx];
+        DrawCalMonthPage(pDC, rcCol, yr, mo, pFrame, colOpts);
+    }
+
+    CPen pen(PS_SOLID, max(1, rcContent.Width() / 900), RGB(190, 195, 205));
+    CPen* oldPen = pDC->SelectObject(&pen);
+    int x = rcContent.left + colW + gap / 2;
+    pDC->MoveTo(x, rcContent.top);
+    pDC->LineTo(x, rcContent.bottom);
+    pDC->SelectObject(oldPen);
+
+    if (opts.showFooter)
+    {
+        CFont fontFoot;
+        fontFoot.CreateFont(fFoot, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+        pDC->SelectObject(&fontFoot);
+        pDC->SetTextColor(RGB(140, 140, 140));
+        pDC->SetBkMode(TRANSPARENT);
+        CRect rcFoot(rcContent.left, rcContent.bottom - footH, rcContent.right, rcContent.bottom);
+        pDC->FillSolidRect(rcFoot, RGB(245, 245, 245));
+        DrawTextFit(pDC, L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
+            rcFoot, DT_CENTER | DT_BOTTOM | DT_SINGLELINE);
+    }
+}
+
 // =============================================================================
 // DO PRINT
 // Shows CPrintDialog (standard Windows print dialog) and prints.
@@ -650,12 +723,13 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame)
 
     auto pages = BuildPageList(opts,
         pFrame->m_viewYear, pFrame->m_viewMonth);
+    int sheetCount = CalendarPrintSheetCount(opts, pages);
 
     dc.StartDoc(&di);
-    for (auto& [yr, mo] : pages)
+    for (int pageIndex = 0; pageIndex < sheetCount; ++pageIndex)
     {
         dc.StartPage();
-        DrawCalMonthPage(&dc, rcContent, yr, mo, pFrame, opts);
+        DrawCalendarPrintSheet(&dc, rcContent, pages, pageIndex, pFrame, opts);
         dc.EndPage();
     }
     dc.EndDoc();
@@ -2624,7 +2698,7 @@ INT_PTR CCalPrintDlg::DoModal()
     buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
     buf.t.cdit   = 0;
     buf.t.cx     = 310;
-    buf.t.cy     = 420;
+    buf.t.cy     = 450;
     wcscpy_s(buf.title, L"Print Calendar");
     if (!InitModalIndirect((DLGTEMPLATE*)&buf, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -2652,6 +2726,7 @@ BOOL CCalPrintDlg::OnInitDialog()
         m_opts.zmanimColumns  = ps.printZmanimColMask;
         m_opts.showFooter     = ps.printShowFooter;
         m_opts.use24hr        = ps.use24Hour;
+        m_opts.twoColumns     = ps.printTwoColumns;
     }
 
     CRect rcClient;
@@ -2710,6 +2785,13 @@ BOOL CCalPrintDlg::OnInitDialog()
             m_opts.range == CalPrintOptions::RANGE_YEAR);   y += 22;
     mkRadio(m_rad12, L"Next 12 months", IDC_PD_RAD_12, 20, y, W - 30, false,
             m_opts.range == CalPrintOptions::RANGE_12);     y += 28;
+
+    m_chkTwoColumns.Create(L"Use 2 columns for multi-month prints",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_2COL);
+    m_chkTwoColumns.SetFont(pF);
+    m_chkTwoColumns.SetCheck(m_opts.twoColumns ? BST_CHECKED : BST_UNCHECKED);
+    y += 24;
 
     // ── Orientation ──────────────────────────────────────────────────────────
     mkStatic(L"Orientation", 8, y, 200, 16); y += 20;
@@ -2826,6 +2908,7 @@ void CCalPrintDlg::ReadControls()
 
     m_opts.showFooter = (m_chkShowFooter.GetCheck() == BST_CHECKED);
     m_opts.use24hr    = (m_chk24hr.GetCheck() == BST_CHECKED);
+    m_opts.twoColumns = (m_chkTwoColumns.GetCheck() == BST_CHECKED);
 
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
@@ -2855,6 +2938,7 @@ static void SavePrintOptsToSettings(const CalPrintOptions& opts)
     ps.printZmanimColMask = opts.zmanimColumns;
     ps.printShowFooter    = opts.showFooter;
     ps.use24Hour          = opts.use24hr;
+    ps.printTwoColumns    = opts.twoColumns;
     SaveSettings(ps);
 }
 
@@ -2863,6 +2947,16 @@ void CCalPrintDlg::OnOK()
     ReadControls();
     SavePrintOptsToSettings(m_opts);
     CDialog::OnOK();
+}
+
+void CCalPrintDlg::OnCancel()
+{
+    if (m_radMonth.GetSafeHwnd())
+    {
+        ReadControls();
+        SavePrintOptsToSettings(m_opts);
+    }
+    CDialog::OnCancel();
 }
 
 // =============================================================================
@@ -3014,7 +3108,7 @@ void CCalPreviewDlg::OnSize(UINT nType, int cx, int cy)
 void CCalPreviewDlg::UpdateNavButtons()
 {
     bool hasPrev = (m_curPage > 0);
-    bool hasNext = (m_curPage < (int)m_pages.size() - 1);
+    bool hasNext = (m_curPage < CalendarPrintSheetCount(m_opts, m_pages) - 1);
     if (m_btnPrev.GetSafeHwnd())
     {
         m_btnPrev.EnableWindow(hasPrev);
@@ -3026,7 +3120,7 @@ void CCalPreviewDlg::UpdatePageLabel()
 {
     if (!m_lblPage.GetSafeHwnd()) return;
     CString s;
-    s.Format(L"Page %d of %d", m_curPage + 1, (int)m_pages.size());
+    s.Format(L"Page %d of %d", m_curPage + 1, CalendarPrintSheetCount(m_opts, m_pages));
     m_lblPage.SetWindowText(s);
 }
 
@@ -3043,7 +3137,7 @@ void CCalPreviewDlg::OnPrevPage()
 
 void CCalPreviewDlg::OnNextPage()
 {
-    if (m_curPage < (int)m_pages.size() - 1)
+    if (m_curPage < CalendarPrintSheetCount(m_opts, m_pages) - 1)
     {
         m_curPage++;
         UpdateNavButtons();
@@ -3139,8 +3233,7 @@ void CCalPreviewDlg::OnPaint()
                     pageX + pageW - mR, pageY + pageH - mB);
 
     // Draw calendar
-    auto [yr, mo] = m_pages[m_curPage];
-    DrawCalMonthPage(&memDC, rcContent, yr, mo, m_pFrame, m_opts);
+    DrawCalendarPrintSheet(&memDC, rcContent, m_pages, m_curPage, m_pFrame, m_opts);
 
     // Toolbar background
     CRect rcTool(0, H - toolH, W, H);

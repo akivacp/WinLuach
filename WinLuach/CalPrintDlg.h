@@ -49,6 +49,7 @@ struct CalPrintOptions
     uint32_t zmanimColumns  = 0x7FFF;  // bitmask: which of 15 columns to include
     bool     showFooter     = true;
     bool     use24hr        = false;
+    bool     twoColumns     = false;
 };
 
 // Render function type for single-page prints: DC, page rect, showFooter.
@@ -118,6 +119,7 @@ public:
 protected:
     BOOL OnInitDialog() override;
     void OnOK() override;
+    void OnCancel() override;
     afx_msg void OnBnPreview();
 
     DECLARE_MESSAGE_MAP()
@@ -134,6 +136,7 @@ private:
     CButton m_chkCol[15];
     CButton m_chkShowFooter;
     CButton m_chk24hr;
+    CButton m_chkTwoColumns;
 
     enum {
         IDC_PD_RAD_MONTH   = 200,
@@ -150,6 +153,7 @@ private:
         IDC_PD_COL_0       = 212,   // first of 15 column checkboxes (212..226)
         IDC_PD_CHK_FOOTER  = 227,
         IDC_PD_CHK_24HR    = 228,
+        IDC_PD_CHK_2COL    = 229,
     };
 
     void ReadControls();

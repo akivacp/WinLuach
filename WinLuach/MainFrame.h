@@ -133,6 +133,9 @@ struct DisplayZmanimTimes
 #define ID_FILE_PRINT_EVENTS 1036
 #define ID_HELP_CONTENTS    1037
 #define ID_VIEW_COUNTDOWN   1038
+#define ID_VIEW_PANE_SPECIAL 1039
+#define ID_VIEW_PANE_YEAR    1040
+#define ID_VIEW_PANE_MOLAD   1041
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -172,6 +175,9 @@ public:
     void OnPickOptions();
     void ApplyAndSaveSettings(const AppSettings& s);
     void OnOptionsDialogClosed(COptionsDlg* dlg);
+    enum SidebarPaneId { PANE_SPECIAL_TIMES = 0, PANE_YEAR_DETAILS = 1, PANE_MOLAD = 2 };
+    bool IsSidebarPaneVisible(SidebarPaneId pane) const;
+    void SetSidebarPaneVisible(SidebarPaneId pane, bool visible);
 
     std::vector<CalendarEventLine> GetCalendarEventLinesForDate(const GregorianDate& g) const;
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
@@ -222,6 +228,9 @@ public:
     bool          m_showTrayIcon   = false;
     bool          m_minimizeToTray = false;
     int           m_minimizeTrayWhen = 0;
+    bool          m_paneSpecialTimesVisible = true;
+    bool          m_paneYearDetailsVisible  = true;
+    bool          m_paneMoladVisible        = true;
     ZmanimResult  m_zmanim;
     int           m_customAlotMode = 0;
     double        m_customAlotValue = 16.1;
@@ -303,6 +312,7 @@ protected:
     afx_msg void OnSize(UINT nType, int cx, int cy);
     afx_msg void OnPaint();
     afx_msg void OnTimer(UINT_PTR nIDEvent);
+    afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu);
     afx_msg LRESULT OnTrayNotify(WPARAM wParam, LPARAM lParam);
     afx_msg void OnViewPrevDay();
     afx_msg void OnViewNextDay();
@@ -331,6 +341,9 @@ protected:
     afx_msg void OnViewZoomOut();
     afx_msg void OnViewZoomReset();
     afx_msg void OnViewCountdownClock();
+    afx_msg void OnViewPaneSpecialTimes();
+    afx_msg void OnViewPaneYearDetails();
+    afx_msg void OnViewPaneMolad();
     afx_msg void OnCalGoTo();
     afx_msg void OnCalEvents();
     afx_msg void OnFileExportEvents();
