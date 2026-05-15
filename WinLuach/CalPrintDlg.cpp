@@ -1466,36 +1466,50 @@ struct EventListRow
     HebrewDate    heb;
     std::wstring  typeStr;
     std::wstring  name;
+    int           typeOrd = 3;  // for category sorting (0=Birthday,1=Anniversary,2=Yahrzeit,3=Custom)
 };
 
+// categoryMask: bits 0-3 = Birthday/Anniversary/Yahrzeit/Custom (type 0/1/2/3)
+// separateCategories: if true, groups Birthday→Anniversary→Yahrzeit→Custom instead of chrono
 static std::vector<EventListRow> BuildEventRows(
-    const std::vector<UserEventEntry>& events, int gregYear)
+    const std::vector<UserEventEntry>& events, int gregYear,
+    uint8_t categoryMask = 0x0F, bool separateCategories = false)
 {
     std::vector<EventListRow> rows;
 
     for (const auto& ev : events)
     {
-        // Skip one-time events that don't fall in this year
-        if (ev.gregYear != 0 && ev.gregYear != gregYear) continue;
+        // Filter by category
+        int typeBit = (ev.type >= 0 && ev.type <= 3) ? ev.type : 3;
+        if (!(categoryMask & (1u << typeBit))) continue;
+
+        // Skip one-time events that don't fall in this year (#18 fix: observeAnnually)
+        if (!ev.observeAnnually && ev.gregYear != 0 && ev.gregYear != gregYear) continue;
+        if (!ev.observeAnnually && ev.hebYear  != 0 && ev.gregYear  == 0)
+        {
+            // Hebrew-anchored one-time event: check approximate year match
+            bool yearOk = false;
+            for (int tryHY = gregYear + 3760; tryHY <= gregYear + 3762; ++tryHY)
+                if (ev.hebYear == tryHY) { yearOk = true; break; }
+            if (!yearOk) continue;
+        }
 
         EventListRow row;
         static const wchar_t* kTypes[] = { L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" };
         row.typeStr = (ev.type >= 0 && ev.type <= 3) ? kTypes[ev.type] : L"Event";
+        row.typeOrd = (ev.type >= 0 && ev.type <= 3) ? ev.type : 3;
         row.name    = ev.name;
 
         if (ev.hebMonth != 0)
         {
             // Hebrew-based: find the Gregorian date for this month/day in gregYear
-            // Try both possible Hebrew years that overlap gregYear
             for (int tryHY = gregYear + 3760; tryHY <= gregYear + 3762; ++tryHY)
             {
-                if (ev.hebYear != 0 && ev.hebYear != tryHY) continue;
+                if (ev.hebYear != 0 && !ev.observeAnnually && ev.hebYear != tryHY) continue;
                 bool ly = IsHebrewLeapYear(tryHY);
-                // Adar I only exists in leap years; Adar = Adar II in leap, Adar in regular
                 int mo = ev.hebMonth;
                 if (mo == ADAR && ly) mo = ADAR_II;
                 HebrewDate h; h.year = tryHY; h.month = mo; h.day = ev.hebDay;
-                // Validate day in month
                 int daysInMo = DaysInHebrewMonth(mo, tryHY);
                 if (ev.hebDay > daysInMo) h.day = daysInMo;
                 GregorianDate g = HebrewToGregorian(h);
@@ -1503,7 +1517,6 @@ static std::vector<EventListRow> BuildEventRows(
                 {
                     if (ev.afterSunset)
                     {
-                        // Show on day before (evening before)
                         long jd = GregorianToJDN(g) - 1;
                         g = JDNToGregorian(jd);
                     }
@@ -1517,7 +1530,7 @@ static std::vector<EventListRow> BuildEventRows(
         else if (ev.gregMonth != 0)
         {
             // Gregorian-based
-            if (ev.gregYear != 0 && ev.gregYear != gregYear) continue;
+            if (!ev.observeAnnually && ev.gregYear != 0 && ev.gregYear != gregYear) continue;
             GregorianDate g; g.year = gregYear; g.month = ev.gregMonth; g.day = ev.gregDay;
             row.greg = g;
             row.heb  = GregorianToHebrew(g);
@@ -1525,18 +1538,32 @@ static std::vector<EventListRow> BuildEventRows(
         }
     }
 
-    // Sort chronologically
-    std::sort(rows.begin(), rows.end(), [](const EventListRow& a, const EventListRow& b) {
-        if (a.greg.month != b.greg.month) return a.greg.month < b.greg.month;
-        return a.greg.day < b.greg.day;
-    });
+    if (separateCategories)
+    {
+        // Sort by category order (Birthday=0, Anniversary=1, Yahrzeit=2, Custom=3),
+        // then chronologically within each category
+        static const int kOrder[] = { 0, 1, 2, 3 };
+        std::sort(rows.begin(), rows.end(), [](const EventListRow& a, const EventListRow& b) {
+            if (a.typeOrd != b.typeOrd) return a.typeOrd < b.typeOrd;
+            if (a.greg.month != b.greg.month) return a.greg.month < b.greg.month;
+            return a.greg.day < b.greg.day;
+        });
+    }
+    else
+    {
+        std::sort(rows.begin(), rows.end(), [](const EventListRow& a, const EventListRow& b) {
+            if (a.greg.month != b.greg.month) return a.greg.month < b.greg.month;
+            return a.greg.day < b.greg.day;
+        });
+    }
     return rows;
 }
 
 void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
                         const std::vector<UserEventEntry>& events,
                         int gregYear, int pageIndex, int totalPages,
-                        bool showFooter)
+                        bool showFooter,
+                        uint8_t categoryMask, bool separateCategories)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -1586,7 +1613,7 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
     y += rowH + 4;
 
     // Build rows for this year, calculate which ones fall on this page
-    auto rows = BuildEventRows(events, gregYear);
+    auto rows = BuildEventRows(events, gregYear, categoryMask, separateCategories);
     int footerH = showFooter ? (H * 4 / 100 + 4) : 0;
     int contentBottom = y0 + H - footerH;
     int rowsPerPage = (contentBottom - y) / (rowH + 2);
@@ -1596,10 +1623,29 @@ void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
 
     pDC->SelectObject(&fontRow);
     bool altRow = false;
+    int lastTypeOrd = -1;
+    static const wchar_t* kCatHeaders[] = { L"Birthdays", L"Anniversaries", L"Yahrzeits", L"Custom Events" };
     for (int i = startIdx; i < endIdx; ++i)
     {
         const auto& r = rows[i];
         if (y + rowH > contentBottom) break;
+
+        // Category header when separating by type
+        if (separateCategories && r.typeOrd != lastTypeOrd)
+        {
+            lastTypeOrd = r.typeOrd;
+            if (y + rowH + 2 > contentBottom) break;
+            pDC->FillSolidRect(CRect(x0, y, x0+W, y+rowH), RGB(80, 110, 160));
+            pDC->SelectObject(&fontHdr);
+            pDC->SetBkMode(TRANSPARENT);
+            pDC->SetTextColor(RGB(255, 255, 255));
+            const wchar_t* hdr = (r.typeOrd >= 0 && r.typeOrd <= 3) ? kCatHeaders[r.typeOrd] : L"Events";
+            DrawTextFit(pDC, hdr, CRect(x0+8, y, x0+W-8, y+rowH), DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+            y += rowH + 2;
+            altRow = false;
+            pDC->SelectObject(&fontRow);
+            if (y + rowH > contentBottom) break;
+        }
 
         if (altRow)
             pDC->FillSolidRect(CRect(x0, y, x0+W, y+rowH), RGB(245, 247, 255));
@@ -1735,24 +1781,35 @@ bool DoPrintEventsList(CMainFrame* pFrame)
         int                         year;
         int                         totalPgs;
         SimplePageOpts              opts;
+        uint8_t                     categoryMask       = 0x0F;
+        bool                        separateCategories = false;
         CButton m_radPortrait, m_radLandscape;
         CEdit   m_editTop, m_editBot, m_editLeft, m_editRight;
         CButton m_btnPreview, m_chkFooter;
+        CButton m_chkBirthday, m_chkAnniversary, m_chkYahrzeit, m_chkCustom;
+        CButton m_chkSeparate;
         CWnd*   m_pOwner;
 
         enum {
-            IDC_EP_PORT    = 260,
-            IDC_EP_LAND    = 261,
-            IDC_EP_TOP     = 262,
-            IDC_EP_BOT     = 263,
-            IDC_EP_LEFT    = 264,
-            IDC_EP_RIGHT   = 265,
-            IDC_EP_PREVIEW = 266,
-            IDC_EP_FOOTER  = 267,
+            IDC_EP_PORT      = 260,
+            IDC_EP_LAND      = 261,
+            IDC_EP_TOP       = 262,
+            IDC_EP_BOT       = 263,
+            IDC_EP_LEFT      = 264,
+            IDC_EP_RIGHT     = 265,
+            IDC_EP_PREVIEW   = 266,
+            IDC_EP_FOOTER    = 267,
+            IDC_EP_BIRTHDAY  = 268,
+            IDC_EP_ANNIV     = 269,
+            IDC_EP_YAHRZEIT  = 270,
+            IDC_EP_CUSTOM    = 271,
+            IDC_EP_SEPARATE  = 272,
         };
 
-        CEventsSetupDlg(const std::vector<UserEventEntry>& e, int y, int tp, CWnd* p)
-            : CDialog(), evts(e), year(y), totalPgs(tp), m_pOwner(p)
+        CEventsSetupDlg(const std::vector<UserEventEntry>& e, int y, int tp,
+                        uint8_t catMask, bool sepCats, CWnd* p)
+            : CDialog(), evts(e), year(y), totalPgs(tp),
+              categoryMask(catMask), separateCategories(sepCats), m_pOwner(p)
         { m_pParentWnd = p; }
 
         INT_PTR DoModal() override
@@ -1760,7 +1817,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             struct T { DLGTEMPLATE t; WORD menu,cls; wchar_t title[32]; } b = {};
             b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
             b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-            b.t.cx = 220; b.t.cy = 180;
+            b.t.cx = 230; b.t.cy = 260;
             wcscpy_s(b.title, L"Print Events List");
             if (!InitModalIndirect((LPCDLGTEMPLATE)&b, m_pParentWnd)) return -1;
             return CDialog::DoModal();
@@ -1769,43 +1826,88 @@ bool DoPrintEventsList(CMainFrame* pFrame)
         {
             CDialog::OnInitDialog();
             SetWindowText(L"Print Events List");
-            CRect rc; GetClientRect(&rc);
             int lh = 16, pad = 8, ex = pad, ey = pad;
+            HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
+            auto mkLabel = [&](const wchar_t* text, int x, int y, int w, int h) {
+                CStatic* s = new CStatic();
+                s->Create(text, WS_CHILD|WS_VISIBLE, CRect(x,y,x+w,y+h), this, 0);
+                s->SetFont(CFont::FromHandle(hF));
+            };
+
+            // Orientation
             m_radPortrait .Create(L"Portrait",  WS_CHILD|WS_VISIBLE|BS_AUTORADIOBUTTON|WS_GROUP,
                 CRect(ex,ey,ex+70,ey+lh), this, IDC_EP_PORT);
+            m_radPortrait.SetFont(CFont::FromHandle(hF));
             m_radLandscape.Create(L"Landscape", WS_CHILD|WS_VISIBLE|BS_AUTORADIOBUTTON,
-                CRect(ex+74,ey,ex+160,ey+lh), this, IDC_EP_LAND);
+                CRect(ex+76,ey,ex+170,ey+lh), this, IDC_EP_LAND);
+            m_radLandscape.SetFont(CFont::FromHandle(hF));
             m_radPortrait.SetCheck(BST_CHECKED);
-            ey += lh+6;
+            ey += lh+8;
 
+            // Margins
             auto makeRow = [&](const wchar_t* lbl, CEdit& ed, float v) {
-                CStatic* s = new CStatic();
-                s->Create(lbl, WS_CHILD|WS_VISIBLE, CRect(ex,ey,ex+55,ey+lh), this, 0);
+                mkLabel(lbl, ex, ey, 65, lh);
                 CString vs; vs.Format(L"%.2f", v);
-                ed.Create(WS_CHILD|WS_VISIBLE|WS_BORDER,
-                    CRect(ex+58,ey,ex+100,ey+lh), this, 0);
+                ed.Create(WS_CHILD|WS_VISIBLE|WS_BORDER|ES_AUTOHSCROLL,
+                    CRect(ex+68,ey,ex+110,ey+lh), this, 0);
+                ed.SetFont(CFont::FromHandle(hF));
                 ed.SetWindowText(vs);
                 ey += lh+4;
             };
-            makeRow(L"Top margin:",   m_editTop,   0.0f);
-            makeRow(L"Bottom margin:",m_editBot,   0.0f);
-            makeRow(L"Left margin:",  m_editLeft,  0.0f);
-            makeRow(L"Right margin:", m_editRight, 0.0f);
+            makeRow(L"Top margin:",    m_editTop,   opts.mTop);
+            makeRow(L"Bottom margin:", m_editBot,   opts.mBot);
+            makeRow(L"Left margin:",   m_editLeft,  opts.mLeft);
+            makeRow(L"Right margin:",  m_editRight, opts.mRight);
+            ey += 4;
 
+            // Footer
             m_chkFooter.Create(L"Show footer", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
-                CRect(ex,ey,ex+120,ey+lh), this, IDC_EP_FOOTER);
+                CRect(ex,ey,ex+130,ey+lh), this, IDC_EP_FOOTER);
+            m_chkFooter.SetFont(CFont::FromHandle(hF));
             m_chkFooter.SetCheck(BST_CHECKED);
+            ey += lh+10;
+
+            // Category group
+            mkLabel(L"Include categories:", ex, ey, 130, lh); ey += lh+2;
+            m_chkBirthday.Create(L"Birthdays", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex+8,ey,ex+100,ey+lh), this, IDC_EP_BIRTHDAY);
+            m_chkBirthday.SetFont(CFont::FromHandle(hF));
+            m_chkBirthday.SetCheck((categoryMask & 1) ? BST_CHECKED : BST_UNCHECKED);
+            m_chkAnniversary.Create(L"Anniversaries", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex+104,ey,ex+210,ey+lh), this, IDC_EP_ANNIV);
+            m_chkAnniversary.SetFont(CFont::FromHandle(hF));
+            m_chkAnniversary.SetCheck((categoryMask & 2) ? BST_CHECKED : BST_UNCHECKED);
+            ey += lh+4;
+            m_chkYahrzeit.Create(L"Yahrzeits", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex+8,ey,ex+100,ey+lh), this, IDC_EP_YAHRZEIT);
+            m_chkYahrzeit.SetFont(CFont::FromHandle(hF));
+            m_chkYahrzeit.SetCheck((categoryMask & 4) ? BST_CHECKED : BST_UNCHECKED);
+            m_chkCustom.Create(L"Custom events", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex+104,ey,ex+210,ey+lh), this, IDC_EP_CUSTOM);
+            m_chkCustom.SetFont(CFont::FromHandle(hF));
+            m_chkCustom.SetCheck((categoryMask & 8) ? BST_CHECKED : BST_UNCHECKED);
             ey += lh+8;
 
+            // Separate categories
+            m_chkSeparate.Create(L"Group by category", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+                CRect(ex,ey,ex+160,ey+lh), this, IDC_EP_SEPARATE);
+            m_chkSeparate.SetFont(CFont::FromHandle(hF));
+            m_chkSeparate.SetCheck(separateCategories ? BST_CHECKED : BST_UNCHECKED);
+            ey += lh+10;
+
+            // Buttons
             m_btnPreview.Create(L"Preview", WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
-                CRect(ex,ey,ex+60,ey+20), this, IDC_EP_PREVIEW);
+                CRect(ex,ey,ex+60,ey+22), this, IDC_EP_PREVIEW);
+            m_btnPreview.SetFont(CFont::FromHandle(hF));
             CButton* ok = new CButton();
             ok->Create(L"Print", WS_CHILD|WS_VISIBLE|BS_DEFPUSHBUTTON,
-                CRect(ex+64,ey,ex+124,ey+20), this, IDOK);
+                CRect(ex+64,ey,ex+124,ey+22), this, IDOK);
+            ok->SetFont(CFont::FromHandle(hF));
             CButton* cancel = new CButton();
             cancel->Create(L"Cancel", WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
-                CRect(ex+128,ey,ex+188,ey+20), this, IDCANCEL);
+                CRect(ex+128,ey,ex+195,ey+22), this, IDCANCEL);
+            cancel->SetFont(CFont::FromHandle(hF));
             return TRUE;
         }
 
@@ -1820,6 +1922,12 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             opts.mBot   = getF(m_editBot);
             opts.mLeft  = getF(m_editLeft);
             opts.mRight = getF(m_editRight);
+            categoryMask = 0;
+            if (m_chkBirthday.GetSafeHwnd()   && m_chkBirthday.GetCheck()   == BST_CHECKED) categoryMask |= 1;
+            if (m_chkAnniversary.GetSafeHwnd() && m_chkAnniversary.GetCheck()== BST_CHECKED) categoryMask |= 2;
+            if (m_chkYahrzeit.GetSafeHwnd()    && m_chkYahrzeit.GetCheck()   == BST_CHECKED) categoryMask |= 4;
+            if (m_chkCustom.GetSafeHwnd()      && m_chkCustom.GetCheck()     == BST_CHECKED) categoryMask |= 8;
+            separateCategories = (m_chkSeparate.GetSafeHwnd() && m_chkSeparate.GetCheck() == BST_CHECKED);
         }
 
         void OnPreview()
@@ -1827,8 +1935,9 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             ReadOpts();
             bool sf = (m_chkFooter.GetSafeHwnd() && m_chkFooter.GetCheck() == BST_CHECKED);
             auto& ev2 = evts; int yr = year; int tp = totalPgs;
-            PageRenderFn fn = [ev2,yr,tp,sf](CDC* dc, const CRect& rc, bool /*ignored*/) {
-                DrawEventsListPage(dc, rc, ev2, yr, 0, tp, sf);
+            uint8_t cm = categoryMask; bool sc = separateCategories;
+            PageRenderFn fn = [ev2,yr,tp,sf,cm,sc](CDC* dc, const CRect& rc, bool /*ignored*/) {
+                DrawEventsListPage(dc, rc, ev2, yr, 0, tp, sf, cm, sc);
             };
             CSimplePreviewDlg prev(fn, L"WinLuach Events", !opts.landscape, sf, m_pParentWnd);
             prev.DoModal();
@@ -1882,7 +1991,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
                 int footerH = sf ? (ph * 4/100 + 4) : 0;
                 int usable  = ph - mT - mB - firstRowY - footerH;
                 int rpp = usable / (rowH + 2); if (rpp < 1) rpp = 1;
-                auto rows2 = BuildEventRows(ev2, yr);
+                auto rows2 = BuildEventRows(ev2, yr, categoryMask, separateCategories);
                 totalPgs = rows2.empty() ? 1 : ((int)rows2.size() + rpp - 1) / rpp;
             }
 
@@ -1891,7 +2000,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
             {
                 dc.StartPage();
                 CRect rcPage(mL, mT, pw-mR, ph-mB);
-                DrawEventsListPage(&dc, rcPage, ev2, yr, pg, tp2, sf);
+                DrawEventsListPage(&dc, rcPage, ev2, yr, pg, tp2, sf, categoryMask, separateCategories);
                 dc.EndPage();
             }
             dc.EndDoc();
@@ -1901,8 +2010,24 @@ bool DoPrintEventsList(CMainFrame* pFrame)
 
     };
 
-    CEventsSetupDlg dlg(events, chosenYear, totalPages, pFrame);
-    dlg.DoModal();
+    // Load persisted category settings
+    uint8_t catMask = 0x0F; bool sepCats = false;
+    if (pFrame)
+    {
+        catMask  = theApp.m_settings.printEventCategoryMask;
+        sepCats  = theApp.m_settings.printEventSeparateCategories;
+    }
+    CEventsSetupDlg dlg(events, chosenYear, totalPages, catMask, sepCats, pFrame);
+    if (dlg.DoModal() == IDOK)
+    {
+        // Persist chosen options
+        if (pFrame)
+        {
+            theApp.m_settings.printEventCategoryMask       = dlg.categoryMask;
+            theApp.m_settings.printEventSeparateCategories = dlg.separateCategories;
+            SaveSettings(theApp.m_settings);
+        }
+    }
     return true;
 }
 

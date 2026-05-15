@@ -98,10 +98,13 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame);
 bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame);
 
 // Renders a list of events for a year to any DC (portrait, multi-page aware via pageIndex/totalPages).
+// categoryMask bits: 0=Birthday,1=Anniversary,2=Yahrzeit,3=Custom; separateCategories groups by type.
 void DrawEventsListPage(CDC* pDC, const CRect& rcPage,
                         const std::vector<UserEventEntry>& events,
                         int gregYear, int pageIndex, int totalPages,
-                        bool showFooter = true);
+                        bool showFooter = true,
+                        uint8_t categoryMask = 0x0F,
+                        bool separateCategories = false);
 
 // Shows a year-picker + page setup dialog and prints all event list pages.
 bool DoPrintEventsList(CMainFrame* pFrame);

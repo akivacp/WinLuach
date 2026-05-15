@@ -107,37 +107,54 @@ int SolarCycleYear(int hebrewYear)
 }
 
 // Returns a vector of interesting year facts for the sidebar.
-std::vector<std::wstring> GetYearFacts(int hebrewYear)
+// mask bits: 0=creation, 1=lunar, 2=shmita, 3=maaser, 4=solar, 5=temple,
+//            6=cheshvan, 7=kislev, 8=leap, 9=fullness, 10=israel, 11=jerusalem
+std::vector<std::wstring> GetYearFacts(int hebrewYear, uint16_t mask)
 {
     std::vector<std::wstring> facts;
     wchar_t buf[256];
+    int idx = 0;
 
-    // Years from creation
-    swprintf_s(buf, L"%d years from the creation of the world", hebrewYear);
-    facts.push_back(buf);
-
-    // Lunar cycle
-    swprintf_s(buf, L"Year %d of cycle %d of the lunar (small) cycle",
-        LunarCycleYear(hebrewYear),
-        (hebrewYear / 19) + 1);
-    facts.push_back(buf);
-
-    // Shmita cycle
-    int shmitaYear = ShmitaCycleYear(hebrewYear);
-    if (IsShmitaYear(hebrewYear))
-        facts.push_back(L"Year of Shmita");
-    else
+    // 0: Years from creation
+    if (mask & (1u << idx++))
     {
-        swprintf_s(buf, L"Year %d of the Shmita cycle", shmitaYear);
+        swprintf_s(buf, L"%d years from the creation of the world", hebrewYear);
         facts.push_back(buf);
     }
 
-    // Maaser
-    if (IsMaaserSheni(hebrewYear))
-        facts.push_back(L"Maaser Sheni (tithe for Jerusalem)");
-    else if (!IsShmitaYear(hebrewYear))
-        facts.push_back(L"Maaser Ani (tithe for the poor)");
+    // 1: Lunar cycle
+    if (mask & (1u << idx++))
+    {
+        swprintf_s(buf, L"Year %d of cycle %d of the lunar (small) cycle",
+            LunarCycleYear(hebrewYear),
+            (hebrewYear / 19) + 1);
+        facts.push_back(buf);
+    }
 
+    // 2: Shmita cycle
+    if (mask & (1u << idx++))
+    {
+        int shmitaYear = ShmitaCycleYear(hebrewYear);
+        if (IsShmitaYear(hebrewYear))
+            facts.push_back(L"Year of Shmita");
+        else
+        {
+            swprintf_s(buf, L"Year %d of the Shmita cycle", shmitaYear);
+            facts.push_back(buf);
+        }
+    }
+
+    // 3: Maaser type
+    if (mask & (1u << idx++))
+    {
+        if (IsMaaserSheni(hebrewYear))
+            facts.push_back(L"Maaser Sheni (tithe for Jerusalem)");
+        else if (!IsShmitaYear(hebrewYear))
+            facts.push_back(L"Maaser Ani (tithe for the poor)");
+    }
+
+    // 4: Solar cycle
+    if (mask & (1u << idx++))
     {
         int solarYear  = SolarCycleYear(hebrewYear);
         int solarCycle = (hebrewYear - 1) / 28 + 1;
@@ -146,40 +163,63 @@ std::vector<std::wstring> GetYearFacts(int hebrewYear)
         facts.push_back(buf);
     }
 
-    // Years from destruction of Temple (3830 AM)
-    int sinceDestruction = hebrewYear - 3830;
-    if (sinceDestruction > 0)
+    // 5: Years from destruction of Temple (3830 AM)
+    if (mask & (1u << idx++))
     {
-        swprintf_s(buf, L"%d years from the destruction of the Holy Temple",
-            sinceDestruction);
-        facts.push_back(buf);
+        int sinceDestruction = hebrewYear - 3830;
+        if (sinceDestruction > 0)
+        {
+            swprintf_s(buf, L"%d years from the destruction of the Holy Temple",
+                sinceDestruction);
+            facts.push_back(buf);
+        }
     }
 
     int cheshvanDays = DaysInHebrewMonth(CHESHVAN, hebrewYear);
     int kislevDays = DaysInHebrewMonth(KISLEV, hebrewYear);
-    swprintf_s(buf, L"Cheshvan has %d days", cheshvanDays);
-    facts.push_back(buf);
-    swprintf_s(buf, L"Kislev has %d days", kislevDays);
-    facts.push_back(buf);
-    bool leap = IsHebrewLeapYear(hebrewYear);
-    facts.push_back(leap ? L"Leap (uber) year: 13 months" : L"Simple year: 12 months");
-    if (cheshvanDays == 30 && kislevDays == 30)
-        facts.push_back(L"Full year (malei)");
-    else if (cheshvanDays == 29 && kislevDays == 29)
-        facts.push_back(L"Deficient year (chaser)");
-    else
-        facts.push_back(L"Regular year (kesidran)");
 
-    // Years from establishment of State of Israel (5708 AM)
-    if (hebrewYear >= 5708)
+    // 6: Cheshvan days
+    if (mask & (1u << idx++))
+    {
+        swprintf_s(buf, L"Cheshvan has %d days", cheshvanDays);
+        facts.push_back(buf);
+    }
+
+    // 7: Kislev days
+    if (mask & (1u << idx++))
+    {
+        swprintf_s(buf, L"Kislev has %d days", kislevDays);
+        facts.push_back(buf);
+    }
+
+    // 8: Leap / simple year
+    if (mask & (1u << idx++))
+    {
+        bool leap = IsHebrewLeapYear(hebrewYear);
+        facts.push_back(leap ? L"Leap (uber) year: 13 months" : L"Simple year: 12 months");
+    }
+
+    // 9: Full / deficient / regular
+    if (mask & (1u << idx++))
+    {
+        if (cheshvanDays == 30 && kislevDays == 30)
+            facts.push_back(L"Full year (malei)");
+        else if (cheshvanDays == 29 && kislevDays == 29)
+            facts.push_back(L"Deficient year (chaser)");
+        else
+            facts.push_back(L"Regular year (kesidran)");
+    }
+
+    // 10: State of Israel (5708 AM)
+    if ((mask & (1u << idx++)) && hebrewYear >= 5708)
     {
         swprintf_s(buf, L"%d years from the establishment of the State of Israel",
             hebrewYear - 5708);
         facts.push_back(buf);
     }
 
-    // Years from liberation of Jerusalem (5727 AM)
-    if (hebrewYear >= 5727)
+    // 11: Liberation of Jerusalem (5727 AM)
+    if ((mask & (1u << idx++)) && hebrewYear >= 5727)
     {
         swprintf_s(buf, L"%d years from the liberation of Jerusalem",
             hebrewYear - 5727);

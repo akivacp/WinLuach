@@ -121,7 +121,9 @@
 #define IDC_OPT_NOTIFY_PERSONAL_UNIT 408
 #define IDC_OPT_NOTIFY_PARSHA_UNIT 409
 #define IDC_OPT_RESET_CALENDAR 410
-#define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
+#define IDC_OPT_TRAY_TIP_ZMAN_FIRST       420
+#define IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST 451  // 451..457 (7 custom zmanim)
+#define IDC_OPT_YEAR_DETAIL_FIRST          500  // 500..511 (12 year facts)
 
 enum ColorPreviewKind
 {
@@ -210,6 +212,29 @@ static const wchar_t* kTrayTooltipZmanLabels[] = {
 
 static constexpr int kTrayTooltipZmanCount =
     (int)(sizeof(kTrayTooltipZmanLabels) / sizeof(kTrayTooltipZmanLabels[0]));
+
+static const wchar_t* kTrayTooltipCustomZmanLabels[] = {
+    L"Custom Alos",         L"Custom Sof Shema",    L"Custom Sof Tefilla",
+    L"Custom Mincha Gedola",L"Custom Mincha Ketana", L"Custom Plag HaMincha",
+    L"Custom Tzeit"
+};
+static constexpr int kTrayTooltipCustomZmanCount = 7;
+
+static const wchar_t* kYearDetailLabels[] = {
+    L"Years from creation",
+    L"Lunar cycle position",
+    L"Shmita cycle year",
+    L"Maaser type",
+    L"Solar cycle position",
+    L"Years since Temple destruction",
+    L"Cheshvan days",
+    L"Kislev days",
+    L"Leap / simple year",
+    L"Full / deficient / regular",
+    L"State of Israel anniversary",
+    L"Jerusalem liberation anniversary",
+};
+static constexpr int kYearDetailCount = 12;
 
 static CString ColorToHex(COLORREF c)
 {
@@ -1148,6 +1173,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_pageZmanim.clear();
     m_pageZmanShitos.clear();
     m_pageNotifications.clear();
+    m_pageYearDetails.clear();
     // v0.8.0 sub-pages + zmanim bar page.
     m_pageZmanimBar.clear();
     m_subPageAlos.clear();
@@ -1188,6 +1214,7 @@ BOOL COptionsDlg::OnInitDialog()
     ti.pszText = const_cast<LPWSTR>(L"Colors");       m_tab.InsertItem(5, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Zmanim");       m_tab.InsertItem(6, &ti);
     ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(7, &ti);
+    ti.pszText = const_cast<LPWSTR>(L"Year Details");  m_tab.InsertItem(8, &ti);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
         page.push_back(wnd);
@@ -1333,6 +1360,37 @@ BOOL COptionsDlg::OnInitDialog()
             CRect(x0, yy, x0 + 190, yy + 18), this, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
         track(m_pageTrayTooltip, &m_chkTrayTooltipZmanim[i]);
         m_chkTrayTooltipZmanim[i].SetCheck((m_current.trayTooltipZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+    }
+    // Custom (user-configured shita) zmanim for tray tooltip
+    y = 382;
+    mkGroup(m_pageTrayTooltip, L"Custom Zmanim (your configured shita)", 14, y, W - 28, 112); y += 22;
+    for (int i = 0; i < kTrayTooltipCustomZmanCount; ++i)
+    {
+        int col = i / 4;
+        int row = i % 4;
+        int x0 = 28 + col * 196;
+        int yy = y + row * 20;
+        m_chkTrayTooltipCustomZmanim[i].Create(kTrayTooltipCustomZmanLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(x0, yy, x0 + 190, yy + 18), this, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + i);
+        track(m_pageTrayTooltip, &m_chkTrayTooltipCustomZmanim[i]);
+        m_chkTrayTooltipCustomZmanim[i].SetCheck((m_current.trayTooltipCustomZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+    }
+
+    // Year Details tab
+    y = 38;
+    mkGroup(m_pageYearDetails, L"Which Year Facts to Show in the Sidebar", 14, y, W - 28, 188); y += 24;
+    for (int i = 0; i < kYearDetailCount; ++i)
+    {
+        int col = i / 6;
+        int row = i % 6;
+        int x0 = 28 + col * ((W - 56) / 2);
+        int yy = y + row * 22;
+        m_chkYearDetails[i].Create(kYearDetailLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(x0, yy, x0 + (W - 56) / 2 - 4, yy + 20), this, IDC_OPT_YEAR_DETAIL_FIRST + i);
+        track(m_pageYearDetails, &m_chkYearDetails[i]);
+        m_chkYearDetails[i].SetCheck((m_current.yearDetailsMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
 
     // Colors tab
@@ -2097,9 +2155,9 @@ void COptionsDlg::ShowOptionsPage(int page)
                 ctrl->ShowWindow(cmd);
     };
 
-    // v0.8.0 tab order:
+    // Tab order:
     //   0=General  1=Month  2=Interface  3=TrayTooltip
-    //   4=ZmanimBar  5=Colors  6=Zmanim  7=Notifications
+    //   4=ZmanimBar  5=Colors  6=Zmanim  7=Notifications  8=YearDetails
     showPage(m_pageGeneral,      0);
     showPage(m_pageMonth,        1);
     showPage(m_pageInterface,    2);
@@ -2107,6 +2165,7 @@ void COptionsDlg::ShowOptionsPage(int page)
     showPage(m_pageZmanimBar,    4);
     showPage(m_pageColors,       5);
     showPage(m_pageNotifications,7);
+    showPage(m_pageYearDetails,  8);
     // m_pageZmanim is the legacy flat Zmanim layout; in v0.8.0 it has been
     // superseded by the Zmanim sub-tab so always hide it.
     showPage(m_pageZmanim,      -1);
@@ -2831,6 +2890,16 @@ void COptionsDlg::ReadControlsIntoResult()
         if (m_chkTrayTooltipZmanim[i].GetSafeHwnd() &&
             m_chkTrayTooltipZmanim[i].GetCheck() == BST_CHECKED)
             m_result.trayTooltipZmanimMask |= (1u << i);
+    m_result.trayTooltipCustomZmanimMask = 0;
+    for (int i = 0; i < kTrayTooltipCustomZmanCount; ++i)
+        if (m_chkTrayTooltipCustomZmanim[i].GetSafeHwnd() &&
+            m_chkTrayTooltipCustomZmanim[i].GetCheck() == BST_CHECKED)
+            m_result.trayTooltipCustomZmanimMask |= (1u << i);
+    m_result.yearDetailsMask = 0;
+    for (int i = 0; i < kYearDetailCount; ++i)
+        if (m_chkYearDetails[i].GetSafeHwnd() &&
+            m_chkYearDetails[i].GetCheck() == BST_CHECKED)
+            m_result.yearDetailsMask |= (uint16_t)(1u << i);
     if (m_radMA72.GetCheck() == BST_CHECKED) m_result.zmanimShita = 1;
     else if (m_radMA90.GetCheck() == BST_CHECKED) m_result.zmanimShita = 2;
     else                                           m_result.zmanimShita = 0;

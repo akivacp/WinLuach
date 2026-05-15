@@ -264,6 +264,10 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"dayDetailMarginBot\": " << s.dayDetailMarginBot << L",\n";
     f << L"  \"dayDetailMarginLeft\": " << s.dayDetailMarginLeft << L",\n";
     f << L"  \"dayDetailMarginRight\": " << s.dayDetailMarginRight << L",\n";
+    f << L"  \"yearDetailsMask\": " << s.yearDetailsMask << L",\n";
+    f << L"  \"printEventCategoryMask\": " << (int)s.printEventCategoryMask << L",\n";
+    f << L"  \"printEventSeparateCategories\": " << (s.printEventSeparateCategories ? L"true" : L"false") << L",\n";
+    f << L"  \"trayTooltipCustomZmanimMask\": " << s.trayTooltipCustomZmanimMask << L",\n";
     f << L"  \"windowX\": " << s.windowX << L",\n";
     f << L"  \"windowY\": " << s.windowY << L",\n";
     f << L"  \"windowW\": " << s.windowW << L",\n";
@@ -487,6 +491,10 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"dayDetailMarginBot\"") != std::wstring::npos) s.dayDetailMarginBot = (float)ParseJsonNumber(line);
         if (line.find(L"\"dayDetailMarginLeft\"") != std::wstring::npos) s.dayDetailMarginLeft = (float)ParseJsonNumber(line);
         if (line.find(L"\"dayDetailMarginRight\"") != std::wstring::npos) s.dayDetailMarginRight = (float)ParseJsonNumber(line);
+        if (line.find(L"\"yearDetailsMask\"") != std::wstring::npos) s.yearDetailsMask = (uint16_t)ParseJsonNumber(line);
+        if (line.find(L"\"printEventCategoryMask\"") != std::wstring::npos) s.printEventCategoryMask = (uint8_t)ParseJsonNumber(line);
+        if (line.find(L"\"printEventSeparateCategories\"") != std::wstring::npos) s.printEventSeparateCategories = ParseJsonBool(line);
+        if (line.find(L"\"trayTooltipCustomZmanimMask\"") != std::wstring::npos) s.trayTooltipCustomZmanimMask = (uint32_t)ParseJsonNumber(line);
         if (line.find(L"\"windowX\"")         != std::wstring::npos) s.windowX         = (int)ParseJsonNumber(line);
         if (line.find(L"\"windowY\"") != std::wstring::npos) s.windowY = (int)ParseJsonNumber(line);
         if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
