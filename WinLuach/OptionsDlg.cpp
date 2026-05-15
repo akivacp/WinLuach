@@ -120,6 +120,7 @@
 #define IDC_OPT_NOTIFY_MOADIM_UNIT 407
 #define IDC_OPT_NOTIFY_PERSONAL_UNIT 408
 #define IDC_OPT_NOTIFY_PARSHA_UNIT 409
+#define IDC_OPT_RESET_CALENDAR 410
 #define IDC_OPT_TRAY_TIP_ZMAN_FIRST 420
 
 enum ColorPreviewKind
@@ -1243,6 +1244,13 @@ BOOL COptionsDlg::OnInitDialog()
           L"Larger (17)", L"Big (18)", L"Biggest (19)" },
         max(0, min(6, m_current.fontSize)));
     y = 138;
+    mkGroup(m_pageGeneral, L"Reset", 14, y, W - 28, 78); y += 24;
+    mkStatic(m_pageGeneral, L"Restore all calendar settings to their defaults.", 28, y, W - 56, 20);
+    y += 26;
+    m_btnResetCalendar.Create(L"Reset Calendar Settings...",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(28, y, 210, y + 26), this, IDC_OPT_RESET_CALENDAR);
+    track(m_pageGeneral, &m_btnResetCalendar);
 
     y = 38;
     mkGroup(m_pageMonth, L"Month View", 14, y, W - 28, 118); y += 20;
@@ -2040,6 +2048,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_btnColorPicker,    L"Open the color picker dialog to choose a color visually");
     m_tooltip.AddTool(&m_cmbColorPreview,   L"Preview colors using a sample day type");
     m_tooltip.AddTool(&m_btnRestoreColors,  L"Reset all calendar cell colors back to their defaults");
+    m_tooltip.AddTool(&m_btnResetCalendar,  L"Reset all saved WinLuach calendar settings after offering to back them up");
 
     // Bottom buttons
     m_tooltip.AddTool(&m_btnOK,     L"Save settings and close the Options dialog");
@@ -2517,10 +2526,77 @@ void COptionsDlg::ConvertTzeitMode(int newMode)
     m_lastTzeitMode = newMode;
 }
 
+static bool BackupCurrentSettingsFromOptions(CWnd* owner)
+{
+    wchar_t file[MAX_PATH] = L"WinLuach_settings_backup.json";
+    OPENFILENAMEW ofn = { sizeof(ofn) };
+    ofn.hwndOwner = owner ? owner->GetSafeHwnd() : nullptr;
+    ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = L"json";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn))
+        return false;
+
+    std::wstring src = GetSettingsFilePath();
+    if (CopyFileW(src.c_str(), file, FALSE))
+    {
+        if (owner)
+            owner->MessageBox(L"Settings backed up successfully.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+        return true;
+    }
+
+    if (owner)
+        owner->MessageBox(L"Backup failed. The reset was not performed.", L"WinLuach", MB_OK | MB_ICONERROR);
+    return false;
+}
+
+void COptionsDlg::OnResetCalendarSettings()
+{
+    int choice = MessageBox(
+        L"This will reset all calendar settings to their defaults and clear the board.\n\n"
+        L"Back up all current settings before continuing?",
+        L"Reset Calendar Settings",
+        MB_YESNOCANCEL | MB_ICONWARNING | MB_DEFBUTTON1);
+
+    if (choice == IDCANCEL)
+        return;
+    if (choice == IDYES && !BackupCurrentSettingsFromOptions(this))
+        return;
+
+    if (MessageBox(L"Reset all calendar settings now?",
+        L"Reset Calendar Settings",
+        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+        return;
+
+    AppSettings defaults;
+    CMainFrame* frame = (CMainFrame*)AfxGetMainWnd();
+    if (frame)
+        frame->ApplyAndSaveSettings(defaults);
+    else
+        SaveSettings(defaults);
+
+    m_current = defaults;
+    m_result = defaults;
+    SetDirty(false);
+    MessageBox(L"Calendar settings have been reset.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+
+    if (m_modeless)
+        DestroyWindow();
+    else
+        CDialog::OnOK();
+}
+
 BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 {
     UINT id = LOWORD(wParam);
     UINT code = HIWORD(wParam);
+    if (id == IDC_OPT_RESET_CALENDAR && code == BN_CLICKED)
+    {
+        OnResetCalendarSettings();
+        return TRUE;
+    }
     if (id == IDC_OPT_COLOR_RESTORE)
     {
         RestoreDefaultCalendarColors();
@@ -2589,18 +2665,37 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
-    if (id == IDC_OPT_ALOT_DEG)    { ConvertAlotMode(0); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_ALOT_MIN)    { ConvertAlotMode(1); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_ALOT_ZMANIS) { ConvertAlotMode(2); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_MISHEYAKIR_DEG)    { ConvertMisheyakirMode(0); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_MISHEYAKIR_MIN)    { ConvertMisheyakirMode(1); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_MISHEYAKIR_ZMANIS) { ConvertMisheyakirMode(2); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_SOFZMAN_DEG)    { ConvertSofZmanMode(0); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_SOFZMAN_MIN)    { ConvertSofZmanMode(1); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_SOFZMAN_ZMANIS) { ConvertSofZmanMode(2); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_TZEIT_DEG)    { ConvertTzeitMode(0); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_TZEIT_MIN)    { ConvertTzeitMode(1); SetDirty(true); return TRUE; }
-    if (id == IDC_OPT_TZEIT_ZMANIS) { ConvertTzeitMode(2); SetDirty(true); return TRUE; }
+    auto setPresetRadio = [](std::vector<CButton*>& radios, int sel) {
+        for (int i = 0; i < (int)radios.size(); ++i)
+            if (radios[i] && radios[i]->GetSafeHwnd())
+                radios[i]->SetCheck(i == sel ? BST_CHECKED : BST_UNCHECKED);
+    };
+    auto selectCustomPresetForUnit = [&]() {
+        int sub = m_zmanimSubTab.GetSafeHwnd() ? m_zmanimSubTab.GetCurSel() : -1;
+        if (id == IDC_OPT_ALOT_DEG || id == IDC_OPT_ALOT_MIN || id == IDC_OPT_ALOT_ZMANIS)
+            setPresetRadio(m_radAlosPreset, 3);
+        else if (id == IDC_OPT_MISHEYAKIR_DEG || id == IDC_OPT_MISHEYAKIR_MIN || id == IDC_OPT_MISHEYAKIR_ZMANIS)
+            setPresetRadio(m_radMisheyakirPreset, 3);
+        else if (id == IDC_OPT_SOFZMAN_DEG || id == IDC_OPT_SOFZMAN_MIN || id == IDC_OPT_SOFZMAN_ZMANIS)
+        {
+            if (sub == 2) setPresetRadio(m_radSofMAPreset, 3);
+            else if (sub == 3) setPresetRadio(m_radSofGRAPreset, 3);
+        }
+        else if (id == IDC_OPT_TZEIT_DEG || id == IDC_OPT_TZEIT_MIN || id == IDC_OPT_TZEIT_ZMANIS)
+            setPresetRadio(m_radTzaisPreset, 5);
+    };
+    if (id == IDC_OPT_ALOT_DEG)    { selectCustomPresetForUnit(); ConvertAlotMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_ALOT_MIN)    { selectCustomPresetForUnit(); ConvertAlotMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_ALOT_ZMANIS) { selectCustomPresetForUnit(); ConvertAlotMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_DEG)    { selectCustomPresetForUnit(); ConvertMisheyakirMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_MIN)    { selectCustomPresetForUnit(); ConvertMisheyakirMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_MISHEYAKIR_ZMANIS) { selectCustomPresetForUnit(); ConvertMisheyakirMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_DEG)    { selectCustomPresetForUnit(); ConvertSofZmanMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_MIN)    { selectCustomPresetForUnit(); ConvertSofZmanMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_SOFZMAN_ZMANIS) { selectCustomPresetForUnit(); ConvertSofZmanMode(2); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_DEG)    { selectCustomPresetForUnit(); ConvertTzeitMode(0); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_MIN)    { selectCustomPresetForUnit(); ConvertTzeitMode(1); SetDirty(true); return TRUE; }
+    if (id == IDC_OPT_TZEIT_ZMANIS) { selectCustomPresetForUnit(); ConvertTzeitMode(2); SetDirty(true); return TRUE; }
     if (code == BN_CLICKED &&
         (id == IDC_OPT_RAD_GRA || id == IDC_OPT_RAD_MA72 || id == IDC_OPT_RAD_MA90))
     {
@@ -2612,32 +2707,62 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     }
     if (code == BN_CLICKED && id >= IDC_OPT_ZSUB_FIRST && id <= IDC_OPT_ZSUB_LAST)
     {
-        auto enforceRadioGroup = [id](const std::vector<CButton*>& radios) -> bool {
-            CButton* clicked = nullptr;
-            for (CButton* r : radios)
+        auto enforceRadioGroup = [id](const std::vector<CButton*>& radios) -> int {
+            int clicked = -1;
+            for (int i = 0; i < (int)radios.size(); ++i)
             {
+                CButton* r = radios[i];
                 if (r && r->GetSafeHwnd() && r->GetDlgCtrlID() == (int)id)
                 {
-                    clicked = r;
+                    clicked = i;
                     break;
                 }
             }
-            if (!clicked)
-                return false;
-            for (CButton* r : radios)
+            if (clicked < 0)
+                return -1;
+            for (int i = 0; i < (int)radios.size(); ++i)
+            {
+                CButton* r = radios[i];
                 if (r && r->GetSafeHwnd())
-                    r->SetCheck(r == clicked ? BST_CHECKED : BST_UNCHECKED);
-            return true;
+                    r->SetCheck(i == clicked ? BST_CHECKED : BST_UNCHECKED);
+            }
+            return clicked;
         };
-        if (enforceRadioGroup(m_radAlosPreset) ||
-            enforceRadioGroup(m_radMisheyakirPreset) ||
-            enforceRadioGroup(m_radSofMAPreset) ||
-            enforceRadioGroup(m_radSofGRAPreset) ||
-            enforceRadioGroup(m_radMinchaGedolaPreset) ||
-            enforceRadioGroup(m_radMinchaKetanaPreset) ||
-            enforceRadioGroup(m_radPlagPreset) ||
-            enforceRadioGroup(m_radEndFastPreset) ||
-            enforceRadioGroup(m_radTzaisPreset))
+        int picked = -1;
+        if ((picked = enforceRadioGroup(m_radAlosPreset)) >= 0)
+        {
+            if (picked == 3) SetAlotMode(m_lastAlotMode);
+            SetDirty(true);
+            return TRUE;
+        }
+        if ((picked = enforceRadioGroup(m_radMisheyakirPreset)) >= 0)
+        {
+            if (picked == 3) SetMisheyakirMode(m_lastMisheyakirMode);
+            SetDirty(true);
+            return TRUE;
+        }
+        if ((picked = enforceRadioGroup(m_radSofMAPreset)) >= 0)
+        {
+            if (picked == 3) SetSofZmanMode(m_lastSofZmanMode);
+            SetDirty(true);
+            return TRUE;
+        }
+        if ((picked = enforceRadioGroup(m_radSofGRAPreset)) >= 0)
+        {
+            if (picked == 3) SetSofZmanMode(m_lastSofZmanMode);
+            SetDirty(true);
+            return TRUE;
+        }
+        if ((picked = enforceRadioGroup(m_radTzaisPreset)) >= 0)
+        {
+            if (picked == 5) SetTzeitMode(m_lastTzeitMode);
+            SetDirty(true);
+            return TRUE;
+        }
+        if (enforceRadioGroup(m_radMinchaGedolaPreset) >= 0 ||
+            enforceRadioGroup(m_radMinchaKetanaPreset) >= 0 ||
+            enforceRadioGroup(m_radPlagPreset) >= 0 ||
+            enforceRadioGroup(m_radEndFastPreset) >= 0)
         {
             SetDirty(true);
             return TRUE;

@@ -40,6 +40,12 @@ private:
     int         m_dragStartY = 0;
     int         m_scrollPos = 0;
     int         m_contentHeight = 0;
+    CRect       m_rcSpecialClose;
+    CRect       m_rcYearClose;
+    CRect       m_rcMoladClose;
+    CRect       m_rcSpecialDrag;
+    CRect       m_rcYearDrag;
+    CRect       m_rcMoladDrag;
 
     void UpdateScrollBar(int clientHeight);
 

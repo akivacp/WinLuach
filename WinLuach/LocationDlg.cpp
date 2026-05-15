@@ -337,7 +337,7 @@ private:
         m_results.clear();
 
         std::wstring query = UrlEncode((LPCWSTR)addr);
-        std::wstring path  = L"/search?q=" + query + L"&format=json&limit=20&addressdetails=1";
+        std::wstring path  = L"/search?q=" + query + L"&format=json&limit=100&addressdetails=1";
 
         // Block briefly — acceptable in a modal dialog
         SetCursor(LoadCursor(nullptr, IDC_WAIT));

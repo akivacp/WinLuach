@@ -109,6 +109,7 @@ private:
     CComboBox m_cmbTrayNumber;
     CButton m_btnTrayDefaults;
     CComboBox m_cmbFontSize;
+    CButton   m_btnResetCalendar;
     CComboBox m_cmbTrayWhen;
     CComboBox m_cmbCandleMinutes;
     CButton   m_btnManageCals;
@@ -210,6 +211,7 @@ private:
     void ConvertMisheyakirMode(int newMode);
     void ConvertSofZmanMode(int newMode);
     void ConvertTzeitMode(int newMode);
+    void OnResetCalendarSettings();
 
     CComboBox m_cmbColorItem;
     CEdit     m_editColorHex;
