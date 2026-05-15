@@ -46,6 +46,7 @@ struct UserEventEntry
     int  gregYear    = 0;
     int  hebYear     = 0;
 
+    bool         observeAnnually = true; // false = one-time event (only in the specified year)
     bool         notify = true;
     std::wstring alarmOffsets; // e.g. "15 minutes; 1 day; 1 week"
 };

@@ -184,6 +184,7 @@ protected:
     BOOL OnInitDialog() override;
     afx_msg void OnPreview();
     afx_msg void OnPrint();
+    void OnCancel() override;
 
     DECLARE_MESSAGE_MAP()
 
