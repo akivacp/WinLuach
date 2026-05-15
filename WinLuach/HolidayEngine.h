@@ -235,7 +235,9 @@ int SolarCycleYear(int hebrewYear);
 
 // Returns a string describing years since significant events.
 // e.g. L"5786 years from creation"
-std::vector<std::wstring> GetYearFacts(int hebrewYear);
+// mask: bit i = include fact i (0=creation,1=lunar,2=shmita,3=maaser,4=solar,
+//   5=temple,6=cheshvan,7=kislev,8=leap,9=fullness,10=israel,11=jerusalem)
+std::vector<std::wstring> GetYearFacts(int hebrewYear, uint16_t mask = 0x0FFF);
 
 // =============================================================================
 // PARASHA LIST
