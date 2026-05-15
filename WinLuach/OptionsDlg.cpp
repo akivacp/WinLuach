@@ -2050,6 +2050,18 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_btnRestoreColors,  L"Reset all calendar cell colors back to their defaults");
     m_tooltip.AddTool(&m_btnResetCalendar,  L"Reset all saved WinLuach calendar settings after offering to back them up");
 
+    // Tray Tooltip tab — zmanim checkboxes
+    for (int i = 0; i < kTrayTooltipZmanCount; ++i)
+        if (m_chkTrayTooltipZmanim[i].GetSafeHwnd())
+            m_tooltip.AddTool(&m_chkTrayTooltipZmanim[i],
+                L"Show this zman in the tray icon tooltip when hovering over the tray icon");
+
+    // Zmanim Bar tab — per-zman checkboxes
+    for (CButton* pChk : m_zmanimBarChecks)
+        if (pChk && pChk->GetSafeHwnd())
+            m_tooltip.AddTool(pChk,
+                L"Show this zman in the bottom zmanim panel");
+
     // Bottom buttons
     m_tooltip.AddTool(&m_btnOK,     L"Save settings and close the Options dialog");
     m_tooltip.AddTool(&m_btnApply,  L"Apply settings immediately without closing");
