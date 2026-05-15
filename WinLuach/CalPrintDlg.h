@@ -16,6 +16,7 @@
 #include "HebrewDate.h"
 #include "HolidayEngine.h"
 #include "Settings.h"
+#include <cstdint>
 #include <functional>
 
 class CMainFrame;
@@ -82,7 +83,8 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
 // Renders one day's details (holidays, learning, zmanim) to any DC.
 void DrawDayPage(CDC* pDC, const CRect& rcPage,
                  const GregorianDate& g, CMainFrame* pFrame,
-                 bool showFooter = true);
+                 bool showFooter = true,
+                 uint64_t zmanimMask = UINT64_MAX);
 
 // Shows CPrintDialog and prints a zmanim-month page. Returns false if cancelled.
 bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame,
@@ -166,6 +168,7 @@ public:
     // Optional: pass a shared_ptr<bool> to add a 12/24-hr checkbox to the dialog.
     // ReadControls() will update *ptr before each render/print call.
     void SetUse24HrPtr(std::shared_ptr<bool> p) { m_pUse24hr = std::move(p); }
+    void SetDayZmanimMaskPtr(std::shared_ptr<uint64_t> p) { m_pDayZmanimMask = std::move(p); }
 
 protected:
     BOOL OnInitDialog() override;
@@ -185,6 +188,8 @@ private:
     CButton m_chkFooter;
     CButton m_chk24hr;
     std::shared_ptr<bool> m_pUse24hr;
+    std::shared_ptr<uint64_t> m_pDayZmanimMask;
+    std::vector<CButton*> m_dayZmanChecks;
 
     enum {
         IDC_SPS_RAD_PORT    = 240,
@@ -196,6 +201,7 @@ private:
         IDC_SPS_BTN_PREVIEW = 246,
         IDC_SPS_CHK_FOOTER  = 247,
         IDC_SPS_CHK_24HR    = 248,
+        IDC_SPS_DAY_ZMAN_FIRST = 249,
     };
 
     void ReadControls();

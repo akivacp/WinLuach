@@ -9,6 +9,9 @@
 // v0.1.1 - Fixed: use InitModalIndirect + in-memory template.
 // v0.1.2 - Fixed CreateEx call to use 10 arguments (removed 2 extra nullptrs).
 //          Moved DoModal() to public in header.
+// v0.8.2 - Restored Zmanim sub-tab strip visibility (WS_CLIPSIBLINGS on
+//          both tab controls + explicit Invalidate/UpdateWindow + z-order
+//          lift on the sub-tab when the Zmanim main tab is activated).
 // v0.8.1 - Sub-page widgets are raised to the top of z-order on show so the
 //          Zmanim sub-tab control doesn't paint over them, and the Omer
 //          'manual time' radio is no longer clipped by its sibling label.
@@ -1166,7 +1169,9 @@ BOOL COptionsDlg::OnInitDialog()
     m_radEndFastPreset.clear();
     m_radTzaisPreset.clear();
 
-    m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
+    // v0.8.2 - WS_CLIPSIBLINGS so this main tab control does not paint over
+    // its sibling sub-tab control inside the Zmanim page area.
+    m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
         CRect(6, 6, W - 6, H - 48), this, IDC_OPT_TAB);
     m_tab.SetFont(pFont);
     TCITEM ti = {};
@@ -1610,7 +1615,9 @@ BOOL COptionsDlg::OnInitDialog()
     // =========================================================================
     int zmanPageTop    = 64;
     int zmanPageBottom = H - 56;
-    m_zmanimSubTab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
+    // v0.8.2 - WS_CLIPSIBLINGS so the sub-tab body does not paint over its
+    // sibling radios/statics that live in the Zmanim sub-pages.
+    m_zmanimSubTab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
         CRect(20, 38, W - 20, zmanPageBottom), this, IDC_OPT_ZSUBTAB);
     m_zmanimSubTab.SetFont(pFont);
     {
@@ -2081,10 +2088,20 @@ void COptionsDlg::ShowOptionsPage(int page)
     showPage(m_pageZmanShitos, -1);
 
     // Zmanim sub-tab + sub-pages: only visible when the Zmanim tab is active.
+    // v0.8.2 - explicitly raise the sub-tab control to the top of z-order
+    // and force a repaint so its tab strip ("Alos | Misheyakir | ...") is
+    // visible.  Sub-page widgets are then raised on top of the sub-tab in
+    // ShowZmanimSubPage so they remain visible inside the tab body.
     if (page == 6)
     {
         if (m_zmanimSubTab.GetSafeHwnd())
+        {
             m_zmanimSubTab.ShowWindow(SW_SHOW);
+            m_zmanimSubTab.SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            m_zmanimSubTab.Invalidate();
+            m_zmanimSubTab.UpdateWindow();
+        }
         ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
     }
     else
@@ -2584,6 +2601,48 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (id == IDC_OPT_TZEIT_DEG)    { ConvertTzeitMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_TZEIT_MIN)    { ConvertTzeitMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_TZEIT_ZMANIS) { ConvertTzeitMode(2); SetDirty(true); return TRUE; }
+    if (code == BN_CLICKED &&
+        (id == IDC_OPT_RAD_GRA || id == IDC_OPT_RAD_MA72 || id == IDC_OPT_RAD_MA90))
+    {
+        m_radGRA.SetCheck(id == IDC_OPT_RAD_GRA ? BST_CHECKED : BST_UNCHECKED);
+        m_radMA72.SetCheck(id == IDC_OPT_RAD_MA72 ? BST_CHECKED : BST_UNCHECKED);
+        m_radMA90.SetCheck(id == IDC_OPT_RAD_MA90 ? BST_CHECKED : BST_UNCHECKED);
+        SetDirty(true);
+        return TRUE;
+    }
+    if (code == BN_CLICKED && id >= IDC_OPT_ZSUB_FIRST && id <= IDC_OPT_ZSUB_LAST)
+    {
+        auto enforceRadioGroup = [id](const std::vector<CButton*>& radios) -> bool {
+            CButton* clicked = nullptr;
+            for (CButton* r : radios)
+            {
+                if (r && r->GetSafeHwnd() && r->GetDlgCtrlID() == (int)id)
+                {
+                    clicked = r;
+                    break;
+                }
+            }
+            if (!clicked)
+                return false;
+            for (CButton* r : radios)
+                if (r && r->GetSafeHwnd())
+                    r->SetCheck(r == clicked ? BST_CHECKED : BST_UNCHECKED);
+            return true;
+        };
+        if (enforceRadioGroup(m_radAlosPreset) ||
+            enforceRadioGroup(m_radMisheyakirPreset) ||
+            enforceRadioGroup(m_radSofMAPreset) ||
+            enforceRadioGroup(m_radSofGRAPreset) ||
+            enforceRadioGroup(m_radMinchaGedolaPreset) ||
+            enforceRadioGroup(m_radMinchaKetanaPreset) ||
+            enforceRadioGroup(m_radPlagPreset) ||
+            enforceRadioGroup(m_radEndFastPreset) ||
+            enforceRadioGroup(m_radTzaisPreset))
+        {
+            SetDirty(true);
+            return TRUE;
+        }
+    }
     if (m_initialized && !m_updatingColorUi &&
         (code == BN_CLICKED || code == CBN_SELCHANGE || code == EN_CHANGE))
         SetDirty(true);

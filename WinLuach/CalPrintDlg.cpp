@@ -947,8 +947,59 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
 // Portrait-oriented single-day details page (holidays, learning, zmanim).
 // =============================================================================
 
+static const wchar_t* const kDayPrintZmanLabels[] = {
+    L"Alot (custom)",
+    L"Alot GRA 16.1",
+    L"Alot MA72",
+    L"Alot MA90",
+    L"Misheyakir (custom)",
+    L"Misheyakir 10.2",
+    L"Misheyakir 11.5",
+    L"Hanetz (Netz)",
+    L"Sof Shema (custom)",
+    L"Sof Shema GRA",
+    L"Sof Shema MA72",
+    L"Sof Shema MA90",
+    L"Sof Tefilla (custom)",
+    L"Sof Tefilla GRA",
+    L"Sof Tefilla MA72",
+    L"Sof Tefilla MA90",
+    L"Chatzos",
+    L"Mincha Gedola (custom)",
+    L"Mincha Gedola GRA",
+    L"Mincha Gedola MA72",
+    L"Mincha Gedola MA90",
+    L"Mincha Ketana (custom)",
+    L"Mincha Ketana GRA",
+    L"Mincha Ketana MA72",
+    L"Mincha Ketana MA90",
+    L"Plag (custom)",
+    L"Plag GRA",
+    L"Plag MA72",
+    L"Plag MA90",
+    L"Candle Lighting",
+    L"Shkia (Sunset)",
+    L"Tzais (custom)",
+    L"Tzais GRA 8.5",
+    L"Tzais MA72",
+    L"Tzais MA90",
+    L"Sha'a Zmanit",
+};
+
+static constexpr int kDayPrintZmanCount =
+    (int)(sizeof(kDayPrintZmanLabels) / sizeof(kDayPrintZmanLabels[0]));
+
+static uint64_t NormalizeDayPrintZmanMask(uint64_t mask)
+{
+    uint64_t all = (kDayPrintZmanCount >= 64)
+        ? UINT64_MAX
+        : ((1ull << kDayPrintZmanCount) - 1ull);
+    return mask & all;
+}
+
 void DrawDayPage(CDC* pDC, const CRect& rcPage,
-                 const GregorianDate& g, CMainFrame* pFrame, bool showFooter)
+                 const GregorianDate& g, CMainFrame* pFrame, bool showFooter,
+                 uint64_t zmanimMask)
 {
     const int W  = rcPage.Width();
     const int H  = rcPage.Height();
@@ -979,6 +1030,10 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
     int fTitle = -(H * 4 / 100); if (fTitle > -8) fTitle = -8;
     int fSec   = -(H * 26/1000); if (fSec   > -6) fSec   = -6;
     int fRow   = -(H * 22/1000); if (fRow   > -5) fRow   = -5;
+    int fFoot3 = -(H * 16 / 1000); if (fFoot3 > -4) fFoot3 = -4;
+    int footH3 = -fFoot3 + 2;
+    int bottomLimit = y0 + H - (showFooter ? footH3 : 0);
+    zmanimMask = NormalizeDayPrintZmanMask(zmanimMask);
 
     CFont fontTitle, fontSec, fontRow;
     fontTitle.CreateFont(fTitle,0,0,0,FW_BOLD,  0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
@@ -1026,7 +1081,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         y += secH + 1;
     };
     auto drawRow = [&](const wchar_t* lbl, const std::wstring& val, COLORREF clr) {
-        if (y + rowH > y0 + H) return;
+        if (y + rowH > bottomLimit) return;
         pDC->SetBkMode(TRANSPARENT);
         pDC->SelectObject(&fontRow);
         pDC->SetTextColor(RGB(110,110,110));
@@ -1109,7 +1164,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
             drawSection(L"Special Times");
             // Bold row helper for key times
             auto boldRow = [&](const wchar_t* lbl, const TimeOfDay& t, COLORREF clr) {
-                if (!t.IsValid() || y + rowH > y0 + H) return;
+                if (!t.IsValid() || y + rowH > bottomLimit) return;
                 CFont fBold;
                 fBold.CreateFont(fRow, 0,0,0, FW_BOLD, 0,0,0, DEFAULT_CHARSET,0,0,
                     CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_SWISS, L"Segoe UI");
@@ -1124,7 +1179,7 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
                 y += rowH;
             };
             auto noteRow = [&](const wchar_t* txt) {
-                if (y + rowH > y0 + H) return;
+                if (y + rowH > bottomLimit) return;
                 pDC->SetBkMode(TRANSPARENT);
                 pDC->SelectObject(&fontRow);
                 pDC->SetTextColor(RGB(130, 60, 0));
@@ -1163,65 +1218,114 @@ void DrawDayPage(CDC* pDC, const CRect& rcPage,
         }
     }
 
-    // Full zmanim section — all GRA, MA72, MA90 variants (matching CDayViewDlg)
+    // Full zmanim section: selectable rows, rendered in two columns so the
+    // full default list fits on one page.
     {
         DisplayZmanimTimes dz = pFrame
             ? pFrame->BuildDisplayZmanim(g, z, dst) : DisplayZmanimTimes{};
 
-        drawSection(L"Zmanim");
-        auto zRow = [&](const wchar_t* lbl, const TimeOfDay& t) {
-            if (t.IsValid()) drawRow(lbl, FormatTime(t, u24), RGB(20,60,20));
+        struct PrintZmanRow
+        {
+            int bit;
+            const wchar_t* label;
+            std::wstring value;
         };
-        zRow(L"Alot (custom):",        dz.alot);
-        zRow(L"Alot GRA 16.1:",        z.alot_GRA);
-        zRow(L"Alot MA72:",            z.alot_MA72);
-        zRow(L"Alot MA90:",            z.alot_MA90);
-        zRow(L"Misheyakir (custom):",  dz.misheyakir);
-        zRow(L"Misheyakir 10.2:",      z.misheyakir_10);
-        zRow(L"Misheyakir 11.5:",      z.misheyakir_11);
-        zRow(L"Hanetz (Netz):",        z.hanetz);
-        zRow(L"Sof Shema (custom):",   dz.sofShema);
-        zRow(L"Sof Shema GRA:",        z.sofShema_GRA);
-        zRow(L"Sof Shema MA72:",       z.sofShema_MA72);
-        zRow(L"Sof Shema MA90:",       z.sofShema_MA90);
-        zRow(L"Sof Tefilla (custom):", dz.sofTefilla);
-        zRow(L"Sof Tefilla GRA:",      z.sofTefilla_GRA);
-        zRow(L"Sof Tefilla MA72:",     z.sofTefilla_MA72);
-        zRow(L"Sof Tefilla MA90:",     z.sofTefilla_MA90);
-        zRow(L"Chatzot:",              z.chatzot);
-        zRow(L"Mincha Gedola (custom):",dz.minchaGedola);
-        zRow(L"Mincha Gedola GRA:",    z.minchaGedola_GRA);
-        zRow(L"Mincha Gedola MA72:",   z.minchaGedola_MA72);
-        zRow(L"Mincha Gedola MA90:",   z.minchaGedola_MA90);
-        zRow(L"Mincha Ketana (custom):",dz.minchaKetana);
-        zRow(L"Mincha Ketana GRA:",    z.minchaKetana_GRA);
-        zRow(L"Mincha Ketana MA72:",   z.minchaKetana_MA72);
-        zRow(L"Mincha Ketana MA90:",   z.minchaKetana_MA90);
-        zRow(L"Plag (custom):",        dz.plagMincha);
-        zRow(L"Plag GRA:",             z.plagMincha_GRA);
-        zRow(L"Plag MA72:",            z.plagMincha_MA72);
-        zRow(L"Plag MA90:",            z.plagMincha_MA90);
-        if (z.candleLighting.IsValid()) zRow(L"Candle Lighting:", z.candleLighting);
-        zRow(L"Shkia (Sunset):",       z.shkia);
-        zRow(L"Tzais (custom):",       dz.tzeit);
-        zRow(L"Tzais GRA 8.5:",        z.tzeit_GRA);
-        zRow(L"Tzais MA72:",           z.tzeit_MA72);
-        zRow(L"Tzais MA90:",           z.tzeit_MA90);
-        if (y + rowH <= y0+H && dz.shaahZmanit > 0.0) {
+
+        std::vector<PrintZmanRow> zRows;
+        auto addTime = [&](int bit, const TimeOfDay& t) {
+            if (bit < 0 || bit >= kDayPrintZmanCount) return;
+            if (!(zmanimMask & (1ull << bit)) || !t.IsValid()) return;
+            zRows.push_back({ bit, kDayPrintZmanLabels[bit], FormatTime(t, u24) });
+        };
+        addTime(0,  dz.alot);
+        addTime(1,  z.alot_GRA);
+        addTime(2,  z.alot_MA72);
+        addTime(3,  z.alot_MA90);
+        addTime(4,  dz.misheyakir);
+        addTime(5,  z.misheyakir_10);
+        addTime(6,  z.misheyakir_11);
+        addTime(7,  z.hanetz);
+        addTime(8,  dz.sofShema);
+        addTime(9,  z.sofShema_GRA);
+        addTime(10, z.sofShema_MA72);
+        addTime(11, z.sofShema_MA90);
+        addTime(12, dz.sofTefilla);
+        addTime(13, z.sofTefilla_GRA);
+        addTime(14, z.sofTefilla_MA72);
+        addTime(15, z.sofTefilla_MA90);
+        addTime(16, z.chatzot);
+        addTime(17, dz.minchaGedola);
+        addTime(18, z.minchaGedola_GRA);
+        addTime(19, z.minchaGedola_MA72);
+        addTime(20, z.minchaGedola_MA90);
+        addTime(21, dz.minchaKetana);
+        addTime(22, z.minchaKetana_GRA);
+        addTime(23, z.minchaKetana_MA72);
+        addTime(24, z.minchaKetana_MA90);
+        addTime(25, dz.plagMincha);
+        addTime(26, z.plagMincha_GRA);
+        addTime(27, z.plagMincha_MA72);
+        addTime(28, z.plagMincha_MA90);
+        addTime(29, z.candleLighting);
+        addTime(30, z.shkia);
+        addTime(31, dz.tzeit);
+        addTime(32, z.tzeit_GRA);
+        addTime(33, z.tzeit_MA72);
+        addTime(34, z.tzeit_MA90);
+        if ((zmanimMask & (1ull << 35)) && dz.shaahZmanit > 0.0) {
             int szMin = (int)round(dz.shaahZmanit);
             CString ss; ss.Format(L"%d:%02d  (%d min)", szMin/60, szMin%60, szMin);
-            drawRow(L"Sha'a Zmanit:", (LPCWSTR)ss, RGB(20,60,20));
+            zRows.push_back({ 35, kDayPrintZmanLabels[35], (LPCWSTR)ss });
+        }
+
+        if (!zRows.empty() && y + secH < bottomLimit)
+        {
+            drawSection(L"Zmanim");
+
+            int top = y;
+            int avail = max(1, bottomLimit - top);
+            int rowsPerCol = max(1, ((int)zRows.size() + 1) / 2);
+            int zRowH = min(rowH, max(8, avail / rowsPerCol));
+            int zFontH = -max(5, min(-fRow, zRowH - 2));
+            CFont fontZman;
+            fontZman.CreateFont(zFontH, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+                DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY,
+                DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+            int padX = 8;
+            int gap = max(10, W / 45);
+            int colW = (W - padX * 2 - gap) / 2;
+            int labelW2 = colW * 66 / 100;
+
+            pDC->SelectObject(&fontZman);
+            pDC->SetBkMode(TRANSPARENT);
+            for (int i = 0; i < (int)zRows.size(); ++i)
+            {
+                int col = i / rowsPerCol;
+                int row = i % rowsPerCol;
+                int cx0 = x0 + padX + col * (colW + gap);
+                int cy0 = top + row * zRowH;
+                if (cy0 + zRowH > bottomLimit) continue;
+
+                pDC->SetTextColor(RGB(110, 110, 110));
+                DrawTextFit(pDC, zRows[i].label,
+                    CRect(cx0, cy0, cx0 + labelW2, cy0 + zRowH),
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                pDC->SetTextColor(RGB(20, 60, 20));
+                DrawTextFit(pDC, zRows[i].value,
+                    CRect(cx0 + labelW2 + 4, cy0, cx0 + colW, cy0 + zRowH),
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
+            y = top + rowsPerCol * zRowH;
         }
     }
 
     if (showFooter) {
-        int fFoot3 = -(H * 16 / 1000); if (fFoot3 > -4) fFoot3 = -4;
         CFont fontFoot3;
         fontFoot3.CreateFont(fFoot3,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
         pDC->SelectObject(&fontFoot3);
         pDC->SetTextColor(RGB(140,140,140));
         pDC->SetBkMode(TRANSPARENT);
-        int footH3 = -fFoot3 + 2;
         pDC->FillSolidRect(CRect(x0, y0+H-footH3, x0+W, y0+H), RGB(245, 245, 245));
         DrawTextFit(pDC, L"© 2026 WinLuach  https://github.com/akivacp/WinLuach/  MIT License",
             CRect(x0, y0+H-footH3, x0+W, y0+H), DT_CENTER|DT_BOTTOM|DT_SINGLELINE);
@@ -1743,18 +1847,269 @@ bool DoPrintZmanimMonth(int year, int month, CMainFrame* pFrame, uint32_t colMas
 
 bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
 {
+    auto pMask = std::make_shared<uint64_t>(
+        NormalizeDayPrintZmanMask(theApp.m_settings.printDayZmanimMask));
     CSimplePageSetupDlg dlg(
-        [=](CDC* pDC, const CRect& rc, bool sf){ DrawDayPage(pDC, rc, g, pFrame, sf); },
+        [=](CDC* pDC, const CRect& rc, bool sf){
+            DrawDayPage(pDC, rc, g, pFrame, sf, *pMask);
+        },
         L"WinLuach Day Details", false /* defaultLandscape */, pFrame);
-    dlg.DoModal();
+    dlg.SetDayZmanimMaskPtr(pMask);
+    INT_PTR result = dlg.DoModal();
+    if (result == IDOK)
+    {
+        theApp.m_settings.printDayZmanimMask = NormalizeDayPrintZmanMask(*pMask);
+        SaveSettings(theApp.m_settings);
+    }
+    return result == IDOK;
+}
+
+static bool PrintDayPages(const std::vector<GregorianDate>& pages,
+                          CMainFrame* pFrame,
+                          const SimplePageOpts& opts,
+                          bool showFooter,
+                          uint64_t zmanimMask)
+{
+    if (pages.empty())
+        return false;
+
+    CPrintDialog pd(FALSE);
+    pd.m_pd.Flags |= PD_RETURNDC | PD_NOPAGENUMS | PD_NOCURRENTPAGE | PD_ALLPAGES;
+
+    HGLOBAL hDM = GlobalAlloc(GHND, sizeof(DEVMODE));
+    if (hDM)
+    {
+        DEVMODE* dm = (DEVMODE*)GlobalLock(hDM);
+        if (dm)
+        {
+            ZeroMemory(dm, sizeof(DEVMODE));
+            dm->dmSize = sizeof(DEVMODE);
+            dm->dmFields = DM_ORIENTATION;
+            dm->dmOrientation = opts.landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
+            GlobalUnlock(hDM);
+        }
+        pd.m_pd.hDevMode = hDM;
+    }
+    if (pd.DoModal() != IDOK)
+    {
+        if (hDM) GlobalFree(hDM);
+        return false;
+    }
+
+    HDC hDC = pd.GetPrinterDC();
+    if (!hDC)
+    {
+        if (hDM) GlobalFree(hDM);
+        return false;
+    }
+
+    CDC dc;
+    dc.Attach(hDC);
+    int pageW = dc.GetDeviceCaps(HORZRES);
+    int pageH = dc.GetDeviceCaps(VERTRES);
+    int dpiX = dc.GetDeviceCaps(LOGPIXELSX);
+    int dpiY = dc.GetDeviceCaps(LOGPIXELSY);
+    CRect rcPage((int)(opts.mLeft * dpiX), (int)(opts.mTop * dpiY),
+        pageW - (int)(opts.mRight * dpiX), pageH - (int)(opts.mBot * dpiY));
+    if (rcPage.IsRectEmpty()) rcPage = CRect(0, 0, pageW, pageH);
+
+    DOCINFO di = { sizeof(DOCINFO) };
+    di.lpszDocName = L"WinLuach Selected Day Details";
+    dc.StartDoc(&di);
+    for (const auto& g : pages)
+    {
+        dc.StartPage();
+        DrawDayPage(&dc, rcPage, g, pFrame, showFooter, zmanimMask);
+        dc.EndPage();
+    }
+    dc.EndDoc();
+    dc.Detach();
+    ::DeleteDC(hDC);
+    if (hDM) GlobalFree(hDM);
     return true;
 }
+
+class CMultiDayPreviewDlg : public CDialog
+{
+public:
+    CMultiDayPreviewDlg(const std::vector<GregorianDate>& pages,
+                        CMainFrame* frame,
+                        const SimplePageOpts& opts,
+                        bool showFooter,
+                        uint64_t zmanimMask,
+                        CWnd* parent = nullptr)
+        : CDialog(), m_pages(pages), m_pFrame(frame), m_opts(opts),
+          m_showFooter(showFooter),
+          m_zmanimMask(NormalizeDayPrintZmanMask(zmanimMask))
+    {
+        m_pParentWnd = parent;
+    }
+
+    INT_PTR DoModal() override
+    {
+        struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.dwExtendedStyle = WS_EX_APPWINDOW;
+        b.t.cx = 520; b.t.cy = 420;
+        wcscpy_s(b.title, L"Print Preview");
+        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
+        return CDialog::DoModal();
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Selected Days Print Preview");
+        HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        CFont* pF = CFont::FromHandle(hF);
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+        const int bh = 32, bw = 80, margin = 8;
+        int y = H - bh - margin;
+
+        m_btnPrev.Create(L"Previous", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(10, y, 90, y + bh), this, IDC_MDP_PREV);
+        m_btnPrev.SetFont(pF);
+        m_btnNext.Create(L"Next", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(96, y, 176, y + bh), this, IDC_MDP_NEXT);
+        m_btnNext.SetFont(pF);
+        m_lblPage.Create(L"", WS_CHILD | WS_VISIBLE | SS_CENTER,
+            CRect(190, y + 8, W - 190, y + bh), this, IDC_MDP_LABEL);
+        m_lblPage.SetFont(pF);
+        m_btnPrint.Create(L"Print...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(W - 180, y, W - 100, y + bh), this, IDC_MDP_PRINT);
+        m_btnPrint.SetFont(pF);
+        m_btnClose.Create(L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - 92, y, W - 12, y + bh), this, IDCANCEL);
+        m_btnClose.SetFont(pF);
+        UpdateButtons();
+        return TRUE;
+    }
+
+    afx_msg void OnPaint()
+    {
+        CPaintDC dc(this);
+        CRect rc; GetClientRect(&rc);
+        const int BTN_STRIP = 44;
+        CRect previewRc(0, 0, rc.right, rc.bottom - BTN_STRIP);
+        dc.FillSolidRect(previewRc, RGB(100, 100, 100));
+
+        float aspect = m_opts.landscape ? (8.5f / 11.0f) : (11.0f / 8.5f);
+        int avW = previewRc.Width() - 20;
+        int avH = previewRc.Height() - 20;
+        int pageW, pageH;
+        if ((float)avH / avW > aspect) { pageW = avW; pageH = (int)(avW * aspect); }
+        else                           { pageH = avH; pageW = (int)(avH / aspect); }
+        int pageX = previewRc.left + (previewRc.Width() - pageW) / 2;
+        int pageY = previewRc.top + (previewRc.Height() - pageH) / 2;
+        CRect rcPage(pageX, pageY, pageX + pageW, pageY + pageH);
+
+        CRect shadow = rcPage; shadow.OffsetRect(5, 5);
+        dc.FillSolidRect(shadow, RGB(50, 50, 50));
+        dc.FillSolidRect(rcPage, RGB(255, 255, 255));
+
+        int marg = max(6, pageW / 25);
+        CRect rcContent = rcPage;
+        rcContent.DeflateRect(marg, marg);
+        if (!m_pages.empty())
+            DrawDayPage(&dc, rcContent, m_pages[m_pageIndex], m_pFrame,
+                m_showFooter, m_zmanimMask);
+
+        CRect btnRc(0, rc.bottom - BTN_STRIP, rc.right, rc.bottom);
+        dc.FillSolidRect(btnRc, ::GetSysColor(COLOR_BTNFACE));
+    }
+
+    afx_msg BOOL OnEraseBkgnd(CDC*) { return TRUE; }
+
+    afx_msg void OnSize(UINT nType, int cx, int cy)
+    {
+        CDialog::OnSize(nType, cx, cy);
+        if (!m_btnPrev.GetSafeHwnd()) return;
+        const int bh = 32, margin = 8;
+        int y = cy - bh - margin;
+        m_btnPrev.SetWindowPos(nullptr, 10, y, 80, bh, SWP_NOZORDER);
+        m_btnNext.SetWindowPos(nullptr, 96, y, 80, bh, SWP_NOZORDER);
+        m_lblPage.SetWindowPos(nullptr, 190, y + 8, max(20, cx - 380), 20, SWP_NOZORDER);
+        m_btnPrint.SetWindowPos(nullptr, cx - 180, y, 80, bh, SWP_NOZORDER);
+        m_btnClose.SetWindowPos(nullptr, cx - 92, y, 80, bh, SWP_NOZORDER);
+        Invalidate(FALSE);
+    }
+
+    afx_msg void OnPrev()
+    {
+        if (m_pageIndex > 0)
+        {
+            --m_pageIndex;
+            UpdateButtons();
+            Invalidate(FALSE);
+        }
+    }
+
+    afx_msg void OnNext()
+    {
+        if (m_pageIndex + 1 < (int)m_pages.size())
+        {
+            ++m_pageIndex;
+            UpdateButtons();
+            Invalidate(FALSE);
+        }
+    }
+
+    afx_msg void OnPrint()
+    {
+        PrintDayPages(m_pages, m_pFrame, m_opts, m_showFooter, m_zmanimMask);
+    }
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateButtons()
+    {
+        if (m_btnPrev.GetSafeHwnd())
+            m_btnPrev.EnableWindow(m_pageIndex > 0 ? TRUE : FALSE);
+        if (m_btnNext.GetSafeHwnd())
+            m_btnNext.EnableWindow(m_pageIndex + 1 < (int)m_pages.size() ? TRUE : FALSE);
+        if (m_lblPage.GetSafeHwnd())
+        {
+            CString s;
+            s.Format(L"Page %d of %d", m_pageIndex + 1, (int)m_pages.size());
+            m_lblPage.SetWindowText(s);
+        }
+    }
+
+    enum {
+        IDC_MDP_PREV = 1101,
+        IDC_MDP_NEXT = 1102,
+        IDC_MDP_PRINT = 1103,
+        IDC_MDP_LABEL = 1104,
+    };
+
+    std::vector<GregorianDate> m_pages;
+    CMainFrame* m_pFrame = nullptr;
+    SimplePageOpts m_opts;
+    bool m_showFooter = true;
+    uint64_t m_zmanimMask = UINT64_MAX;
+    int m_pageIndex = 0;
+    CButton m_btnPrev, m_btnNext, m_btnPrint, m_btnClose;
+    CStatic m_lblPage;
+};
+
+BEGIN_MESSAGE_MAP(CMultiDayPreviewDlg, CDialog)
+    ON_WM_PAINT()
+    ON_WM_ERASEBKGND()
+    ON_WM_SIZE()
+    ON_BN_CLICKED(CMultiDayPreviewDlg::IDC_MDP_PREV, &CMultiDayPreviewDlg::OnPrev)
+    ON_BN_CLICKED(CMultiDayPreviewDlg::IDC_MDP_NEXT, &CMultiDayPreviewDlg::OnNext)
+    ON_BN_CLICKED(CMultiDayPreviewDlg::IDC_MDP_PRINT, &CMultiDayPreviewDlg::OnPrint)
+END_MESSAGE_MAP()
 
 class CMultiDayPageSetupDlg : public CDialog
 {
 public:
     SimplePageOpts opts;
     bool showFooter = true;
+    uint64_t dayZmanimMask = UINT64_MAX;
 
     CMultiDayPageSetupDlg(const std::vector<GregorianDate>& pages,
                           CMainFrame* frame,
@@ -1764,6 +2119,7 @@ public:
         m_pParentWnd = parent;
         opts.landscape = false;
         opts.mTop = opts.mBot = opts.mLeft = opts.mRight = 0.50f;
+        dayZmanimMask = NormalizeDayPrintZmanMask(theApp.m_settings.printDayZmanimMask);
     }
 
     INT_PTR DoModal() override
@@ -1771,7 +2127,7 @@ public:
     struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
     b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
     b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-    b.t.cx = 310; b.t.cy = 190;
+    b.t.cx = 470; b.t.cy = 390;
         wcscpy_s(b.title, L"Page Setup");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -1822,6 +2178,32 @@ protected:
             CRect(8, y, 160, y+20), this, 1007);
         m_footer.SetFont(pF);
         m_footer.SetCheck(BST_CHECKED);
+        y += 28;
+
+        CButton* group = new CButton;
+        group->Create(L"Zmanim to include",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            CRect(8, y, W - 8, y + 222), this, 1010);
+        group->SetFont(pF);
+        y += 22;
+
+        uint64_t mask = NormalizeDayPrintZmanMask(dayZmanimMask);
+        m_zmanChecks.clear();
+        m_zmanChecks.reserve(kDayPrintZmanCount);
+        for (int i = 0; i < kDayPrintZmanCount; ++i)
+        {
+            int col = i / 12;
+            int row = i % 12;
+            int x0 = 18 + col * 148;
+            int yy = y + row * 16;
+            CButton* chk = new CButton;
+            chk->Create(kDayPrintZmanLabels[i],
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(x0, yy, x0 + 144, yy + 16), this, 1100 + i);
+            chk->SetFont(pF);
+            chk->SetCheck((mask & (1ull << i)) ? BST_CHECKED : BST_UNCHECKED);
+            m_zmanChecks.push_back(chk);
+        }
 
         CButton* preview = new CButton;
         preview->Create(L"Preview", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
@@ -1845,13 +2227,8 @@ protected:
             ReadControls();
             if (!m_pages.empty())
             {
-                GregorianDate first = m_pages.front();
-                CSimplePreviewDlg prev(
-                    [=](CDC* pDC, const CRect& rc, bool sf) {
-                        DrawDayPage(pDC, rc, first, m_pFrame, sf);
-                    },
-                    L"WinLuach Selected Day Details",
-                    !opts.landscape, showFooter, this);
+                CMultiDayPreviewDlg prev(m_pages, m_pFrame, opts,
+                    showFooter, dayZmanimMask, this);
                 prev.DoModal();
             }
             return TRUE;
@@ -1879,12 +2256,19 @@ private:
         opts.mLeft = getF(m_left, 0.5f);
         opts.mRight = getF(m_right, 0.5f);
         showFooter = (m_footer.GetCheck() == BST_CHECKED);
+        uint64_t mask = 0;
+        for (int i = 0; i < (int)m_zmanChecks.size() && i < kDayPrintZmanCount; ++i)
+            if (m_zmanChecks[i] && m_zmanChecks[i]->GetSafeHwnd() &&
+                m_zmanChecks[i]->GetCheck() == BST_CHECKED)
+                mask |= (1ull << i);
+        dayZmanimMask = NormalizeDayPrintZmanMask(mask);
     }
 
     std::vector<GregorianDate> m_pages;
     CMainFrame* m_pFrame = nullptr;
     CButton m_radPortrait, m_radLandscape, m_footer;
     CEdit m_top, m_bot, m_left, m_right;
+    std::vector<CButton*> m_zmanChecks;
 };
 
 bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
@@ -1904,60 +2288,10 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     if (setup.DoModal() != IDOK)
         return false;
 
-    CPrintDialog pd(FALSE);
-    pd.m_pd.Flags |= PD_RETURNDC | PD_NOPAGENUMS | PD_NOCURRENTPAGE;
-
-    HGLOBAL hDM = GlobalAlloc(GHND, sizeof(DEVMODE));
-    if (hDM)
-    {
-        DEVMODE* dm = (DEVMODE*)GlobalLock(hDM);
-        if (dm)
-        {
-            ZeroMemory(dm, sizeof(DEVMODE));
-            dm->dmSize = sizeof(DEVMODE);
-            dm->dmFields = DM_ORIENTATION;
-            dm->dmOrientation = setup.opts.landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
-            GlobalUnlock(hDM);
-        }
-        pd.m_pd.hDevMode = hDM;
-    }
-    if (pd.DoModal() != IDOK)
-    {
-        if (hDM) GlobalFree(hDM);
-        return false;
-    }
-
-    HDC hDC = pd.GetPrinterDC();
-    if (!hDC)
-    {
-        if (hDM) GlobalFree(hDM);
-        return false;
-    }
-
-    CDC dc;
-    dc.Attach(hDC);
-    int pageW = dc.GetDeviceCaps(HORZRES);
-    int pageH = dc.GetDeviceCaps(VERTRES);
-    int dpiX = dc.GetDeviceCaps(LOGPIXELSX);
-    int dpiY = dc.GetDeviceCaps(LOGPIXELSY);
-    CRect rcPage((int)(setup.opts.mLeft * dpiX), (int)(setup.opts.mTop * dpiY),
-        pageW - (int)(setup.opts.mRight * dpiX), pageH - (int)(setup.opts.mBot * dpiY));
-    if (rcPage.IsRectEmpty()) rcPage = CRect(0, 0, pageW, pageH);
-
-    DOCINFO di = { sizeof(DOCINFO) };
-    di.lpszDocName = L"WinLuach Selected Day Details";
-    dc.StartDoc(&di);
-    for (const auto& g : pages)
-    {
-        dc.StartPage();
-        DrawDayPage(&dc, rcPage, g, pFrame, setup.showFooter);
-        dc.EndPage();
-    }
-    dc.EndDoc();
-    dc.Detach();
-    ::DeleteDC(hDC);
-    if (hDM) GlobalFree(hDM);
-    return true;
+    theApp.m_settings.printDayZmanimMask = NormalizeDayPrintZmanMask(setup.dayZmanimMask);
+    SaveSettings(theApp.m_settings);
+    return PrintDayPages(pages, pFrame, setup.opts, setup.showFooter,
+        setup.dayZmanimMask);
 }
 
 // =============================================================================
@@ -1983,7 +2317,8 @@ INT_PTR CSimplePageSetupDlg::DoModal()
     struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
     b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
     b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-    b.t.cx = 310; b.t.cy = 220;
+    b.t.cx = m_pDayZmanimMask ? 470 : 310;
+    b.t.cy = m_pDayZmanimMask ? 390 : 220;
     wcscpy_s(b.title, L"Page Setup");
     if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
     return CDialog::DoModal();
@@ -2054,6 +2389,36 @@ BOOL CSimplePageSetupDlg::OnInitDialog()
         y += 26;
     }
 
+    if (m_pDayZmanimMask)
+    {
+        CButton* group = new CButton;
+        group->Create(L"Zmanim to include",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            CRect(8, y, W - 8, y + 222), this, IDC_SPS_DAY_ZMAN_FIRST + 100);
+        group->SetFont(pF);
+        y += 22;
+
+        uint64_t mask = NormalizeDayPrintZmanMask(*m_pDayZmanimMask);
+        m_dayZmanChecks.clear();
+        m_dayZmanChecks.reserve(kDayPrintZmanCount);
+        for (int i = 0; i < kDayPrintZmanCount; ++i)
+        {
+            int col = i / 12;
+            int row = i % 12;
+            int cx0 = 18 + col * 148;
+            int cy0 = y + row * 16;
+            CButton* chk = new CButton;
+            chk->Create(kDayPrintZmanLabels[i],
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(cx0, cy0, cx0 + 144, cy0 + 16), this,
+                IDC_SPS_DAY_ZMAN_FIRST + i);
+            chk->SetFont(pF);
+            chk->SetCheck((mask & (1ull << i)) ? BST_CHECKED : BST_UNCHECKED);
+            m_dayZmanChecks.push_back(chk);
+        }
+        y += 198;
+    }
+
     int btnY = H - 36;
     m_btnPreview.Create(L"Preview",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|WS_GROUP,
@@ -2089,6 +2454,15 @@ void CSimplePageSetupDlg::ReadControls()
     m_opts.mRight = getF(m_editRight, 0.0f);
     if (m_pUse24hr && m_chk24hr.GetSafeHwnd())
         *m_pUse24hr = (m_chk24hr.GetCheck() == BST_CHECKED);
+    if (m_pDayZmanimMask)
+    {
+        uint64_t mask = 0;
+        for (int i = 0; i < (int)m_dayZmanChecks.size() && i < kDayPrintZmanCount; ++i)
+            if (m_dayZmanChecks[i] && m_dayZmanChecks[i]->GetSafeHwnd() &&
+                m_dayZmanChecks[i]->GetCheck() == BST_CHECKED)
+                mask |= (1ull << i);
+        *m_pDayZmanimMask = NormalizeDayPrintZmanMask(mask);
+    }
 }
 
 void CSimplePageSetupDlg::OnPreview()
