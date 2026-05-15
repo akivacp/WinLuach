@@ -534,6 +534,7 @@ static void WriteEvent(std::wofstream& f, const UserEventEntry& e, int i)
     f << L"  \"ev" << i << L"_afterSunset\": "   << (e.afterSunset ? L"true" : L"false") << L",\n";
     f << L"  \"ev" << i << L"_gregYear\": "      << e.gregYear                           << L",\n";
     f << L"  \"ev" << i << L"_hebYear\": "       << e.hebYear                            << L",\n";
+    f << L"  \"ev" << i << L"_observeAnnually\": " << (e.observeAnnually ? L"true" : L"false") << L",\n";
     f << L"  \"ev" << i << L"_notify\": "        << (e.notify ? L"true" : L"false")       << L",\n";
     f << L"  \"ev" << i << L"_alarmOffsets\": \"" << JsonEscape(e.alarmOffsets)           << L"\",\n";
 }
@@ -590,6 +591,7 @@ static void ParseEventsFromStream(std::wifstream& f, std::vector<UserEventEntry>
         else if (field == L"afterSunset") events[idx].afterSunset = ParseJsonBool(line);
         else if (field == L"gregYear")    events[idx].gregYear    = (int)ParseJsonNumber(line);
         else if (field == L"hebYear")     events[idx].hebYear     = (int)ParseJsonNumber(line);
+        else if (field == L"observeAnnually") events[idx].observeAnnually = ParseJsonBool(line);
         else if (field == L"notify")      events[idx].notify      = ParseJsonBool(line);
         else if (field == L"alarmOffsets") events[idx].alarmOffsets = ParseJsonString(line);
     }

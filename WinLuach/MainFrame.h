@@ -136,6 +136,7 @@ struct DisplayZmanimTimes
 #define ID_VIEW_PANE_SPECIAL 1039
 #define ID_VIEW_PANE_YEAR    1040
 #define ID_VIEW_PANE_MOLAD   1041
+#define ID_CAL_MANAGE_CALS  1042
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -346,6 +347,7 @@ protected:
     afx_msg void OnViewPaneMolad();
     afx_msg void OnCalGoTo();
     afx_msg void OnCalEvents();
+    afx_msg void OnCalManageCals();
     afx_msg void OnFileExportEvents();
     afx_msg void OnFileImportEvents();
     afx_msg void OnCalPrintMonth();

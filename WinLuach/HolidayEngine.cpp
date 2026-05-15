@@ -138,9 +138,13 @@ std::vector<std::wstring> GetYearFacts(int hebrewYear)
     else if (!IsShmitaYear(hebrewYear))
         facts.push_back(L"Maaser Ani (tithe for the poor)");
 
-    swprintf_s(buf, L"Year %d of the 28-year Birchas Hachama solar cycle",
-        SolarCycleYear(hebrewYear));
-    facts.push_back(buf);
+    {
+        int solarYear  = SolarCycleYear(hebrewYear);
+        int solarCycle = (hebrewYear - 1) / 28 + 1;
+        swprintf_s(buf, L"Year %d of solar cycle %d (Birchas Hachama every 28 years)",
+            solarYear, solarCycle);
+        facts.push_back(buf);
+    }
 
     // Years from destruction of Temple (3830 AM)
     int sinceDestruction = hebrewYear - 3830;
