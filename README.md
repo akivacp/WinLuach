@@ -15,9 +15,6 @@ A Hebrew/Gregorian calendar application for Windows, built in C++ (Win32).
 - 120+ built-in world cities with custom location support
 - Israel and Diaspora holiday schedules
 
-## Status
-Active development — v0.3.1
-
 ## Building
 Open `WinLuach.sln` in Visual Studio 2022 or later.
 Requires the Desktop Development with C++ workload.
