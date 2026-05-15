@@ -435,6 +435,28 @@ static void MakeFont(CFont& font, const std::wstring& face, int pointSize, int w
 
 class CCountdownOptionsDlg : public CDialog
 {
+    static constexpr UINT IDC_CDOPT_TAB     = 5050;
+    static constexpr UINT IDC_CDOPT_APPLY   = 5201;
+    static constexpr UINT IDC_CDOPT_RESTORE = 5202;
+
+    static const wchar_t* kZmanLabels(int i)
+    {
+        static const wchar_t* k[] = {
+            L"Alos HaShachar (GRA)",  L"Alos HaShachar (MA72)", L"Alos HaShachar (MA90)",
+            L"Misheyakir",            L"Hanetz (Sunrise)",
+            L"Sof Shema (GRA)",       L"Sof Shema (MA72)",      L"Sof Shema (MA90)",
+            L"Sof Tefilla (GRA)",     L"Sof Tefilla (MA72)",    L"Sof Tefilla (MA90)",
+            L"Chatzos",
+            L"Mincha Gedola (GRA)",   L"Mincha Gedola (MA72)",  L"Mincha Gedola (MA90)",
+            L"Mincha Ketana (GRA)",   L"Mincha Ketana (MA72)",
+            L"Plag HaMincha (GRA)",   L"Plag HaMincha (MA72)",  L"Plag HaMincha (MA90)",
+            L"Shkiah (Sunset)",
+            L"Tzeit (GRA)",           L"Tzeit (MA72)",          L"Tzeit (MA90)",
+            L"Candle Lighting"
+        };
+        return (i >= 0 && i < 25) ? k[i] : L"";
+    }
+
 public:
     CCountdownOptionsDlg(CMainFrame* frame, CWnd* parent = nullptr)
         : CDialog(), m_pFrame(frame), m_settings(theApp.m_settings)
@@ -447,7 +469,7 @@ public:
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 360; b.t.cy = 285;
+        b.t.cx = 270; b.t.cy = 305;
         wcscpy_s(b.title, L"Countdown Options");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -461,84 +483,181 @@ protected:
         HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         CFont* pF = CFont::FromHandle(hF);
         CRect rc; GetClientRect(&rc);
-        int W = rc.Width();
+        int W = rc.Width(), H = rc.Height();
 
-        auto mkStatic = [&](const wchar_t* text, int x, int y, int w, int h) {
+        // Tooltip control
+        m_tooltip.Create(this, TTS_ALWAYSTIP | TTS_BALLOON);
+        m_tooltip.SetMaxTipWidth(300);
+        m_tooltip.Activate(TRUE);
+
+        // Tab control
+        m_tabCtrl.Create(WS_CHILD | WS_VISIBLE | TCS_TABS,
+            CRect(0, 4, W, 32), this, IDC_CDOPT_TAB);
+        m_tabCtrl.SetFont(pF);
+        TCITEM ti = {}; ti.mask = TCIF_TEXT;
+        ti.pszText = const_cast<LPWSTR>(L"Appearance"); m_tabCtrl.InsertItem(0, &ti);
+        ti.pszText = const_cast<LPWSTR>(L"Zmanim");     m_tabCtrl.InsertItem(1, &ti);
+
+        auto mkStaticP = [&](const wchar_t* text, int x, int y, int w, int h, std::vector<CWnd*>& page) {
             CStatic* s = new CStatic;
-            s->Create(text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            s->Create(text, WS_CHILD | SS_LEFT | SS_CENTERIMAGE,
                 CRect(x, y, x + w, y + h), this, 5100 + m_nextId++);
             s->SetFont(pF);
-        };
-        auto mkEdit = [&](CEdit& e, const std::wstring& val, int x, int y, int w, UINT id) {
-            e.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                CRect(x, y, x + w, y + 22), this, id);
-            e.SetFont(pF);
-            e.SetWindowText(val.c_str());
-        };
-        auto mkSize = [&](CEdit& e, int val, int x, int y, int w, UINT id) {
-            CString s; s.Format(L"%d", val);
-            mkEdit(e, (LPCWSTR)s, x, y, w, id);
-        };
-        auto mkBtn = [&](CButton& b, const wchar_t* text, int x, int y, int w, UINT id) {
-            b.Create(text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                CRect(x, y, x + w, y + 24), this, id);
-            b.SetFont(pF);
+            page.push_back(s);
+            return s;
         };
 
-        int y = 14;
-        mkStatic(L"Area", 10, y, 90, 20);
-        mkStatic(L"Font", 105, y, 95, 20);
-        mkStatic(L"Size", 205, y, 45, 20);
-        mkStatic(L"Text", 252, y, 48, 20);
-        mkStatic(L"Back", 306, y, 48, 20);
+        // ── Appearance page ──────────────────────────────────────────
+        int y = 40;
+        mkStaticP(L"Show", 10, y, 38, 18, m_page1);
+        mkStaticP(L"Area", 52, y, 60, 18, m_page1);
+        mkStaticP(L"Font", 118, y, 90, 18, m_page1);
+        mkStaticP(L"Size", 214, y, 38, 18, m_page1);
+        mkStaticP(L"Text", 256, y, 46, 18, m_page1);
+        mkStaticP(L"Back", 306, y, 46, 18, m_page1);
+        y += 22;
+
+        static const wchar_t* kRowLabels[] = {
+            L"Next zman", L"Countdown", L"Zman time", L"Live clock" };
+        static const wchar_t* kShowTips[] = {
+            L"Show the upcoming zman name in the countdown clock",
+            L"Show the HH:MM:SS countdown timer in the countdown clock",
+            L"Show the actual clock time of the upcoming zman",
+            L"Show the live current time and date" };
+        bool* showFlags[] = {
+            &m_settings.countdownShowTitle,  &m_settings.countdownShowClock,
+            &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive };
+        std::wstring* faceFields[] = {
+            &m_settings.countdownTitleFontFace,   &m_settings.countdownClockFontFace,
+            &m_settings.countdownCurrentFontFace, &m_settings.countdownLiveFontFace };
+        int* sizeFields[] = {
+            &m_settings.countdownTitleFontSize,   &m_settings.countdownClockFontSize,
+            &m_settings.countdownCurrentFontSize, &m_settings.countdownLiveFontSize };
+        CEdit* faceEdits[] = { &m_editTitleFace, &m_editClockFace, &m_editCurrentFace, &m_editLiveFace };
+        CEdit* sizeEdits[] = { &m_editTitleSize, &m_editClockSize, &m_editCurrentSize, &m_editLiveSize };
+        CButton* colorBtns[] = { &m_btnTitleColor, &m_btnClockColor, &m_btnCurrentColor, &m_btnLiveColor };
+        CButton* backBtns[]  = { &m_btnTitleBack,  &m_btnClockBack,  &m_btnCurrentBack,  &m_btnLiveBack };
+        CButton* showChks[]  = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            // Show checkbox
+            showChks[i]->Create(L"", WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(12, y + 3, 48, y + 21), this, 5800 + i);
+            showChks[i]->SetFont(pF);
+            showChks[i]->SetCheck(*showFlags[i] ? BST_CHECKED : BST_UNCHECKED);
+            m_page1.push_back(showChks[i]);
+            m_tooltip.AddTool(showChks[i], kShowTips[i]);
+
+            // Area label
+            CStatic* lbl = new CStatic;
+            lbl->Create(kRowLabels[i], WS_CHILD | SS_LEFT | SS_CENTERIMAGE,
+                CRect(52, y, 112, y + 22), this, 5300 + m_nextId++);
+            lbl->SetFont(pF);
+            m_page1.push_back(lbl);
+
+            // Font face edit
+            faceEdits[i]->Create(WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+                CRect(118, y, 208, y + 22), this, 5400 + m_nextId++);
+            faceEdits[i]->SetFont(pF);
+            faceEdits[i]->SetWindowText(faceFields[i]->c_str());
+            m_page1.push_back(faceEdits[i]);
+
+            // Size edit
+            CString sz; sz.Format(L"%d", *sizeFields[i]);
+            sizeEdits[i]->Create(WS_CHILD | WS_TABSTOP | WS_BORDER | ES_NUMBER | ES_CENTER,
+                CRect(214, y, 252, y + 22), this, 5500 + m_nextId++);
+            sizeEdits[i]->SetFont(pF);
+            sizeEdits[i]->SetWindowText(sz);
+            m_page1.push_back(sizeEdits[i]);
+
+            // Font/color button
+            colorBtns[i]->Create(L"Font...", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(256, y, 302, y + 24), this, 5600 + m_nextId++);
+            colorBtns[i]->SetFont(pF);
+            m_page1.push_back(colorBtns[i]);
+            m_tooltip.AddTool(colorBtns[i], L"Choose font, size, and text color for this area");
+
+            // Back color button
+            backBtns[i]->Create(L"Back", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+                CRect(306, y, 350, y + 24), this, 5700 + m_nextId++);
+            backBtns[i]->SetFont(pF);
+            m_page1.push_back(backBtns[i]);
+            m_tooltip.AddTool(backBtns[i], L"Choose background color for this area");
+
+            y += 34;
+        }
+
+        y += 6;
+        mkStaticP(L"Use Font/Back buttons to choose colors for each area.", 10, y, W - 20, 18, m_page1);
         y += 24;
 
-        CreateRow(L"Next zman", m_editTitleFace, m_editTitleSize, m_btnTitleColor, m_btnTitleBack,
-            m_settings.countdownTitleFontFace, m_settings.countdownTitleFontSize, y, pF);
-        y += 34;
-        CreateRow(L"Countdown", m_editClockFace, m_editClockSize, m_btnClockColor, m_btnClockBack,
-            m_settings.countdownClockFontFace, m_settings.countdownClockFontSize, y, pF);
-        y += 34;
-        CreateRow(L"Current time", m_editCurrentFace, m_editCurrentSize, m_btnCurrentColor, m_btnCurrentBack,
-            m_settings.countdownCurrentFontFace, m_settings.countdownCurrentFontSize, y, pF);
-        y += 34;
-        CreateRow(L"Live clock", m_editLiveFace, m_editLiveSize, m_btnLiveColor, m_btnLiveBack,
-            m_settings.countdownLiveFontFace, m_settings.countdownLiveFontSize, y, pF);
-        y += 42;
+        m_btnRestoreColors.Create(L"Restore Defaults", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(10, y, 180, y + 24), this, IDC_CDOPT_RESTORE);
+        m_btnRestoreColors.SetFont(pF);
+        m_page1.push_back(&m_btnRestoreColors);
+        m_tooltip.AddTool(&m_btnRestoreColors, L"Restore all countdown clock fonts and colors to their default values");
 
-        mkStatic(L"Use the color buttons to choose text and background colors.", 10, y, W - 20, 20);
-        y += 28;
-        mkBtn(m_btnRestoreColors, L"Restore Defaults", 10, y, 170, 5202);
+        // ── Zmanim page ───────────────────────────────────────────────
+        {
+            CStatic* znote = new CStatic;
+            znote->Create(L"Select which zmanim the clock counts down to:",
+                WS_CHILD | SS_LEFT, CRect(10, 40, W - 10, 58), this, 5100 + m_nextId++);
+            znote->SetFont(pF);
+            m_page2.push_back(znote);
+        }
+        int colW = (W - 20) / 2;
+        for (int i = 0; i < 25; ++i)
+        {
+            int col = i / 13;
+            int row = i % 13;
+            int zx = 10 + col * colW;
+            int zy = 62 + row * 20;
+            m_chkZmanim[i].Create(kZmanLabels(i), WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(zx, zy, zx + colW - 4, zy + 18), this, 5900 + i);
+            m_chkZmanim[i].SetFont(pF);
+            m_chkZmanim[i].SetCheck(((m_settings.countdownZmanimMask >> i) & 1) ? BST_CHECKED : BST_UNCHECKED);
+            m_page2.push_back(&m_chkZmanim[i]);
+            m_tooltip.AddTool(&m_chkZmanim[i], L"Include this zman when searching for the next countdown target");
+        }
 
-        mkBtn(m_btnOK, L"OK", W - 238, rc.Height() - 34, 64, IDOK);
-        mkBtn(m_btnApply, L"Apply", W - 166, rc.Height() - 34, 70, 5201);
-        mkBtn(m_btnCancel, L"Cancel", W - 88, rc.Height() - 34, 78, IDCANCEL);
+        // ── Buttons (always visible) ────────────────────────────────
+        m_btnOK.Create(L"OK", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(W - 236, H - 34, W - 164, H - 8), this, IDOK);
+        m_btnOK.SetFont(pF);
+        m_btnApply.Create(L"Apply", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - 158, H - 34, W - 86, H - 8), this, IDC_CDOPT_APPLY);
+        m_btnApply.SetFont(pF);
+        m_btnCancel.Create(L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - 80, H - 34, W - 8, H - 8), this, IDCANCEL);
+        m_btnCancel.SetFont(pF);
+
+        ShowPage(0);
         return TRUE;
     }
 
-    void CreateRow(const wchar_t* label, CEdit& face, CEdit& size,
-                   CButton& colorBtn, CButton& backBtn,
-                   const std::wstring& faceVal, int sizeVal, int y, CFont* pF)
+    void ShowPage(int page)
     {
-        CStatic* s = new CStatic;
-        s->Create(label, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
-            CRect(10, y, 100, y + 22), this, 5300 + m_nextId++);
-        s->SetFont(pF);
-        face.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-            CRect(105, y, 196, y + 22), this, 5400 + m_nextId++);
-        face.SetFont(pF);
-        face.SetWindowText(faceVal.c_str());
-        CString sz; sz.Format(L"%d", sizeVal);
-        size.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER | ES_CENTER,
-            CRect(205, y, 246, y + 22), this, 5500 + m_nextId++);
-        size.SetFont(pF);
-        size.SetWindowText(sz);
-        colorBtn.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(252, y, 302, y + 24), this, 5600 + m_nextId++);
-        colorBtn.SetFont(pF);
-        backBtn.Create(L"Back", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(306, y, 356, y + 24), this, 5700 + m_nextId++);
-        backBtn.SetFont(pF);
+        for (CWnd* c : m_page1) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 0 ? SW_SHOW : SW_HIDE);
+        for (CWnd* c : m_page2) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 1 ? SW_SHOW : SW_HIDE);
+    }
+
+    BOOL OnNotify(UINT nCtrlID, NMHDR* pNMHDR, LRESULT* pResult) override
+    {
+        if (pNMHDR && pNMHDR->code == TCN_SELCHANGE &&
+            m_tabCtrl.GetSafeHwnd() && pNMHDR->hwndFrom == m_tabCtrl.GetSafeHwnd())
+        {
+            ShowPage(m_tabCtrl.GetCurSel());
+            return TRUE;
+        }
+        return CDialog::OnNotify(nCtrlID, pNMHDR, pResult);
+    }
+
+    BOOL PreTranslateMessage(MSG* pMsg) override
+    {
+        if (m_tooltip.GetSafeHwnd())
+            m_tooltip.RelayEvent(pMsg);
+        return CDialog::PreTranslateMessage(pMsg);
     }
 
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
@@ -546,40 +665,26 @@ protected:
         HWND h = (HWND)lParam;
         if (HIWORD(wParam) == BN_CLICKED && h)
         {
-            if (h == m_btnTitleColor.GetSafeHwnd()) return PickFont(m_settings.countdownTitleFontFace, m_settings.countdownTitleFontSize, m_settings.countdownTitleTextColor, m_settings.countdownTitleBold, m_settings.countdownTitleItalic);
-            if (h == m_btnTitleBack.GetSafeHwnd()) return Pick(m_settings.countdownTitleBackColor);
-            if (h == m_btnClockColor.GetSafeHwnd()) return PickFont(m_settings.countdownClockFontFace, m_settings.countdownClockFontSize, m_settings.countdownClockTextColor, m_settings.countdownClockBold, m_settings.countdownClockItalic);
-            if (h == m_btnClockBack.GetSafeHwnd()) return Pick(m_settings.countdownClockBackColor);
+            if (h == m_btnTitleColor.GetSafeHwnd())   return PickFont(m_settings.countdownTitleFontFace,   m_settings.countdownTitleFontSize,   m_settings.countdownTitleTextColor,   m_settings.countdownTitleBold,   m_settings.countdownTitleItalic);
+            if (h == m_btnTitleBack.GetSafeHwnd())    return Pick(m_settings.countdownTitleBackColor);
+            if (h == m_btnClockColor.GetSafeHwnd())   return PickFont(m_settings.countdownClockFontFace,   m_settings.countdownClockFontSize,   m_settings.countdownClockTextColor,   m_settings.countdownClockBold,   m_settings.countdownClockItalic);
+            if (h == m_btnClockBack.GetSafeHwnd())    return Pick(m_settings.countdownClockBackColor);
             if (h == m_btnCurrentColor.GetSafeHwnd()) return PickFont(m_settings.countdownCurrentFontFace, m_settings.countdownCurrentFontSize, m_settings.countdownCurrentTextColor, m_settings.countdownCurrentBold, m_settings.countdownCurrentItalic);
-            if (h == m_btnCurrentBack.GetSafeHwnd()) return Pick(m_settings.countdownCurrentBackColor);
-            if (h == m_btnLiveColor.GetSafeHwnd()) return PickFont(m_settings.countdownLiveFontFace, m_settings.countdownLiveFontSize, m_settings.countdownLiveTextColor, m_settings.countdownLiveBold, m_settings.countdownLiveItalic);
-            if (h == m_btnLiveBack.GetSafeHwnd()) return Pick(m_settings.countdownLiveBackColor);
+            if (h == m_btnCurrentBack.GetSafeHwnd())  return Pick(m_settings.countdownCurrentBackColor);
+            if (h == m_btnLiveColor.GetSafeHwnd())    return PickFont(m_settings.countdownLiveFontFace,    m_settings.countdownLiveFontSize,    m_settings.countdownLiveTextColor,    m_settings.countdownLiveBold,    m_settings.countdownLiveItalic);
+            if (h == m_btnLiveBack.GetSafeHwnd())     return Pick(m_settings.countdownLiveBackColor);
         }
-        if (LOWORD(wParam) == 5201)
-        {
-            Apply();
-            return TRUE;
-        }
-        if (LOWORD(wParam) == 5202)
-        {
-            RestoreDefaults();
-            Apply();
-            return TRUE;
-        }
+        if (LOWORD(wParam) == IDC_CDOPT_APPLY)   { Apply(); return TRUE; }
+        if (LOWORD(wParam) == IDC_CDOPT_RESTORE) { RestoreDefaults(); Apply(); return TRUE; }
         return CDialog::OnCommand(wParam, lParam);
     }
 
-    void OnOK() override
-    {
-        Apply();
-        CDialog::OnOK();
-    }
+    void OnOK() override { Apply(); CDialog::OnOK(); }
 
     BOOL Pick(int& target)
     {
         CColorDialog dlg((COLORREF)target, CC_FULLOPEN, this);
-        if (dlg.DoModal() == IDOK)
-            target = (int)dlg.GetColor();
+        if (dlg.DoModal() == IDOK) target = (int)dlg.GetColor();
         return TRUE;
     }
 
@@ -593,13 +698,11 @@ protected:
         lf.lfHeight = -MulDiv(max(6, size), dpiY, 72);
         lf.lfWeight = bold ? FW_BOLD : FW_NORMAL;
         lf.lfItalic = italic ? TRUE : FALSE;
-
         CFontDialog dlg(&lf, CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT, nullptr, this);
         dlg.m_cf.rgbColors = (COLORREF)color;
         if (dlg.DoModal() == IDOK)
         {
-            LOGFONT chosen = {};
-            dlg.GetCurrentFont(&chosen);
+            LOGFONT chosen = {}; dlg.GetCurrentFont(&chosen);
             face = chosen.lfFaceName;
             size = max(6, (int)dlg.GetSize() / 10);
             color = (int)dlg.GetColor();
@@ -613,23 +716,37 @@ protected:
 
     void Read()
     {
-        auto readFace = [](CEdit& e, std::wstring& dest) { CString s; e.GetWindowText(s); dest = (LPCWSTR)s; };
-        auto readSize = [](CEdit& e, int& dest) { CString s; e.GetWindowText(s); dest = max(6, min(80, _wtoi(s))); };
-        readFace(m_editTitleFace, m_settings.countdownTitleFontFace);
-        readSize(m_editTitleSize, m_settings.countdownTitleFontSize);
-        readFace(m_editClockFace, m_settings.countdownClockFontFace);
-        readSize(m_editClockSize, m_settings.countdownClockFontSize);
+        auto readFace = [](CEdit& e, std::wstring& d) { CString s; e.GetWindowText(s); d = (LPCWSTR)s; };
+        auto readSize = [](CEdit& e, int& d)           { CString s; e.GetWindowText(s); d = max(6, min(80, _wtoi(s))); };
+        readFace(m_editTitleFace,   m_settings.countdownTitleFontFace);
+        readSize(m_editTitleSize,   m_settings.countdownTitleFontSize);
+        readFace(m_editClockFace,   m_settings.countdownClockFontFace);
+        readSize(m_editClockSize,   m_settings.countdownClockFontSize);
         readFace(m_editCurrentFace, m_settings.countdownCurrentFontFace);
         readSize(m_editCurrentSize, m_settings.countdownCurrentFontSize);
-        readFace(m_editLiveFace, m_settings.countdownLiveFontFace);
-        readSize(m_editLiveSize, m_settings.countdownLiveFontSize);
+        readFace(m_editLiveFace,    m_settings.countdownLiveFontFace);
+        readSize(m_editLiveSize,    m_settings.countdownLiveFontSize);
+
+        // Show/hide checkboxes
+        bool* showFlags[] = { &m_settings.countdownShowTitle, &m_settings.countdownShowClock,
+                               &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive };
+        CButton* showChks[] = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive };
+        for (int i = 0; i < 4; ++i)
+            if (showChks[i]->GetSafeHwnd())
+                *showFlags[i] = (showChks[i]->GetCheck() == BST_CHECKED);
+
+        // Zmanim mask
+        uint32_t mask = 0;
+        for (int i = 0; i < 25; ++i)
+            if (m_chkZmanim[i].GetSafeHwnd() && m_chkZmanim[i].GetCheck() == BST_CHECKED)
+                mask |= (1u << i);
+        m_settings.countdownZmanimMask = mask;
     }
 
     void Apply()
     {
         Read();
-        if (m_pFrame)
-            m_pFrame->ApplyAndSaveSettings(m_settings);
+        if (m_pFrame) m_pFrame->ApplyAndSaveSettings(m_settings);
         if (m_btnApply.GetSafeHwnd()) m_btnApply.EnableWindow(FALSE);
     }
 
@@ -648,46 +765,57 @@ protected:
 
     void RestoreDefaults()
     {
-        AppSettings defaults;
-        m_settings.countdownTitleTextColor = defaults.countdownTitleTextColor;
-        m_settings.countdownTitleBackColor = defaults.countdownTitleBackColor;
-        m_settings.countdownClockTextColor = defaults.countdownClockTextColor;
-        m_settings.countdownClockBackColor = defaults.countdownClockBackColor;
-        m_settings.countdownCurrentTextColor = defaults.countdownCurrentTextColor;
-        m_settings.countdownCurrentBackColor = defaults.countdownCurrentBackColor;
-        m_settings.countdownLiveTextColor = defaults.countdownLiveTextColor;
-        m_settings.countdownLiveBackColor = defaults.countdownLiveBackColor;
-        m_settings.countdownTitleFontFace = defaults.countdownTitleFontFace;
-        m_settings.countdownTitleFontSize = defaults.countdownTitleFontSize;
-        m_settings.countdownTitleBold = defaults.countdownTitleBold;
-        m_settings.countdownTitleItalic = defaults.countdownTitleItalic;
-        m_settings.countdownClockFontFace = defaults.countdownClockFontFace;
-        m_settings.countdownClockFontSize = defaults.countdownClockFontSize;
-        m_settings.countdownClockBold = defaults.countdownClockBold;
-        m_settings.countdownClockItalic = defaults.countdownClockItalic;
-        m_settings.countdownCurrentFontFace = defaults.countdownCurrentFontFace;
-        m_settings.countdownCurrentFontSize = defaults.countdownCurrentFontSize;
-        m_settings.countdownCurrentBold = defaults.countdownCurrentBold;
-        m_settings.countdownCurrentItalic = defaults.countdownCurrentItalic;
-        m_settings.countdownLiveFontFace = defaults.countdownLiveFontFace;
-        m_settings.countdownLiveFontSize = defaults.countdownLiveFontSize;
-        m_settings.countdownLiveBold = defaults.countdownLiveBold;
-        m_settings.countdownLiveItalic = defaults.countdownLiveItalic;
+        AppSettings d;
+        m_settings.countdownTitleTextColor   = d.countdownTitleTextColor;
+        m_settings.countdownTitleBackColor   = d.countdownTitleBackColor;
+        m_settings.countdownClockTextColor   = d.countdownClockTextColor;
+        m_settings.countdownClockBackColor   = d.countdownClockBackColor;
+        m_settings.countdownCurrentTextColor = d.countdownCurrentTextColor;
+        m_settings.countdownCurrentBackColor = d.countdownCurrentBackColor;
+        m_settings.countdownLiveTextColor    = d.countdownLiveTextColor;
+        m_settings.countdownLiveBackColor    = d.countdownLiveBackColor;
+        m_settings.countdownTitleFontFace    = d.countdownTitleFontFace;
+        m_settings.countdownTitleFontSize    = d.countdownTitleFontSize;
+        m_settings.countdownTitleBold        = d.countdownTitleBold;
+        m_settings.countdownTitleItalic      = d.countdownTitleItalic;
+        m_settings.countdownClockFontFace    = d.countdownClockFontFace;
+        m_settings.countdownClockFontSize    = d.countdownClockFontSize;
+        m_settings.countdownClockBold        = d.countdownClockBold;
+        m_settings.countdownClockItalic      = d.countdownClockItalic;
+        m_settings.countdownCurrentFontFace  = d.countdownCurrentFontFace;
+        m_settings.countdownCurrentFontSize  = d.countdownCurrentFontSize;
+        m_settings.countdownCurrentBold      = d.countdownCurrentBold;
+        m_settings.countdownCurrentItalic    = d.countdownCurrentItalic;
+        m_settings.countdownLiveFontFace     = d.countdownLiveFontFace;
+        m_settings.countdownLiveFontSize     = d.countdownLiveFontSize;
+        m_settings.countdownLiveBold         = d.countdownLiveBold;
+        m_settings.countdownLiveItalic       = d.countdownLiveItalic;
         SyncFontEdits();
     }
 
 private:
-    CMainFrame* m_pFrame = nullptr;
-    AppSettings m_settings;
-    int m_nextId = 0;
-    CEdit m_editTitleFace, m_editTitleSize;
-    CEdit m_editClockFace, m_editClockSize;
-    CEdit m_editCurrentFace, m_editCurrentSize;
-    CEdit m_editLiveFace, m_editLiveSize;
-    CButton m_btnTitleColor, m_btnTitleBack;
-    CButton m_btnClockColor, m_btnClockBack;
+    CMainFrame*  m_pFrame = nullptr;
+    AppSettings  m_settings;
+    int          m_nextId = 0;
+    CTabCtrl     m_tabCtrl;
+    CToolTipCtrl m_tooltip;
+    std::vector<CWnd*> m_page1, m_page2;
+
+    // Appearance tab rows
+    CEdit   m_editTitleFace,   m_editTitleSize;
+    CEdit   m_editClockFace,   m_editClockSize;
+    CEdit   m_editCurrentFace, m_editCurrentSize;
+    CEdit   m_editLiveFace,    m_editLiveSize;
+    CButton m_btnTitleColor,   m_btnTitleBack;
+    CButton m_btnClockColor,   m_btnClockBack;
     CButton m_btnCurrentColor, m_btnCurrentBack;
-    CButton m_btnLiveColor, m_btnLiveBack;
+    CButton m_btnLiveColor,    m_btnLiveBack;
+    CButton m_chkShowTitle, m_chkShowClock, m_chkShowZmanTime, m_chkShowLive;
+
+    // Zmanim tab
+    CButton m_chkZmanim[25];
+
+    // Dialog buttons
     CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
 };
 
@@ -887,8 +1015,11 @@ protected:
                 { L"Tzeit (MA90)",           z.tzeit_MA90        },
                 { L"Candle Lighting",        z.candleLighting    },
             };
-            for (const auto& item : items)
+            uint32_t zmask = theApp.m_settings.countdownZmanimMask;
+            for (int idx = 0; idx < (int)items.size(); ++idx)
             {
+                if (!((zmask >> idx) & 1)) continue;
+                const auto& item = items[idx];
                 if (!item.time.IsValid()) continue;
                 CTime t = DateTimeForZman(g, item.time);
                 if (t <= threshold) continue;
@@ -906,11 +1037,11 @@ protected:
         const AppSettings& s = theApp.m_settings;
         dc.FillSolidRect(rc, (COLORREF)s.countdownClockBackColor);
 
-        CRect content = rc;
-
         UpcomingZman next = GetUpcoming();
         CTime now = CTime::GetCurrentTime();
-        CString title = next.valid ? (L"Next: " + next.label).c_str() : L"No upcoming zman";
+
+        // Build text for each section
+        CString title    = next.valid ? CString(L"Next: ") + next.label.c_str() : L"No upcoming zman";
         CString countdown = L"--:--:--";
         if (next.valid)
         {
@@ -918,43 +1049,69 @@ protected:
             countdown.Format(L"%02I64d:%02d:%02d",
                 span.GetTotalHours(), span.GetMinutes(), span.GetSeconds());
         }
-        CString current;
-        current.Format(L"Current time: %s", now.Format(L"%I:%M:%S %p").GetString());
+        CString zmanTime;
+        if (next.valid)
+        {
+            const wchar_t* timeFmt = s.use24Hour ? L"%H:%M" : L"%I:%M %p";
+            zmanTime.Format(L"%s:  %s", next.label.c_str(), next.time.Format(timeFmt).GetString());
+        }
+        else { zmanTime = L"—"; }
+
+        const wchar_t* liveFmt = s.use24Hour ? L"%H:%M:%S" : L"%I:%M:%S %p";
         CString live;
-        live.Format(L"Live clock: %s", now.Format(L"%A, %B %d, %Y").GetString());
+        live.Format(L"%s     %s",
+            now.Format(liveFmt).GetString(),
+            now.Format(L"%A, %B %d, %Y").GetString());
 
-        double scale = min(max(0.55, content.Width() / 380.0), max(0.55, content.Height() / 190.0));
-        CFont fTitle, fClock, fCurrent, fLive;
-        MakeFont(fTitle, s.countdownTitleFontFace, (int)round(s.countdownTitleFontSize * scale),
-            s.countdownTitleBold ? FW_BOLD : FW_NORMAL, s.countdownTitleItalic);
-        MakeFont(fClock, s.countdownClockFontFace, (int)round(s.countdownClockFontSize * scale),
-            s.countdownClockBold ? FW_BOLD : FW_NORMAL, s.countdownClockItalic);
-        MakeFont(fCurrent, s.countdownCurrentFontFace, (int)round(s.countdownCurrentFontSize * scale),
-            s.countdownCurrentBold ? FW_BOLD : FW_NORMAL, s.countdownCurrentItalic);
-        MakeFont(fLive, s.countdownLiveFontFace, (int)round(s.countdownLiveFontSize * scale),
-            s.countdownLiveBold ? FW_BOLD : FW_NORMAL, s.countdownLiveItalic);
+        // Determine visible sections and distribute height
+        struct Section {
+            bool       visible;
+            CString    text;
+            int        fontWeight;
+            bool       italic;
+            std::wstring face;
+            int        size;
+            COLORREF   textColor;
+            COLORREF   backColor;
+        };
+        Section sections[] = {
+            { s.countdownShowTitle,    title,    s.countdownTitleBold   ? FW_BOLD : FW_NORMAL, s.countdownTitleItalic,   s.countdownTitleFontFace,   s.countdownTitleFontSize,   (COLORREF)s.countdownTitleTextColor,   (COLORREF)s.countdownTitleBackColor   },
+            { s.countdownShowClock,    countdown,s.countdownClockBold   ? FW_BOLD : FW_NORMAL, s.countdownClockItalic,   s.countdownClockFontFace,   s.countdownClockFontSize,   (COLORREF)s.countdownClockTextColor,   (COLORREF)s.countdownClockBackColor   },
+            { s.countdownShowZmanTime, zmanTime, s.countdownCurrentBold ? FW_BOLD : FW_NORMAL, s.countdownCurrentItalic, s.countdownCurrentFontFace, s.countdownCurrentFontSize, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor },
+            { s.countdownShowLive,     live,     s.countdownLiveBold    ? FW_BOLD : FW_NORMAL, s.countdownLiveItalic,    s.countdownLiveFontFace,    s.countdownLiveFontSize,    (COLORREF)s.countdownLiveTextColor,    (COLORREF)s.countdownLiveBackColor    },
+        };
+        // Weights: title=2, clock=4, zmanTime=2, live=2 → total 10 when all visible
+        int weights[] = { 2, 4, 2, 2 };
+        int totalWeight = 0;
+        for (int i = 0; i < 4; ++i) if (sections[i].visible) totalWeight += weights[i];
+        if (totalWeight == 0) return;
+
+        int totalH = rc.Height();
+        int curY   = rc.top;
+        double scale = min(max(0.55, rc.Width() / 380.0), max(0.55, totalH / 190.0));
+
         dc.SetBkMode(OPAQUE);
-
-        auto draw = [&](const CString& text, CFont& font, COLORREF textColor, COLORREF bg, const CRect& area, UINT flags) {
-            dc.FillSolidRect(area, bg);
-            dc.SelectObject(&font);
-            dc.SetTextColor(textColor);
-            dc.SetBkColor(bg);
-            CRect drawRc = area;
-            drawRc.DeflateRect(8, 2);
-            dc.DrawText(text, drawRc, flags);
+        auto draw = [&](const Section& sec, int h) {
+            CFont f;
+            MakeFont(f, sec.face, (int)round(sec.size * scale), sec.fontWeight, sec.italic);
+            CRect area(0, curY, rc.Width(), curY + h);
+            dc.FillSolidRect(area, sec.backColor);
+            dc.SelectObject(&f);
+            dc.SetTextColor(sec.textColor);
+            dc.SetBkColor(sec.backColor);
+            CRect drawRc = area; drawRc.DeflateRect(8, 2);
+            dc.DrawText(sec.text, drawRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         };
 
-        int h = content.Height();
-        int top = content.top;
-        draw(title, fTitle, (COLORREF)s.countdownTitleTextColor, (COLORREF)s.countdownTitleBackColor,
-            CRect(0, top, rc.Width(), top + h * 25 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        draw(countdown, fClock, (COLORREF)s.countdownClockTextColor, (COLORREF)s.countdownClockBackColor,
-            CRect(0, top + h * 25 / 100, rc.Width(), top + h * 62 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        draw(current, fCurrent, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor,
-            CRect(0, top + h * 62 / 100, rc.Width(), top + h * 80 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        draw(live, fLive, (COLORREF)s.countdownLiveTextColor, (COLORREF)s.countdownLiveBackColor,
-            CRect(0, top + h * 80 / 100, rc.Width(), top + h), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        int distributed = 0;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (!sections[i].visible) continue;
+            int h = (i < 3) ? (totalH * weights[i] / totalWeight) : (totalH - distributed);
+            draw(sections[i], h);
+            curY += h;
+            distributed += h;
+        }
     }
 
     void PostNcDestroy() override
@@ -3939,9 +4096,9 @@ std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const Gr
         static const wchar_t* kTypePrefix[] = { L"Birthday: ", L"Anniversary: ", L"Yahrzeit: ", L"" };
         const wchar_t* prefix = (ev.type >= 0 && ev.type <= 3) ? kTypePrefix[ev.type] : L"";
 
-        // Gregorian recurrence (ev.gregYear == 0 means any year)
+        // Gregorian recurrence (gregYear == 0 means any year; >0 means first occurrence year)
         if (ev.gregMonth > 0 && ev.gregMonth == g.month && ev.gregDay == g.day
-            && (ev.gregYear == 0 || ev.gregYear == g.year))
+            && (ev.gregYear == 0 || g.year >= ev.gregYear))
             events.push_back({ std::wstring(prefix) + ev.name + L" (civil)", false, false });
 
         // Hebrew recurrence
@@ -3950,7 +4107,7 @@ std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const Gr
             if (!ev.afterSunset)
             {
                 if (h.month == ev.hebMonth && h.day == ev.hebDay
-                    && (ev.hebYear == 0 || ev.hebYear == h.year))
+                    && (ev.hebYear == 0 || h.year >= ev.hebYear))
                     events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew)", true, false });
             }
             else
@@ -3958,7 +4115,7 @@ std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const Gr
                 // afterSunset: display on the day BEFORE the Hebrew date
                 HebrewDate nextDay = JDNToHebrew(GregorianToJDN(g) + 1);
                 if (nextDay.month == ev.hebMonth && nextDay.day == ev.hebDay
-                    && (ev.hebYear == 0 || ev.hebYear == nextDay.year))
+                    && (ev.hebYear == 0 || nextDay.year >= ev.hebYear))
                     events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew eve)", true, false });
             }
         }
