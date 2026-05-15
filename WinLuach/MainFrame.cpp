@@ -1463,7 +1463,7 @@ public:
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
-        b.t.cx = 380; b.t.cy = 305;
+        b.t.cx = 380; b.t.cy = 340;
         wcscpy_s(b.title, L"Event");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -1542,11 +1542,16 @@ protected:
         m_spinGregDay.SetPos(max(1, entry.gregDay));
         mkLbl(L"Year:", 280, y, 32, 20);
         m_editGregYear.Create(WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER|ES_NUMBER|ES_CENTER,
-            CRect(314, y, W-10, y+22), this, 711);
+            CRect(314, y, W-26, y+22), this, 711);
         m_editGregYear.SetFont(pF);
+        m_spinGregYear.Create(WS_CHILD|WS_VISIBLE|UDS_ARROWKEYS|UDS_SETBUDDYINT|UDS_NOTHOUSANDS,
+            CRect(W-26, y, W-10, y+22), this, 715);
+        m_spinGregYear.SetBuddy(&m_editGregYear);
+        m_spinGregYear.SetRange32(1, 9999);
         if (entry.gregYear > 0) {
             wchar_t yb[8]; swprintf_s(yb, L"%d", entry.gregYear);
             m_editGregYear.SetWindowText(yb);
+            m_spinGregYear.SetPos32(entry.gregYear);
         }
         y += 28;
 
@@ -1580,11 +1585,16 @@ protected:
         m_spinHebDay.SetPos(max(1, entry.hebDay));
         mkLbl(L"Year:", 280, y, 32, 20);
         m_editHebYear.Create(WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER|ES_NUMBER|ES_CENTER,
-            CRect(314, y, W-10, y+22), this, 712);
+            CRect(314, y, W-26, y+22), this, 712);
         m_editHebYear.SetFont(pF);
+        m_spinHebYear.Create(WS_CHILD|WS_VISIBLE|UDS_ARROWKEYS|UDS_SETBUDDYINT|UDS_NOTHOUSANDS,
+            CRect(W-26, y, W-10, y+22), this, 716);
+        m_spinHebYear.SetBuddy(&m_editHebYear);
+        m_spinHebYear.SetRange32(1, 9999);
         if (entry.hebYear > 0) {
             wchar_t yb[8]; swprintf_s(yb, L"%d", entry.hebYear);
             m_editHebYear.SetWindowText(yb);
+            m_spinHebYear.SetPos32(entry.hebYear);
         }
         y += 28;
 
@@ -1596,6 +1606,13 @@ protected:
         m_chkSunset.SetCheck(entry.afterSunset ? BST_CHECKED : BST_UNCHECKED);
         y += 26;
 
+        m_chkAnnual.Create(L"Observe annually",
+            WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+            CRect(10, y, 180, y+20), this, 717);
+        m_chkAnnual.SetFont(pF);
+        m_chkAnnual.SetCheck(entry.observeAnnually ? BST_CHECKED : BST_UNCHECKED);
+        y += 24;
+
         m_chkNotify.Create(L"Notify for this personal event",
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
             CRect(10, y, W-10, y+20), this, 713);
@@ -1603,11 +1620,26 @@ protected:
         m_chkNotify.SetCheck(entry.notify ? BST_CHECKED : BST_UNCHECKED);
         y += 24;
 
-        mkLbl(L"Alarms:", 20, y, 56, 20);
+        mkLbl(L"Alarms before:", 10, y+2, 90, 20);
         m_editAlarms.Create(WS_CHILD|WS_VISIBLE|WS_TABSTOP|WS_BORDER|ES_AUTOHSCROLL,
-            CRect(78, y, W-10, y+22), this, 714);
+            CRect(102, y, W-10, y+22), this, 714);
         m_editAlarms.SetFont(pF);
         m_editAlarms.SetWindowText(entry.alarmOffsets.c_str());
+        y += 28;
+
+        // Tooltips
+        m_tooltip.Create(this, TTS_BALLOON|TTS_ALWAYSTIP);
+        m_tooltip.SetMaxTipWidth(300);
+        m_tooltip.AddTool(&m_editName,   L"Enter the name of the person or event");
+        m_tooltip.AddTool(&m_cmbType,    L"Select the type of recurring event");
+        m_tooltip.AddTool(&m_chkGreg,    L"Check to observe this event on a Gregorian (civil) calendar date");
+        m_tooltip.AddTool(&m_chkHeb,     L"Check to observe this event on a Hebrew calendar date");
+        m_tooltip.AddTool(&m_editGregYear, L"Year of first occurrence — leave blank to repeat every year");
+        m_tooltip.AddTool(&m_editHebYear,  L"Hebrew year of first occurrence — leave blank to repeat every year");
+        m_tooltip.AddTool(&m_chkSunset,  L"Yahrzeit begins at nightfall — check to show the reminder on the evening before");
+        m_tooltip.AddTool(&m_chkAnnual,  L"If unchecked, the event only appears in the specific year entered above");
+        m_tooltip.AddTool(&m_chkNotify,  L"Show a notification reminder when this event is approaching");
+        m_tooltip.AddTool(&m_editAlarms, L"Time offsets before the event, separated by semicolons\nExample: 15 minutes; 1 day; 1 week");
 
         mkBtn(L"OK",     W-138, H-32, 60, 26, IDOK,     BS_DEFPUSHBUTTON);
         mkBtn(L"Cancel", W-70,  H-32, 60, 26, IDCANCEL);
@@ -1653,8 +1685,9 @@ protected:
             return;
         }
 
-        entry.afterSunset = (m_chkSunset.GetCheck() == BST_CHECKED);
-        entry.notify = (m_chkNotify.GetCheck() == BST_CHECKED);
+        entry.afterSunset    = (m_chkSunset.GetCheck() == BST_CHECKED);
+        entry.observeAnnually = (m_chkAnnual.GetCheck() == BST_CHECKED);
+        entry.notify          = (m_chkNotify.GetCheck() == BST_CHECKED);
         CString alarms;
         m_editAlarms.GetWindowText(alarms);
         entry.alarmOffsets = (LPCWSTR)alarms;
@@ -1675,6 +1708,12 @@ protected:
                 AutoFillHebrew();
         }
         return CDialog::OnCommand(wParam, lParam);
+    }
+
+    BOOL PreTranslateMessage(MSG* pMsg) override
+    {
+        if (m_tooltip.GetSafeHwnd()) m_tooltip.RelayEvent(pMsg);
+        return CDialog::PreTranslateMessage(pMsg);
     }
 
     DECLARE_MESSAGE_MAP()
@@ -1718,14 +1757,18 @@ private:
     CEdit            m_editGregDay;
     CSpinButtonCtrl  m_spinGregDay;
     CEdit            m_editGregYear;
+    CSpinButtonCtrl  m_spinGregYear;
     CButton          m_chkHeb;
     CComboBox        m_cmbHebMon;
     CEdit            m_editHebDay;
     CSpinButtonCtrl  m_spinHebDay;
     CEdit            m_editHebYear;
+    CSpinButtonCtrl  m_spinHebYear;
     CButton          m_chkSunset;
+    CButton          m_chkAnnual;
     CButton          m_chkNotify;
     CEdit            m_editAlarms;
+    CToolTipCtrl     m_tooltip;
 };
 BEGIN_MESSAGE_MAP(CEventEditDlg, CDialog) END_MESSAGE_MAP()
 
@@ -2896,6 +2939,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_VIEW_PANE_MOLAD,   &CMainFrame::OnViewPaneMolad)
     ON_COMMAND(ID_CAL_GOTO,          &CMainFrame::OnCalGoTo)
     ON_COMMAND(ID_CAL_EVENTS,        &CMainFrame::OnCalEvents)
+    ON_COMMAND(ID_CAL_MANAGE_CALS,  &CMainFrame::OnCalManageCals)
     ON_COMMAND(ID_FILE_EXPORT_EVT,   &CMainFrame::OnFileExportEvents)
     ON_COMMAND(ID_FILE_IMPORT_EVT,   &CMainFrame::OnFileImportEvents)
     ON_COMMAND(ID_CAL_PRINT_MONTH,   &CMainFrame::OnCalPrintMonth)
@@ -2966,6 +3010,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     calMenu.AppendMenu(MF_STRING, ID_VIEW_TODAY,      L"&Today\tHome");
     calMenu.AppendMenu(MF_STRING, ID_CAL_GOTO,        L"&Go to Date...\tCtrl+G");
     calMenu.AppendMenu(MF_STRING, ID_CAL_EVENTS,      L"&Events (Birthdays, Yahrzeits...)\tCtrl+E");
+    calMenu.AppendMenu(MF_STRING, ID_CAL_MANAGE_CALS, L"&Manage Calendars...");
     calMenu.AppendMenu(MF_SEPARATOR);
     calMenu.AppendMenu(MF_STRING, ID_VIEW_PREVMONTH,  L"&Previous Month\tPage Up");
     calMenu.AppendMenu(MF_STRING, ID_VIEW_NEXTMONTH,  L"&Next Month\tPage Down");
@@ -4094,30 +4139,55 @@ std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const Gr
     HebrewDate h = GregorianToHebrew(g);
     for (const auto& ev : theApp.m_settings.userEvents)
     {
-        static const wchar_t* kTypePrefix[] = { L"Birthday: ", L"Anniversary: ", L"Yahrzeit: ", L"" };
-        const wchar_t* prefix = (ev.type >= 0 && ev.type <= 3) ? kTypePrefix[ev.type] : L"";
+        static const wchar_t* kTypeNames[] = { L"Birthday", L"Anniversary", L"Yahrzeit", L"" };
+        const wchar_t* typeName = (ev.type >= 0 && ev.type <= 3) ? kTypeNames[ev.type] : L"";
+
+        auto makeTitle = [&](const wchar_t* dateSuffix, int startYear) -> std::wstring {
+            // e.g. "Birthday(heb): Zev Tzvi (14)" or "Yahrzeit(civil): Name" if year unknown
+            std::wstring title;
+            if (typeName[0]) { title += typeName; title += L"("; title += dateSuffix; title += L"): "; }
+            title += ev.name;
+            if (startYear > 0) {
+                int elapsed = (ev.type == 2) ? (g.year - startYear + 1) : (g.year - startYear);
+                if (elapsed > 0) { title += L" ("; title += std::to_wstring(elapsed); title += L")"; }
+            }
+            if (!typeName[0]) { title += L" ("; title += dateSuffix; title += L")"; }
+            return title;
+        };
 
         // Gregorian recurrence (gregYear == 0 means any year; >0 means first occurrence year)
-        if (ev.gregMonth > 0 && ev.gregMonth == g.month && ev.gregDay == g.day
-            && (ev.gregYear == 0 || g.year >= ev.gregYear))
-            events.push_back({ std::wstring(prefix) + ev.name + L" (civil)", false, false });
+        bool showGreg = ev.observeAnnually
+            ? (ev.gregMonth > 0 && ev.gregMonth == g.month && ev.gregDay == g.day
+               && (ev.gregYear == 0 || g.year >= ev.gregYear))
+            : (ev.gregMonth > 0 && ev.gregMonth == g.month && ev.gregDay == g.day
+               && ev.gregYear == g.year);
+        if (showGreg)
+            events.push_back({ makeTitle(L"civil", ev.gregYear), false, false });
 
         // Hebrew recurrence
         if (ev.hebMonth > 0)
         {
             if (!ev.afterSunset)
             {
-                if (h.month == ev.hebMonth && h.day == ev.hebDay
-                    && (ev.hebYear == 0 || h.year >= ev.hebYear))
-                    events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew)", true, false });
+                bool showHeb = ev.observeAnnually
+                    ? (h.month == ev.hebMonth && h.day == ev.hebDay
+                       && (ev.hebYear == 0 || h.year >= ev.hebYear))
+                    : (h.month == ev.hebMonth && h.day == ev.hebDay
+                       && ev.hebYear == h.year);
+                if (showHeb)
+                    events.push_back({ makeTitle(L"heb", ev.hebYear > 0 ? g.year - (h.year - ev.hebYear) : 0), true, false });
             }
             else
             {
                 // afterSunset: display on the day BEFORE the Hebrew date
                 HebrewDate nextDay = JDNToHebrew(GregorianToJDN(g) + 1);
-                if (nextDay.month == ev.hebMonth && nextDay.day == ev.hebDay
-                    && (ev.hebYear == 0 || nextDay.year >= ev.hebYear))
-                    events.push_back({ std::wstring(prefix) + ev.name + L" (hebrew eve)", true, false });
+                bool showEve = ev.observeAnnually
+                    ? (nextDay.month == ev.hebMonth && nextDay.day == ev.hebDay
+                       && (ev.hebYear == 0 || nextDay.year >= ev.hebYear))
+                    : (nextDay.month == ev.hebMonth && nextDay.day == ev.hebDay
+                       && ev.hebYear == nextDay.year);
+                if (showEve)
+                    events.push_back({ makeTitle(L"heb eve", ev.hebYear > 0 ? g.year - (nextDay.year - ev.hebYear) : 0), true, false });
             }
         }
     }
@@ -4141,6 +4211,16 @@ void CMainFrame::OnCalEvents()
     SaveEvents(theApp.m_settings.userEvents);
     if (m_pCalView)  m_pCalView->Invalidate(FALSE);
     if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+}
+
+void CMainFrame::OnCalManageCals()
+{
+    if (ShowManageCalendarsDialog(theApp.m_settings.webCalendars, this))
+    {
+        SaveSettings(theApp.m_settings);
+        RefreshWebCalendarEvents();
+        if (m_pCalView) m_pCalView->Invalidate(FALSE);
+    }
 }
 
 void CMainFrame::AddEventForDate(const GregorianDate& g)
@@ -5071,17 +5151,21 @@ void CMainFrame::RestoreFromTray()
 
 LRESULT CMainFrame::OnTrayNotify(WPARAM wParam, LPARAM lParam)
 {
-    if (wParam != 1) return 0;
-    if (lParam == WM_LBUTTONDBLCLK || lParam == WM_LBUTTONUP)
+    // With NOTIFYICON_VERSION_4: LOWORD(lParam)=event, HIWORD(lParam)=icon id
+    UINT event  = LOWORD(lParam);
+    UINT iconId = HIWORD(lParam);
+    if (iconId != 1) return 0;
+    if (event == WM_LBUTTONDBLCLK || event == WM_LBUTTONUP)
         RestoreFromTray();
-    else if (lParam == WM_RBUTTONUP)
+    else if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU)
     {
         CMenu menu;
         menu.CreatePopupMenu();
-        menu.AppendMenu(MF_STRING, ID_TRAY_OPEN, L"&Open WinLuach");
-        menu.AppendMenu(MF_STRING, ID_TRAY_ABOUT, L"&About...");
+        menu.AppendMenu(MF_STRING, ID_TRAY_OPEN,      L"&Open WinLuach");
+        menu.AppendMenu(MF_STRING, ID_VIEW_COUNTDOWN, L"&Countdown Clock...");
+        menu.AppendMenu(MF_STRING, ID_TRAY_ABOUT,     L"&About...");
         menu.AppendMenu(MF_SEPARATOR);
-        menu.AppendMenu(MF_STRING, ID_TRAY_EXIT, L"E&xit");
+        menu.AppendMenu(MF_STRING, ID_TRAY_EXIT,      L"E&xit");
 
         CPoint pt;
         GetCursorPos(&pt);

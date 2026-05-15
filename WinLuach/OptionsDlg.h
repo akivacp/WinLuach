@@ -26,6 +26,9 @@
 #include "pch.h"
 #include "Settings.h"
 
+// Opens the Manage Calendars dialog; updates webCalendars in-place and returns true if changed.
+bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent);
+
 class CColorPreviewWnd : public CWnd
 {
 public:
