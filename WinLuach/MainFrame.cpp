@@ -725,6 +725,7 @@ protected:
         menu.AppendMenu(MF_POPUP, (UINT_PTR)opt.Detach(), L"&Clock");
         SetMenu(&menu);
         menu.Detach();
+        UpdateTopmostUi(false);
         SetTimer(1, 1000, nullptr);
         return 0;
     }
@@ -770,6 +771,13 @@ protected:
         m_alwaysOnTop = !m_alwaysOnTop;
         SetWindowPos(m_alwaysOnTop ? &wndTopMost : &wndNoTopMost,
             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        UpdateTopmostUi(true);
+    }
+
+    afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
+    {
+        CFrameWnd::OnInitMenuPopup(pPopupMenu, nIndex, bSysMenu);
+        UpdateTopmostUi(false);
     }
 
     afx_msg void OnClockMinimize()
@@ -910,6 +918,21 @@ protected:
         const AppSettings& s = theApp.m_settings;
         dc.FillSolidRect(rc, (COLORREF)s.countdownClockBackColor);
 
+        CRect content = rc;
+        if (m_alwaysOnTop)
+        {
+            CRect topBar(rc.left, rc.top, rc.right, rc.top + 24);
+            dc.FillSolidRect(topBar, RGB(230, 248, 232));
+            CFont fTop;
+            MakeFont(fTop, L"Segoe UI", 12, FW_BOLD, false);
+            dc.SelectObject(&fTop);
+            dc.SetBkMode(TRANSPARENT);
+            dc.SetTextColor(RGB(0, 128, 0));
+            dc.DrawText(L"Always on Top Enabled", topBar,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            content.top = topBar.bottom;
+        }
+
         UpcomingZman next = GetUpcoming();
         CTime now = CTime::GetCurrentTime();
         CString title = next.valid ? (L"Next: " + next.label).c_str() : L"No upcoming zman";
@@ -925,7 +948,7 @@ protected:
         CString live;
         live.Format(L"Live clock: %s", now.Format(L"%A, %B %d, %Y").GetString());
 
-        double scale = min(max(0.55, rc.Width() / 380.0), max(0.55, rc.Height() / 190.0));
+        double scale = min(max(0.55, content.Width() / 380.0), max(0.55, content.Height() / 190.0));
         CFont fTitle, fClock, fCurrent, fLive;
         MakeFont(fTitle, s.countdownTitleFontFace, (int)round(s.countdownTitleFontSize * scale),
             s.countdownTitleBold ? FW_BOLD : FW_NORMAL, s.countdownTitleItalic);
@@ -947,15 +970,16 @@ protected:
             dc.DrawText(text, drawRc, flags);
         };
 
-        int h = rc.Height();
+        int h = content.Height();
+        int top = content.top;
         draw(title, fTitle, (COLORREF)s.countdownTitleTextColor, (COLORREF)s.countdownTitleBackColor,
-            CRect(0, 0, rc.Width(), h * 25 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            CRect(0, top, rc.Width(), top + h * 25 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         draw(countdown, fClock, (COLORREF)s.countdownClockTextColor, (COLORREF)s.countdownClockBackColor,
-            CRect(0, h * 25 / 100, rc.Width(), h * 62 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            CRect(0, top + h * 25 / 100, rc.Width(), top + h * 62 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         draw(current, fCurrent, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor,
-            CRect(0, h * 62 / 100, rc.Width(), h * 80 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            CRect(0, top + h * 62 / 100, rc.Width(), top + h * 80 / 100), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         draw(live, fLive, (COLORREF)s.countdownLiveTextColor, (COLORREF)s.countdownLiveBackColor,
-            CRect(0, h * 80 / 100, rc.Width(), h), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            CRect(0, top + h * 80 / 100, rc.Width(), top + h), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     void PostNcDestroy() override
@@ -966,6 +990,16 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
+    void UpdateTopmostUi(bool repaint)
+    {
+        CMenu* menu = GetMenu();
+        if (menu)
+            menu->CheckMenuItem(ID_COUNTDOWN_TOPMOST,
+                MF_BYCOMMAND | (m_alwaysOnTop ? MF_CHECKED : MF_UNCHECKED));
+        if (repaint)
+            Invalidate(FALSE);
+    }
+
     CMainFrame* m_pFrame = nullptr;
     bool m_fullScreen = false;
     bool m_alwaysOnTop = false;
@@ -979,6 +1013,7 @@ BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
     ON_WM_TIMER()
     ON_WM_SIZE()
     ON_WM_PAINT()
+    ON_WM_INITMENUPOPUP()
     ON_COMMAND(ID_COUNTDOWN_OPTIONS, &CCountdownClockWnd::OnClockOptions)
     ON_COMMAND(ID_COUNTDOWN_FULLSCREEN, &CCountdownClockWnd::OnClockFullscreen)
     ON_COMMAND(ID_COUNTDOWN_TOPMOST, &CCountdownClockWnd::OnClockTopmost)
@@ -3618,6 +3653,7 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_minimizeToTray = s.minimizeToTray;
     m_minimizeTrayWhen = s.minimizeTrayWhen;
     m_hebrewMonthView = s.defaultHebrewMonth;
+    RefreshZmanim();
     RecreateFonts();
     // Reassign fonts to header controls — their HFONT handle becomes stale after RecreateFonts.
     if (m_comboMonth.GetSafeHwnd())    m_comboMonth.SetFont(&m_fontNormal);
@@ -4499,25 +4535,41 @@ CString CMainFrame::BuildTrayTooltip()
     bool isDst = IsDST(g, m_location);
     ZmanimResult z = CalculateZmanim(g, m_location, isDst);
     z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
-    DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDst);
 
-    struct TooltipZman { int bit; const wchar_t* label; TimeOfDay time; };
-    std::vector<TooltipZman> items = {
-        { 0, L"Alos", dz.alot },
-        { 1, L"Misheyakir", dz.misheyakir },
-        { 2, L"Netz", z.hanetz },
-        { 3, L"Sof Shema GRA", z.sofShema_GRA },
-        { 4, L"Sof Tefilla GRA", z.sofTefilla_GRA },
-        { 5, L"Chatzos", z.chatzot },
-        { 6, L"Mincha Gedola", dz.minchaGedola },
-        { 7, L"Mincha Ketana", dz.minchaKetana },
-        { 8, L"Plag", dz.plagMincha },
-        { 9, L"Shkiah", z.shkia },
-        { 10, L"Tzais", dz.tzeit },
-        { 11, L"Candles", z.candleLighting },
-        { 15, L"Sof Shema MA", z.sofShema_MA72 },
-        { 16, L"Sof Tefilla MA", z.sofTefilla_MA72 },
+    struct TooltipLine { int bit; const wchar_t* label; std::wstring value; };
+    std::vector<TooltipLine> items;
+    auto addTime = [&](int bit, const wchar_t* label, const TimeOfDay& time) {
+        if (time.IsValid())
+            items.push_back({ bit, label, FormatTime(time, m_use24hr) });
     };
+
+    addTime(0,  L"Alos GRA",          z.alot_GRA);
+    addTime(1,  L"Alos MA72",         z.alot_MA72);
+    addTime(2,  L"Alos MA90",         z.alot_MA90);
+    addTime(3,  L"Misheyakir 10.2",   z.misheyakir_10);
+    addTime(4,  L"Misheyakir 11.5",   z.misheyakir_11);
+    addTime(5,  L"Netz",              z.hanetz);
+    addTime(6,  L"Sof Shema MA72",    z.sofShema_MA72);
+    addTime(7,  L"Sof Shema MA90",    z.sofShema_MA90);
+    addTime(8,  L"Sof Shema GRA",     z.sofShema_GRA);
+    addTime(9,  L"Sof Tefilla MA72",  z.sofTefilla_MA72);
+    addTime(10, L"Sof Tefilla MA90",  z.sofTefilla_MA90);
+    addTime(11, L"Sof Tefilla GRA",   z.sofTefilla_GRA);
+    addTime(12, L"Chatzos",           z.chatzot);
+    addTime(13, L"Mincha Gedola MA72",z.minchaGedola_MA72);
+    addTime(14, L"Mincha Gedola MA90",z.minchaGedola_MA90);
+    addTime(15, L"Mincha Gedola GRA", z.minchaGedola_GRA);
+    addTime(16, L"Mincha Ketana MA72",z.minchaKetana_MA72);
+    addTime(17, L"Mincha Ketana MA90",z.minchaKetana_MA90);
+    addTime(18, L"Mincha Ketana GRA", z.minchaKetana_GRA);
+    addTime(19, L"Plag MA72",         z.plagMincha_MA72);
+    addTime(20, L"Plag MA90",         z.plagMincha_MA90);
+    addTime(21, L"Plag GRA",          z.plagMincha_GRA);
+    addTime(22, L"Shkiah",            z.shkia);
+    addTime(23, L"Tzais GRA",         z.tzeit_GRA);
+    addTime(24, L"Tzais MA72",        z.tzeit_MA72);
+    addTime(25, L"Tzais MA90",        z.tzeit_MA90);
+    addTime(26, L"Candles",           z.candleLighting);
 
     HebrewDate h = GregorianToHebrew(g);
     auto hols = GetHolidays(h, m_isIsrael);
@@ -4525,18 +4577,25 @@ CString CMainFrame::BuildTrayTooltip()
     for (const auto& ho : hols)
         if (ho.flags & HOLIDAY_FAST) { isFast = true; break; }
     if (isFast)
-        items.push_back({ 12, L"Fast ends", z.tzeit_GRA });
+        addTime(27, L"Fast ends", z.tzeit_GRA);
 
     DayOfWeek dow = GetDayOfWeek(g);
     bool isErevTishaBav = (h.month == AV && h.day == 8);
     if (isErevTishaBav && dow != SHABBAT && dow != FRIDAY)
-        items.push_back({ 12, L"Fast begins", z.shkia });
+        addTime(27, L"Fast begins", z.shkia);
 
     bool isErevPesach = (h.month == NISSAN && h.day == 14);
     if (isErevPesach && z.hanetz.IsValid() && z.shaahZmanit_GRA > 0.0)
     {
-        items.push_back({ 13, L"Eat chametz", AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA)) });
-        items.push_back({ 14, L"Burn chametz", AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA)) });
+        addTime(28, L"Eat chametz", AddMinutes(z.hanetz, (int)(4.0 * z.shaahZmanit_GRA)));
+        addTime(29, L"Burn chametz", AddMinutes(z.hanetz, (int)(5.0 * z.shaahZmanit_GRA)));
+    }
+    OmerInfo omer = GetOmer(h);
+    if (omer.isOmerDay)
+    {
+        CString os;
+        os.Format(L"Day %d", omer.day);
+        items.push_back({ 30, L"Today's Omer", (LPCWSTR)os });
     }
 
     CString tip;
@@ -4548,13 +4607,10 @@ CString CMainFrame::BuildTrayTooltip()
     uint32_t mask = theApp.m_settings.trayTooltipZmanimMask;
     for (const auto& item : items)
     {
-        if (!(mask & (1u << item.bit)) || !item.time.IsValid())
+        if (!(mask & (1u << item.bit)) || item.value.empty())
             continue;
-        std::wstring time = FormatTime(item.time, m_use24hr);
         CString line;
-        line.Format(L"\n%s: %s", item.label, time.c_str());
-        if (tip.GetLength() + line.GetLength() >= 120)
-            break;
+        line.Format(L"\n%s: %s", item.label, item.value.c_str());
         tip += line;
     }
     return tip;
@@ -4580,6 +4636,8 @@ void CMainFrame::AddTrayIcon()
     CString tip = BuildTrayTooltip();
     wcsncpy_s(m_trayIcon.szTip, ARRAYSIZE(m_trayIcon.szTip), tip.GetString(), _TRUNCATE);
     Shell_NotifyIcon(NIM_ADD, &m_trayIcon);
+    m_trayIcon.uVersion = NOTIFYICON_VERSION_4;
+    Shell_NotifyIcon(NIM_SETVERSION, &m_trayIcon);
     m_isInTray = true;
 }
 

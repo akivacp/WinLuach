@@ -106,14 +106,14 @@ static std::wstring UrlEncode(const std::wstring& s)
     return out;
 }
 
-// Parse Nominatim JSON: extracts up to 5 results with lat/lon/display_name.
+// Parse Nominatim JSON: extracts up to 20 results with lat/lon/display_name.
 // Very lightweight: looks for the pattern sequences without a full JSON parser.
 static std::vector<GeoResult> ParseNominatimJson(const std::wstring& json)
 {
     std::vector<GeoResult> results;
 
     size_t pos = 0;
-    while (pos < json.size() && results.size() < 5)
+    while (pos < json.size() && results.size() < 20)
     {
         // Find next object start
         size_t ob = json.find(L'{', pos);
@@ -337,7 +337,7 @@ private:
         m_results.clear();
 
         std::wstring query = UrlEncode((LPCWSTR)addr);
-        std::wstring path  = L"/search?q=" + query + L"&format=json&limit=5&addressdetails=1";
+        std::wstring path  = L"/search?q=" + query + L"&format=json&limit=20&addressdetails=1";
 
         // Block briefly — acceptable in a modal dialog
         SetCursor(LoadCursor(nullptr, IDC_WAIT));

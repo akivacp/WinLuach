@@ -16,6 +16,7 @@
 
 #pragma once
 #include "Location.h"
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -144,6 +145,7 @@ struct AppSettings
     float        printMarginLeft   = 0.5f;
     float        printMarginRight  = 0.5f;
     uint32_t     printZmanimColMask = 0x7FFF; // bitmask of 15 zmanim columns to print
+    uint64_t     printDayZmanimMask = 0xFFFFFFFFFull; // bitmask of day-detail zmanim rows
     bool         printShowFooter   = true;
 
     // --- Zmanim shita ---
