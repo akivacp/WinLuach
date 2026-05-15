@@ -11,6 +11,11 @@
 // v0.8.0 - Added "Zmanim Bar" tab + Zmanim sub-tab structure (Alos,
 //          Misheyakir, Sof Zman MA, Sof Zman GRA, Mincha Gedola/Ketana,
 //          Plag, End of Fast, Tzais).  Zman Shitos tab merged in.
+// v0.8.1 - Fixed invisible Zmanim sub-page contents (raise widgets to top
+//          of z-order in ShowZmanimSubPage so the sibling sub-tab control
+//          does not overpaint them).
+//        - Fixed Omer notification 'manual time' radio being clipped by
+//          the adjacent 'manual:' static label.
 // =============================================================================
 
 #pragma once
