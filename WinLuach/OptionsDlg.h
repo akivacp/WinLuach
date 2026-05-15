@@ -16,6 +16,10 @@
 //          does not overpaint them).
 //        - Fixed Omer notification 'manual time' radio being clipped by
 //          the adjacent 'manual:' static label.
+// v0.8.2 - Fixed missing Zmanim sub-tab strip ("Alos | Misheyakir | ...").
+//          Added WS_CLIPSIBLINGS to main tab + sub-tab so they don't paint
+//          over each other, plus explicit Invalidate/UpdateWindow and a
+//          z-order lift when showing the sub-tab.
 // =============================================================================
 
 #pragma once

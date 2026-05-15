@@ -152,6 +152,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printMarginLeft\": "  << s.printMarginLeft  << L",\n";
     f << L"  \"printMarginRight\": " << s.printMarginRight << L",\n";
     f << L"  \"printZmanimColMask\": " << s.printZmanimColMask << L",\n";
+    f << L"  \"printDayZmanimMask\": " << (unsigned long long)s.printDayZmanimMask << L",\n";
     f << L"  \"printShowFooter\": " << (s.printShowFooter ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnFasts\": " << (s.showChatzosOnFasts ? L"true" : L"false") << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
@@ -386,6 +387,7 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"printMarginLeft\"") != std::wstring::npos) s.printMarginLeft = (float)ParseJsonNumber(line);
         if (line.find(L"\"printMarginRight\"")  != std::wstring::npos) s.printMarginRight    = (float)ParseJsonNumber(line);
         if (line.find(L"\"printZmanimColMask\"")!= std::wstring::npos) s.printZmanimColMask = (uint32_t)ParseJsonNumber(line);
+        if (line.find(L"\"printDayZmanimMask\"")!= std::wstring::npos) s.printDayZmanimMask = (uint64_t)ParseJsonNumber(line);
         if (line.find(L"\"printShowFooter\"")   != std::wstring::npos) s.printShowFooter   = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnFasts\"") != std::wstring::npos) s.showChatzosOnFasts = ParseJsonBool(line);
         if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
