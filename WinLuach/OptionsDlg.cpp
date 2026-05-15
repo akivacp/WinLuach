@@ -1279,9 +1279,22 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(240, y, 330, y + 20), this, IDC_OPT_RAD_ISRAEL); track(m_pageGeneral, &m_radIsrael);
     y = 38;
 
-    mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 230); y += 20;
+    mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 280); y += 20;
+
+    // ── General (non-tray) options ────────────────────────────────────────────
+    m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(28, y, 200, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
+    m_chkStartWithWindows.Create(L"start with Windows", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(215, y + 4, 360, y + 24), this, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
+    y += 30;
+    m_chkDesktopShortcut.Create(L"desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(28, y, 180, y + 20), this, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut);
+    y += 30;
+
+    // ── System Tray ───────────────────────────────────────────────────────────
+    mkGroup(m_pageInterface, L"System Tray", 20, y, W - 40, 192); y += 20;
     m_chkShowTrayIcon.Create(L"Pin WinLuach to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 200, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
+        CRect(28, y, 230, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
     m_chkMinimizeToTray.Create(L"Minimize to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 185, y + 20), this, IDC_OPT_MIN_TRAY); track(m_pageInterface, &m_chkMinimizeToTray);
     initCombo(m_pageInterface, m_cmbTrayWhen, 190, y - 1, 160, IDC_OPT_TRAY_WHEN,
@@ -1289,17 +1302,11 @@ BOOL COptionsDlg::OnInitDialog()
         max(0, min(2, m_current.minimizeTrayWhen)));
     m_chkMinimizeOnStartup.Create(L"minimize on startup", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y + 24, 190, y + 44), this, IDC_OPT_MIN_STARTUP); track(m_pageInterface, &m_chkMinimizeOnStartup); y += 48;
-    m_chkStartWithWindows.Create(L"start with Windows", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 170, y + 20), this, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
-    m_chkDesktopShortcut.Create(L"desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(205, y, 350, y + 20), this, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut); y += 28;
     mkStatic(m_pageInterface, L"Tray text", 28, y, 75, 22);
     m_btnTrayTextColor.Create(L"Color...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(105, y, 180, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
     m_btnTrayFont.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(188, y, 262, y + 24), this, IDC_OPT_TRAY_FONT); track(m_pageInterface, &m_btnTrayFont);
-    m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(270, y, 410, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
     y += 30;
     m_chkTrayBackEnabled.Create(L"tray background", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
         CRect(28, y, 152, y + 20), this, IDC_OPT_TRAY_BACK_ENABLED); track(m_pageInterface, &m_chkTrayBackEnabled);
@@ -3095,12 +3102,19 @@ void COptionsDlg::OnTrayDefaults()
 
 void COptionsDlg::OnManageCals()
 {
-    CWebCalDlg dlg(m_result.webCalendars, this);
+    if (ShowManageCalendarsDialog(m_result.webCalendars, this))
+        SetDirty(true);
+}
+
+bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent)
+{
+    CWebCalDlg dlg(calendars, pParent);
     if (dlg.DoModal() == IDOK)
     {
-        m_result.webCalendars = dlg.calendars;
-        SetDirty(true);
+        calendars = dlg.calendars;
+        return true;
     }
+    return false;
 }
 
 void COptionsDlg::OnAdvancedReminders()

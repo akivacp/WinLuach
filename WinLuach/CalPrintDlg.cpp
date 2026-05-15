@@ -1689,7 +1689,7 @@ bool DoPrintEventsList(CMainFrame* pFrame)
                 int by = (rc.Height() - bh*2 - 4) / 2;
                 int ew = 60, sw = 16, ex = (rc.Width()-ew-sw)/2;
                 m_edit.Create(WS_CHILD|WS_VISIBLE|WS_BORDER|ES_NUMBER, CRect(ex,by,ex+ew,by+bh), this, 100);
-                m_spin.Create(WS_CHILD|WS_VISIBLE|UDS_SETBUDDYINT|UDS_ALIGNRIGHT|UDS_ARROWKEYS,
+                m_spin.Create(WS_CHILD|WS_VISIBLE|UDS_SETBUDDYINT|UDS_ALIGNRIGHT|UDS_ARROWKEYS|UDS_NOTHOUSANDS,
                     CRect(ex+ew,by,ex+ew+sw,by+bh), this, 101);
                 m_spin.SetBuddy(&m_edit);
                 m_spin.SetRange32(1, 9999);
@@ -1938,7 +1938,7 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
     dlg.SetInitialShowFooter(theApp.m_settings.dayDetailShowFooter);
     dlg.SetDayZmanimMaskPtr(pMask);
     INT_PTR result = dlg.DoModal();
-    if (result == IDOK)
+    // Always persist UI selections (even on cancel) so the user doesn't lose their choices
     {
         const SimplePageOpts& fo = dlg.GetFinalOpts();
         theApp.m_settings.dayDetailLandscape   = fo.landscape;
@@ -1949,6 +1949,9 @@ bool DoPrintDay(const GregorianDate& g, CMainFrame* pFrame)
         theApp.m_settings.dayDetailShowFooter  = dlg.GetFinalShowFooter();
         theApp.m_settings.printDayZmanimMask   = NormalizeDayPrintZmanMask(*pMask);
         SaveSettings(theApp.m_settings);
+    }
+    if (result == IDOK)
+    {
     }
     return result == IDOK;
 }
@@ -2335,6 +2338,12 @@ protected:
         CDialog::OnOK();
     }
 
+    void OnCancel() override
+    {
+        ReadControls();
+        CDialog::OnCancel();
+    }
+
 private:
     void ReadControls()
     {
@@ -2378,9 +2387,8 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     }), pages.end());
 
     CMultiDayPageSetupDlg setup(pages, pFrame, pFrame);
-    if (setup.DoModal() != IDOK)
-        return false;
-
+    INT_PTR mresult = setup.DoModal();
+    // Always persist selections even on cancel
     theApp.m_settings.printDayZmanimMask   = NormalizeDayPrintZmanMask(setup.dayZmanimMask);
     theApp.m_settings.dayDetailLandscape   = setup.opts.landscape;
     theApp.m_settings.dayDetailShowFooter  = setup.showFooter;
@@ -2389,6 +2397,7 @@ bool DoPrintDays(const std::vector<GregorianDate>& dates, CMainFrame* pFrame)
     theApp.m_settings.dayDetailMarginLeft  = setup.opts.mLeft;
     theApp.m_settings.dayDetailMarginRight = setup.opts.mRight;
     SaveSettings(theApp.m_settings);
+    if (mresult != IDOK) return false;
     return PrintDayPages(pages, pFrame, setup.opts, setup.showFooter,
         setup.dayZmanimMask);
 }
@@ -2579,6 +2588,13 @@ void CSimplePageSetupDlg::OnPrint()
     bool sf = (!m_chkFooter.GetSafeHwnd() || m_chkFooter.GetCheck() == BST_CHECKED);
     SimplePrint(m_docName.c_str(), m_opts, m_render, sf);
     CDialog::OnOK();
+}
+
+void CSimplePageSetupDlg::OnCancel()
+{
+    // Persist whatever the user had checked even if they cancelled
+    ReadControls();
+    CDialog::OnCancel();
 }
 
 // =============================================================================
