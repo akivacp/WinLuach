@@ -174,6 +174,12 @@ public:
     void SetUse24HrPtr(std::shared_ptr<bool> p) { m_pUse24hr = std::move(p); }
     void SetDayZmanimMaskPtr(std::shared_ptr<uint64_t> p) { m_pDayZmanimMask = std::move(p); }
 
+    // Optional: pre-load orientation/margins so they persist across sessions.
+    void SetInitialOpts(const SimplePageOpts& o) { m_opts = o; }
+    void SetInitialShowFooter(bool sf)           { m_initialShowFooter = sf; }
+    const SimplePageOpts& GetFinalOpts()   const { return m_opts; }
+    bool                  GetFinalShowFooter() const { return m_finalShowFooter; }
+
 protected:
     BOOL OnInitDialog() override;
     afx_msg void OnPreview();
@@ -194,6 +200,8 @@ private:
     std::shared_ptr<bool> m_pUse24hr;
     std::shared_ptr<uint64_t> m_pDayZmanimMask;
     std::vector<CButton*> m_dayZmanChecks;
+    bool m_initialShowFooter = true;
+    bool m_finalShowFooter   = true;
 
     enum {
         IDC_SPS_RAD_PORT    = 240,
