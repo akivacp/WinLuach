@@ -642,15 +642,16 @@ protected:
         for (CWnd* c : m_page2) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 1 ? SW_SHOW : SW_HIDE);
     }
 
-    BOOL OnNotify(UINT nCtrlID, NMHDR* pNMHDR, LRESULT* pResult) override
+    BOOL OnNotify(WPARAM wParam, LPARAM lParam, LRESULT* pResult) override
     {
+        NMHDR* pNMHDR = reinterpret_cast<NMHDR*>(lParam);
         if (pNMHDR && pNMHDR->code == TCN_SELCHANGE &&
             m_tabCtrl.GetSafeHwnd() && pNMHDR->hwndFrom == m_tabCtrl.GetSafeHwnd())
         {
             ShowPage(m_tabCtrl.GetCurSel());
             return TRUE;
         }
-        return CDialog::OnNotify(nCtrlID, pNMHDR, pResult);
+        return CDialog::OnNotify(wParam, lParam, pResult);
     }
 
     BOOL PreTranslateMessage(MSG* pMsg) override
@@ -1041,7 +1042,7 @@ protected:
         CTime now = CTime::GetCurrentTime();
 
         // Build text for each section
-        CString title    = next.valid ? CString(L"Next: ") + next.label.c_str() : L"No upcoming zman";
+        CString title    = next.valid ? CString(L"Next: ") + next.label.c_str() : CString(L"No upcoming zman");
         CString countdown = L"--:--:--";
         if (next.valid)
         {
