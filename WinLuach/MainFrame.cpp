@@ -23,6 +23,7 @@
 #include "WinLuachApp.h"
 #include "Resource.h"
 #include "Version.h"
+#include "UpdateChecker.h"
 #include <urlmon.h>
 #include <fstream>
 #include <thread>
@@ -5481,10 +5482,63 @@ void CMainFrame::OnOptionsDialogClosed(COptionsDlg* dlg)
 
 void CMainFrame::OnHelpCheckUpdates()
 {
-    // Placeholder for update checking functionality
-    // TODO: Integrate with CUpdateChecker class
-    AfxMessageBox(L"Checking for updates...\n\nUpdate checking functionality coming soon!",
-                  MB_ICONINFORMATION);
+    // v0.8.54 - Check for updates from GitHub
+    CUpdateChecker checker;
+    std::wstring currentVersion = checker.GetCurrentVersion();
+
+    GitHubRelease release;
+    if (checker.FetchLatestRelease(release))
+    {
+        SemanticVersion current(currentVersion);
+        SemanticVersion latest(release.tagName);
+
+        if (latest.IsNewerThan(current))
+        {
+            // Newer version found
+            int result = checker.ShowUpdateDialog(release, currentVersion, this);
+            if (result == IDYES)
+            {
+                // User wants to update - download to temp folder
+                wchar_t tempPath[MAX_PATH];
+                if (GetTempPathW(MAX_PATH, tempPath))
+                {
+                    std::wstring downloadPath = tempPath;
+                    downloadPath += L"WinLuachUpdate.exe";
+
+                    if (checker.DownloadAsset(release.downloadUrl, downloadPath, true))
+                    {
+                        std::wstring msg = L"Update downloaded successfully!\n\n"
+                                          L"File: " + downloadPath +
+                                          L"\n\nPlease close WinLuach and run the installer.";
+                        AfxMessageBox(msg.c_str(), MB_ICONINFORMATION);
+                    }
+                    else
+                    {
+                        std::wstring msg = L"Failed to download update:\n" + checker.GetLastError();
+                        AfxMessageBox(msg.c_str(), MB_ICONERROR);
+                    }
+                }
+            }
+        }
+        else if (latest.Equals(current))
+        {
+            std::wstring msg = L"You are already running the latest version!\n\n" + currentVersion;
+            AfxMessageBox(msg.c_str(), MB_ICONINFORMATION);
+        }
+        else
+        {
+            std::wstring msg = L"Your version (" + currentVersion +
+                              L") is newer than the latest release!\n\n"
+                              L"This shouldn't happen. You might be testing a development build.";
+            AfxMessageBox(msg.c_str(), MB_ICONWARNING);
+        }
+    }
+    else
+    {
+        std::wstring msg = L"Failed to check for updates:\n" + checker.GetLastError() +
+                          L"\n\nPlease check your internet connection and try again.";
+        AfxMessageBox(msg.c_str(), MB_ICONERROR);
+    }
 }
 
 void CMainFrame::OnHelpAbout()
