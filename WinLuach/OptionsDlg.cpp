@@ -1067,6 +1067,8 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_PREVIEW_NOTIFY,  &COptionsDlg::OnPreviewNotification)
     ON_BN_CLICKED(IDC_OPT_ADV_REMINDERS,   &COptionsDlg::OnAdvancedReminders)
     ON_BN_CLICKED(IDC_OPT_APPLY,           &COptionsDlg::OnApply)
+    ON_BN_CLICKED(IDC_OPT_DISABLE_AUTOUPDATE, &COptionsDlg::OnDisableAutoUpdate)
+    ON_BN_CLICKED(IDC_OPT_CHECK_NOW,       &COptionsDlg::OnCheckNow)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_WM_SIZE()
@@ -1282,6 +1284,27 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(28, y, 210, y + 26), this, IDC_OPT_RESET_CALENDAR);
     track(m_pageGeneral, &m_btnResetCalendar);
+
+    // Auto-Update group
+    y = 216;
+    mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 110); y += 22;
+    m_chkDisableAutoUpdate.Create(L"Disable all update checks", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(28, y, 220, y + 20), this, IDC_OPT_DISABLE_AUTOUPDATE);
+    track(m_pageGeneral, &m_chkDisableAutoUpdate); y += 26;
+    m_chkCheckUpdatesAuto.Create(L"Check for updates automatically", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(28, y, 230, y + 20), this, IDC_OPT_CHECK_AUTO);
+    track(m_pageGeneral, &m_chkCheckUpdatesAuto); y += 24;
+    mkStatic(m_pageGeneral, L"Frequency:", 28, y, 60, 20);
+    initCombo(m_pageGeneral, m_cmbUpdateFrequency, 90, y - 1, 120, IDC_OPT_UPDATE_FREQ,
+        { L"Daily", L"Weekly", L"Monthly" }, m_current.updateCheckFrequency);
+    y += 26;
+    m_chkCheckOnLaunch.Create(L"Check on launch", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        CRect(28, y, 180, y + 20), this, IDC_OPT_CHECK_LAUNCH);
+    track(m_pageGeneral, &m_chkCheckOnLaunch);
+    m_btnCheckUpdatesNow.Create(L"Check Now",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CRect(190, y - 2, 270, y + 22), this, IDC_OPT_CHECK_NOW);
+    track(m_pageGeneral, &m_btnCheckUpdatesNow);
 
     y = 38;
     mkGroup(m_pageMonth, L"Month View", 14, y, W - 28, 118); y += 20;
@@ -2032,6 +2055,18 @@ BOOL COptionsDlg::OnInitDialog()
     else if (m_current.customTzeitMode == 1 && nearValue(m_current.customTzeitValue, 60.0))
         tzeitPreset = 7;
     m_cmbTzeitShita.SetCurSel(tzeitPreset);
+
+    // v0.8.54 - Auto-update settings initialization
+    m_chkDisableAutoUpdate.SetCheck(m_current.disableAutoUpdate ? BST_CHECKED : BST_UNCHECKED);
+    m_chkCheckUpdatesAuto.SetCheck(m_current.checkUpdatesAuto ? BST_CHECKED : BST_UNCHECKED);
+    m_cmbUpdateFrequency.SetCurSel(max(0, min(2, m_current.updateCheckFrequency)));
+    m_chkCheckOnLaunch.SetCheck(m_current.checkUpdatesOnLaunch ? BST_CHECKED : BST_UNCHECKED);
+    // Enable/disable the frequency and launch checkboxes based on the disable flag
+    bool isDisabled = m_current.disableAutoUpdate;
+    m_chkCheckUpdatesAuto.EnableWindow(!isDisabled);
+    m_cmbUpdateFrequency.EnableWindow(!isDisabled);
+    m_chkCheckOnLaunch.EnableWindow(!isDisabled);
+    m_btnCheckUpdatesNow.EnableWindow(!isDisabled);
 
     UpdateColorButtons();
     UpdateNotificationControls();
@@ -3091,6 +3126,12 @@ void COptionsDlg::ReadControlsIntoResult()
         else if (v == 3) { m_result.tzeitShita = 1; m_result.customTzeitMode = 1; m_result.customTzeitValue = 72.0; }
         else if (v == 4) { m_result.customTzeitMode = 0; m_result.customTzeitValue = 16.1; }
     }
+
+    // v0.8.54 - Auto-update settings
+    m_result.disableAutoUpdate = (m_chkDisableAutoUpdate.GetCheck() == BST_CHECKED);
+    m_result.checkUpdatesAuto = (m_chkCheckUpdatesAuto.GetCheck() == BST_CHECKED);
+    m_result.updateCheckFrequency = max(0, min(2, m_cmbUpdateFrequency.GetCurSel()));
+    m_result.checkUpdatesOnLaunch = (m_chkCheckOnLaunch.GetCheck() == BST_CHECKED);
 }
 
 bool COptionsDlg::ApplyToParent()
@@ -3208,6 +3249,31 @@ void COptionsDlg::OnTrayDefaults()
         m_btnTrayBackColor.EnableWindow(FALSE);
     if (m_cmbTrayNumber.GetSafeHwnd())
         m_cmbTrayNumber.SetCurSel(0);
+    SetDirty(true);
+}
+
+void COptionsDlg::OnDisableAutoUpdate()
+{
+    // Enable/disable the update-related controls based on the "Disable all update checks" checkbox state
+    bool isDisabled = (m_chkDisableAutoUpdate.GetCheck() == BST_CHECKED);
+
+    if (m_chkCheckUpdatesAuto.GetSafeHwnd())
+        m_chkCheckUpdatesAuto.EnableWindow(!isDisabled);
+    if (m_cmbUpdateFrequency.GetSafeHwnd())
+        m_cmbUpdateFrequency.EnableWindow(!isDisabled);
+    if (m_chkCheckOnLaunch.GetSafeHwnd())
+        m_chkCheckOnLaunch.EnableWindow(!isDisabled);
+    if (m_btnCheckUpdatesNow.GetSafeHwnd())
+        m_btnCheckUpdatesNow.EnableWindow(!isDisabled);
+
+    SetDirty(true);
+}
+
+void COptionsDlg::OnCheckNow()
+{
+    // Immediately check for updates
+    // This is a placeholder that will be integrated with the UpdateChecker
+    AfxMessageBox(L"Update check functionality coming soon!", MB_ICONINFORMATION);
     SetDirty(true);
 }
 

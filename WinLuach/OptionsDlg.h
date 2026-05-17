@@ -73,6 +73,8 @@ protected:
     afx_msg void OnZmanimSubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
+    afx_msg void OnDisableAutoUpdate();
+    afx_msg void OnCheckNow();
 
     DECLARE_MESSAGE_MAP()
 
@@ -178,6 +180,14 @@ private:
     CEdit m_editCustomMinchaKetana;
     CEdit m_editCustomPlag;
     CEdit m_editCustomEndFast;
+
+    // Auto-update controls (added in General tab)
+    CButton m_chkDisableAutoUpdate;
+    CButton m_chkCheckUpdatesAuto;
+    CComboBox m_cmbUpdateFrequency;
+    CButton m_chkCheckOnLaunch;
+    CButton m_btnCheckUpdatesNow;
+
     CButton m_btnOK;
     CButton m_btnCancel;
     CButton m_btnApply;
