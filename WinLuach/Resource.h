@@ -24,6 +24,14 @@
 #define IDC_OPT_ZSUB_FIRST       4200
 #define IDC_OPT_ZSUB_LAST        4499
 #define ID_FILE_PIN_TASKBAR      4500
+
+// v0.8.54 — control IDs for auto-update settings
+#define IDC_OPT_DISABLE_AUTOUPDATE 4600
+#define IDC_OPT_CHECK_AUTO         4601
+#define IDC_OPT_UPDATE_FREQ        4602
+#define IDC_OPT_CHECK_LAUNCH       4603
+#define IDC_OPT_CHECK_NOW          4604
+#define ID_HELP_CHECK_UPDATES      4605
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
