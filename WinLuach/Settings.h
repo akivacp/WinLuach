@@ -270,6 +270,13 @@ struct AppSettings
     // --- Tray tooltip custom zmanim (user-configured shita) ---
     uint32_t     trayTooltipCustomZmanimMask  = 0x7F;   // bits 0-6: 7 custom zmanim
 
+    // --- Auto-Update Settings ---
+    bool         disableAutoUpdate        = false;  // master disable; when true, all update checks are disabled
+    bool         checkUpdatesAuto         = true;   // check for updates automatically
+    int          updateCheckFrequency     = 1;      // 0=daily, 1=weekly, 2=monthly
+    bool         checkUpdatesOnLaunch     = true;   // check on app launch
+    int64_t      lastUpdateCheckTime      = 0;      // timestamp of last update check (prevents excessive checks)
+
     // --- Window ---
     int          windowX = -1;   // -1 = use default
     int          windowY = -1;

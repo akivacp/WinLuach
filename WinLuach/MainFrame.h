@@ -329,6 +329,7 @@ protected:
     afx_msg void OnOptionsLocation();
     afx_msg void OnOptionsPrefs();
     afx_msg void OnHelpContents();
+    afx_msg void OnHelpCheckUpdates();
     afx_msg void OnHelpAbout();
     afx_msg void OnTrayExit();
     afx_msg void OnDestroy();

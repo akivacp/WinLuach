@@ -3090,6 +3090,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND(ID_OPTIONS_LOCATION, &CMainFrame::OnOptionsLocation)
     ON_COMMAND(ID_OPTIONS_PREFS, &CMainFrame::OnOptionsPrefs)
     ON_COMMAND(ID_HELP_CONTENTS, &CMainFrame::OnHelpContents)
+    ON_COMMAND(ID_HELP_CHECK_UPDATES, &CMainFrame::OnHelpCheckUpdates)
     ON_COMMAND(ID_HELP_ABOUT, &CMainFrame::OnHelpAbout)
     ON_COMMAND(ID_TRAY_OPEN, &CMainFrame::RestoreFromTray)
     ON_COMMAND(ID_TRAY_ABOUT, &CMainFrame::OnHelpAbout)
@@ -3220,6 +3221,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 
     CMenu helpMenu;
     helpMenu.CreatePopupMenu();
+    helpMenu.AppendMenu(MF_STRING, ID_HELP_CHECK_UPDATES, L"&Check for Updates...");
+    helpMenu.AppendMenu(MF_SEPARATOR);
     helpMenu.AppendMenu(MF_STRING, ID_HELP_ABOUT, L"&About WinLuach...");
     menu.AppendMenu(MF_POPUP, (UINT_PTR)helpMenu.Detach(), L"&Help");
 
@@ -5474,6 +5477,14 @@ void CMainFrame::OnOptionsDialogClosed(COptionsDlg* dlg)
 {
     if (m_pOptionsDlg == dlg)
         m_pOptionsDlg = nullptr;
+}
+
+void CMainFrame::OnHelpCheckUpdates()
+{
+    // Placeholder for update checking functionality
+    // TODO: Integrate with CUpdateChecker class
+    AfxMessageBox(L"Checking for updates...\n\nUpdate checking functionality coming soon!",
+                  MB_ICONINFORMATION);
 }
 
 void CMainFrame::OnHelpAbout()
