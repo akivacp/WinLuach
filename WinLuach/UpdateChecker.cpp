@@ -5,6 +5,13 @@
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.64 - Fix build error: replaced unqualified GetLastError() calls with
+//           ::GetLastError() in FetchLatestRelease(). The class method
+//           CUpdateChecker::GetLastError() (returning std::wstring) was shadowing
+//           the Win32 API ::GetLastError() (returning DWORD), causing C2440 errors.
+// v0.8.61 - Enhanced error reporting. All network operations now capture Windows
+//           error codes for better diagnostics. Added User-Agent and Accept headers
+//           to GitHub API requests (required by GitHub API).
 // v0.8.54 - Initial implementation. Fetches release info, compares versions,
 //           downloads updates, shows dialogs.
 // =============================================================================
@@ -124,7 +131,10 @@ bool CUpdateChecker::FetchLatestRelease(GitHubRelease& outRelease)
                                         nullptr, nullptr, 0);
     if (!hInternet)
     {
-        m_lastError = L"Failed to initialize internet connection";
+        DWORD dwError = ::GetLastError();
+        wchar_t buf[256];
+        _snwprintf_s(buf, _TRUNCATE, L"Failed to initialize internet connection (Error: 0x%X)", dwError);
+        m_lastError = buf;
         return false;
     }
 
@@ -135,7 +145,10 @@ bool CUpdateChecker::FetchLatestRelease(GitHubRelease& outRelease)
                                           INTERNET_FLAG_SECURE, 0);
     if (!hConnect)
     {
-        m_lastError = L"Failed to connect to GitHub API";
+        DWORD dwError = ::GetLastError();
+        wchar_t buf[256];
+        _snwprintf_s(buf, _TRUNCATE, L"Failed to connect to GitHub API (Error: 0x%X)", dwError);
+        m_lastError = buf;
         InternetCloseHandle(hInternet);
         return false;
     }
@@ -151,17 +164,24 @@ bool CUpdateChecker::FetchLatestRelease(GitHubRelease& outRelease)
                                           0);
     if (!hRequest)
     {
-        m_lastError = L"Failed to create HTTP request";
+        DWORD dwError = ::GetLastError();
+        wchar_t buf[256];
+        _snwprintf_s(buf, _TRUNCATE, L"Failed to create HTTP request (Error: 0x%X)", dwError);
+        m_lastError = buf;
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return false;
     }
 
-    // Send request
-    BOOL result = HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0);
+    // Send request with User-Agent header (required by GitHub API)
+    LPCWSTR headers = L"User-Agent: WinLuach/0.8\r\nAccept: application/vnd.github.v3+json\r\n";
+    BOOL result = HttpSendRequestW(hRequest, headers, static_cast<DWORD>(wcslen(headers)), nullptr, 0);
     if (!result)
     {
-        m_lastError = L"Failed to send HTTP request";
+        DWORD dwError = ::GetLastError();
+        wchar_t buf[256];
+        _snwprintf_s(buf, _TRUNCATE, L"Failed to send HTTP request (Error: 0x%X)", dwError);
+        m_lastError = buf;
         InternetCloseHandle(hRequest);
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
