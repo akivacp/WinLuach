@@ -3,6 +3,13 @@
 // File:    CalPrintDlg.cpp
 // Purpose: Calendar printing and print-preview implementation.
 // =============================================================================
+//
+// CHANGELOG:
+// v0.8.82 - DrawZmanimMonthPage: custom Shma*/Tfla* columns now display before
+//           their GRA counterparts (chronological order via kColDisplayOrder).
+//         - CCalPrintDlg: dialog now auto-sizes to fit content instead of using
+//           a fixed cy=450 that left excess empty space below the options.
+// =============================================================================
 
 #include "pch.h"
 #include "CalPrintDlg.h"
@@ -804,9 +811,24 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
         // custom shita (user's configured shita, marked with *)
         L"Alos*", L"Shma*", L"Tfla*", L"Mn.Gd*", L"Mn.Kt*", L"Plag*", L"Tzais*"
     };
+    // v0.8.82 — display order puts custom Shma* (16) before Shma GRA (4),
+    // and custom Tfla* (17) before Tfla GRA (6), for chronological order.
+    static const int kColDisplayOrder[22] = {
+        0, 1, 2,          // Alos, Mishey, Netz
+        15,               // Alos*
+        3, 16, 4,         // Shma MA, Shma*, Shma GRA
+        5, 17, 6,         // Tfla MA, Tfla*, Tfla GRA
+        7,                // Chatzos
+        8, 18,            // Mn.Gd, Mn.Gd*
+        9, 19,            // Mn.Kt, Mn.Kt*
+        10, 20,           // Plag, Plag*
+        11, 12,           // Candle, Shkia
+        13, 21,           // Tzais, Tzais*
+        14                // Sha'a
+    };
     std::vector<int> activeCols;
-    for (int i = 0; i < 22; i++)
-        if (colMask & (1u << i)) activeCols.push_back(i);
+    for (int ord : kColDisplayOrder)
+        if (colMask & (1u << ord)) activeCols.push_back(ord);
     int nc = (int)activeCols.size();
 
     // ── Column geometry: Date | Day | Hebrew | [time cols...] ─────────────────
@@ -3073,7 +3095,9 @@ BOOL CCalPrintDlg::OnInitDialog()
     y += 24;
 
     // ── Buttons ──────────────────────────────────────────────────────────────
-    int btnY = H - 36;
+    // v0.8.82 — Place buttons right after the last control (y+8) and then
+    // resize the dialog window to fit, eliminating excess empty space.
+    int btnY = y + 8;
     m_btnPreview.Create(L"Preview",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | WS_GROUP,
         CRect(10, btnY, 90, btnY + 26), this, IDC_PD_BTN_PREVIEW);
@@ -3090,6 +3114,19 @@ BOOL CCalPrintDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(W - 82, btnY, W - 8, btnY + 26), this, IDCANCEL);
     pCancel->SetFont(pF);
+
+    // Shrink the dialog to tightly fit the content
+    {
+        RECT rcWnd, rcCli;
+        GetWindowRect(&rcWnd);
+        GetClientRect(&rcCli);
+        int ncW = (rcWnd.right - rcWnd.left) - rcCli.right;
+        int ncH = (rcWnd.bottom - rcWnd.top) - rcCli.bottom;
+        int newH = btnY + 26 + 10 + ncH;  // 10px bottom padding
+        int newW = (rcWnd.right - rcWnd.left);
+        SetWindowPos(nullptr, 0, 0, newW, newH,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     return TRUE;
 }

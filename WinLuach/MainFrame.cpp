@@ -4255,7 +4255,8 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_customMinchaGedolaPreset = max(0, min(3, s.customMinchaGedolaPreset));
     m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
     m_customPlagPreset = max(0, min(2, s.customPlagPreset));
-    m_customEndFastPreset = max(0, min(2, s.customEndFastPreset));
+    m_customEndFastPreset     = max(0, min(2, s.customEndFastPreset));
+    m_customEndFastMinuteMode = max(0, min(1, s.customEndFastMinuteMode)); // v0.8.82
     m_customMinchaGedolaValue = s.customMinchaGedolaValue > 0.0 ? s.customMinchaGedolaValue : 30.0;
     m_customMinchaKetanaValue = s.customMinchaKetanaValue > 0.0 ? s.customMinchaKetanaValue : 570.0;
     m_customPlagValue = s.customPlagValue > 0.0 ? s.customPlagValue : 645.0;
@@ -5345,32 +5346,58 @@ CString CMainFrame::BuildTrayTooltip()
             items.push_back({ bit, label, FormatTime(time, m_use24hr) });
     };
 
+    // v0.8.82 — build custom (user-configured shita) zmanim early so we can
+    // interleave them in chronological order (before GRA, not appended at end).
+    DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDst);
+    uint32_t customMask = theApp.m_settings.trayTooltipCustomZmanimMask;
+
+    // Resolve custom shema/tefilla labels
+    const wchar_t* customShemaLabel   = dz.sofShemaLabel.empty()   ? L"Custom Sof Shema"   : dz.sofShemaLabel.c_str();
+    const wchar_t* customTefLabel     = dz.sofTefillaLabel.empty() ? L"Custom Sof Tefilla" : dz.sofTefillaLabel.c_str();
+    const wchar_t* customAlotLabel    = dz.alotLabel.empty()       ? L"Custom Alos"        : dz.alotLabel.c_str();
+    const wchar_t* customTzeitLabel   = dz.tzeitLabel.empty()      ? L"Custom Tzeit"       : dz.tzeitLabel.c_str();
+
+    // Helper to add a custom zmanim item (uses trayTooltipCustomZmanimMask bit).
+    auto addCustomTime = [&](int bit, const wchar_t* label, const TimeOfDay& time) {
+        if ((customMask & (1u << bit)) && time.IsValid())
+            items.push_back({ bit + 100, label, FormatTime(time, m_use24hr) });
+    };
+
     addTime(0,  L"Alos GRA",          z.alot_GRA);
     addTime(1,  L"Alos MA72",         z.alot_MA72);
     addTime(2,  L"Alos MA90",         z.alot_MA90);
+    addCustomTime(0, customAlotLabel, dz.alot);  // Custom Alos after MA90
     addTime(3,  L"Misheyakir 10.2",   z.misheyakir_10);
     addTime(4,  L"Misheyakir 11.5",   z.misheyakir_11);
     addTime(5,  L"Netz",              z.hanetz);
     addTime(6,  L"Sof Shema MA72",    z.sofShema_MA72);
     addTime(7,  L"Sof Shema MA90",    z.sofShema_MA90);
+    // v0.8.82 — Custom Sof Shema before GRA (chronological order)
+    addCustomTime(1, customShemaLabel, dz.sofShema);
     addTime(8,  L"Sof Shema GRA",     z.sofShema_GRA);
     addTime(9,  L"Sof Tefilla MA72",  z.sofTefilla_MA72);
     addTime(10, L"Sof Tefilla MA90",  z.sofTefilla_MA90);
+    // v0.8.82 — Custom Sof Tefilla before GRA (chronological order)
+    addCustomTime(2, customTefLabel, dz.sofTefilla);
     addTime(11, L"Sof Tefilla GRA",   z.sofTefilla_GRA);
     addTime(12, L"Chatzos",           z.chatzot);
     addTime(13, L"Mincha Gedola MA72",z.minchaGedola_MA72);
     addTime(14, L"Mincha Gedola MA90",z.minchaGedola_MA90);
+    addCustomTime(3, L"Custom Mincha Gedola", dz.minchaGedola);
     addTime(15, L"Mincha Gedola GRA", z.minchaGedola_GRA);
     addTime(16, L"Mincha Ketana MA72",z.minchaKetana_MA72);
     addTime(17, L"Mincha Ketana MA90",z.minchaKetana_MA90);
+    addCustomTime(4, L"Custom Mincha Ketana", dz.minchaKetana);
     addTime(18, L"Mincha Ketana GRA", z.minchaKetana_GRA);
     addTime(19, L"Plag MA72",         z.plagMincha_MA72);
     addTime(20, L"Plag MA90",         z.plagMincha_MA90);
+    addCustomTime(5, L"Custom Plag",  dz.plagMincha);
     addTime(21, L"Plag GRA",          z.plagMincha_GRA);
     addTime(22, L"Shkiah",            z.shkia);
     addTime(23, L"Tzais GRA",         z.tzeit_GRA);
     addTime(24, L"Tzais MA72",        z.tzeit_MA72);
     addTime(25, L"Tzais MA90",        z.tzeit_MA90);
+    addCustomTime(6, customTzeitLabel, dz.tzeit);
     addTime(26, L"Candles",           z.candleLighting);
 
     HebrewDate h = GregorianToHebrew(g);
@@ -5406,39 +5433,17 @@ CString CMainFrame::BuildTrayTooltip()
         HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
         hToday.year);
 
-    // Custom (user-configured shita) zmanim — separate mask
-    DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDst);
-    uint32_t customMask = theApp.m_settings.trayTooltipCustomZmanimMask;
-    struct CustomItem { int bit; const wchar_t* label; TimeOfDay time; };
-    std::vector<CustomItem> customItems = {
-        { 0, L"Custom Alos",          dz.alot         },
-        { 1, L"Custom Sof Shema",     dz.sofShema     },
-        { 2, L"Custom Sof Tefilla",   dz.sofTefilla   },
-        { 3, L"Custom Mincha Gedola", dz.minchaGedola },
-        { 4, L"Custom Mincha Ketana", dz.minchaKetana },
-        { 5, L"Custom Plag",          dz.plagMincha   },
-        { 6, L"Custom Tzeit",         dz.tzeit        },
-    };
-    // Override labels with descriptive shita labels where available
-    if (!dz.alotLabel.empty())        customItems[0].label = dz.alotLabel.c_str();
-    if (!dz.sofShemaLabel.empty())    customItems[1].label = dz.sofShemaLabel.c_str();
-    if (!dz.sofTefillaLabel.empty())  customItems[2].label = dz.sofTefillaLabel.c_str();
-    if (!dz.tzeitLabel.empty())       customItems[6].label = dz.tzeitLabel.c_str();
-    for (const auto& ci : customItems)
-    {
-        if ((customMask & (1u << ci.bit)) && ci.time.IsValid())
-        {
-            CString line;
-            line.Format(L"\n%s: %s", ci.label, FormatTime(ci.time, m_use24hr).c_str());
-            tip += line;
-        }
-    }
-
+    // Emit all items in order.  Standard items check trayTooltipZmanimMask (bit < 100).
+    // Custom items use bit offset +100 and check trayTooltipCustomZmanimMask.
     uint32_t mask = theApp.m_settings.trayTooltipZmanimMask;
     for (const auto& item : items)
     {
-        if (!(mask & (1u << item.bit)) || item.value.empty())
-            continue;
+        bool show;
+        if (item.bit >= 100)
+            show = (customMask & (1u << (item.bit - 100))) != 0;
+        else
+            show = (mask & (1u << item.bit)) != 0;
+        if (!show || item.value.empty()) continue;
         CString line;
         line.Format(L"\n%s: %s", item.label, item.value.c_str());
         tip += line;
