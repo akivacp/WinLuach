@@ -8,6 +8,10 @@
 // v0.1.0 - Initial implementation.
 // v0.8.0 - Bar entries driven by zmanimBarMask + kZmanimBarLabels.  Added
 //          Sof Shema MA (custom), Sof Tefilla MA (custom), and End of Fast.
+// v0.8.82 - Reordered pushIf calls so custom Sof Shema/Tefilla display before
+//           their GRA counterparts (chronological order).
+//         - End-of-Fast custom preset now respects customEndFastMinuteMode:
+//           0=fixed minutes after shkiah, 1=shaah zmanit minutes.
 // =============================================================================
 
 #include "pch.h"
@@ -111,11 +115,19 @@ void CZmanimPanel::OnPaint()
 
     // End-of-Fast time: shkia + 27 min for R' Tukaccinsky, or tzeit_MA72 for
     // R' Moshe Feinstein.  Picked by customEndFastPreset.
-    TimeOfDay endFast = (m_pFrame->m_customEndFastPreset == 1)
-        ? z.tzeit_MA72
-        : AddMinutes(z.shkia, (m_pFrame->m_customEndFastPreset == 2)
-            ? (int)round(max(0.0, m_pFrame->m_customEndFastValue))
-            : 27);
+    // v0.8.82 — custom preset respects customEndFastMinuteMode (0=fixed, 1=shaah zmanit).
+    TimeOfDay endFast;
+    if (m_pFrame->m_customEndFastPreset == 1) {
+        endFast = z.tzeit_MA72;
+    } else if (m_pFrame->m_customEndFastPreset == 2) {
+        double mins = max(0.0, m_pFrame->m_customEndFastValue);
+        if (m_pFrame->m_customEndFastMinuteMode == 1 && z.shaahZmanit_GRA > 0.0)
+            endFast = AddMinutes(z.shkia, (int)round(mins * z.shaahZmanit_GRA / 60.0));
+        else
+            endFast = AddMinutes(z.shkia, (int)round(mins));
+    } else {
+        endFast = AddMinutes(z.shkia, 27);  // R' Tukaccinsky default
+    }
 
     auto pushIf = [&](int bit, const wchar_t* label, const TimeOfDay& t, bool isSha = false) {
         if (mask & (1u << bit))
@@ -127,12 +139,14 @@ void CZmanimPanel::OnPaint()
     pushIf(2,  kZmanimBarLabels[2],       z.hanetz);
     pushIf(3,  kZmanimBarLabels[3],       z.sofShema_MA72);
     pushIf(4,  kZmanimBarLabels[4],       z.sofShema_MA90);
-    pushIf(5,  kZmanimBarLabels[5],       z.sofShema_GRA);
+    // v0.8.82 — custom Sof Shema before GRA (chronological order)
     pushIf(6,  d.sofShemaLabel.c_str(),    sofShemaMaCustom);
+    pushIf(5,  kZmanimBarLabels[5],       z.sofShema_GRA);
     pushIf(7,  kZmanimBarLabels[7],       z.sofTefilla_MA72);
     pushIf(8,  kZmanimBarLabels[8],       z.sofTefilla_MA90);
-    pushIf(9,  kZmanimBarLabels[9],       z.sofTefilla_GRA);
+    // v0.8.82 — custom Sof Tefilla before GRA (chronological order)
     pushIf(10, d.sofTefillaLabel.c_str(),  sofTefMaCustom);
+    pushIf(9,  kZmanimBarLabels[9],       z.sofTefilla_GRA);
     pushIf(11, kZmanimBarLabels[11],      z.chatzot);
     pushIf(12, kZmanimBarLabels[12],      d.minchaGedola);
     pushIf(13, kZmanimBarLabels[13],      d.minchaKetana);

@@ -160,12 +160,16 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"showChatzosOnBeHaB\": "  << (s.showChatzosOnBeHaB  ? L"true" : L"false") << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
     f << L"  \"customAlotValue\": " << s.customAlotValue << L",\n";
+    f << L"  \"customAlotDegreesValue\": " << s.customAlotDegreesValue << L",\n";
     f << L"  \"customMisheyakirMode\": " << s.customMisheyakirMode << L",\n";
     f << L"  \"customMisheyakirValue\": " << s.customMisheyakirValue << L",\n";
+    f << L"  \"customMisheyakirDegreesValue\": " << s.customMisheyakirDegreesValue << L",\n";
     f << L"  \"customSofZmanMode\": " << s.customSofZmanMode << L",\n";
     f << L"  \"customSofZmanValue\": " << s.customSofZmanValue << L",\n";
+    f << L"  \"customSofZmanDegreesValue\": " << s.customSofZmanDegreesValue << L",\n";
     f << L"  \"customTzeitMode\": " << s.customTzeitMode << L",\n";
     f << L"  \"customTzeitValue\": " << s.customTzeitValue << L",\n";
+    f << L"  \"customTzeitDegreesValue\": " << s.customTzeitDegreesValue << L",\n";
     f << L"  \"zmanimBarMask\": " << (uint32_t)s.zmanimBarMask << L",\n";
     f << L"  \"customMinchaGedolaPreset\": " << s.customMinchaGedolaPreset << L",\n";
     f << L"  \"customMinchaKetanaPreset\": " << s.customMinchaKetanaPreset << L",\n";
@@ -175,6 +179,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"customMinchaKetanaValue\": " << s.customMinchaKetanaValue << L",\n";
     f << L"  \"customPlagValue\": " << s.customPlagValue << L",\n";
     f << L"  \"customEndFastValue\": " << s.customEndFastValue << L",\n";
+    f << L"  \"customEndFastMinuteMode\": " << s.customEndFastMinuteMode << L",\n";
     f << L"  \"customSofZmanMaPreset\": " << s.customSofZmanMaPreset << L",\n";
     f << L"  \"customSofZmanGraPreset\": " << s.customSofZmanGraPreset << L",\n";
     f << L"  \"customMisheyakirPreset\": " << s.customMisheyakirPreset << L",\n";
@@ -430,12 +435,16 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"showChatzosOnBeHaB\"")  != std::wstring::npos) s.showChatzosOnBeHaB  = ParseJsonBool(line);
         if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customAlotValue\"")    != std::wstring::npos) s.customAlotValue = ParseJsonNumber(line);
+        if (line.find(L"\"customAlotDegreesValue\"")   != std::wstring::npos) s.customAlotDegreesValue = ParseJsonNumber(line);
         if (line.find(L"\"customMisheyakirMode\"")  != std::wstring::npos) s.customMisheyakirMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customMisheyakirValue\"") != std::wstring::npos) s.customMisheyakirValue = ParseJsonNumber(line);
+        if (line.find(L"\"customMisheyakirDegreesValue\"") != std::wstring::npos) s.customMisheyakirDegreesValue = ParseJsonNumber(line);
         if (line.find(L"\"customSofZmanMode\"")     != std::wstring::npos) s.customSofZmanMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customSofZmanValue\"")    != std::wstring::npos) s.customSofZmanValue = ParseJsonNumber(line);
+        if (line.find(L"\"customSofZmanDegreesValue\"")  != std::wstring::npos) s.customSofZmanDegreesValue = ParseJsonNumber(line);
         if (line.find(L"\"customTzeitMode\"")    != std::wstring::npos) s.customTzeitMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customTzeitValue\"")   != std::wstring::npos) s.customTzeitValue = ParseJsonNumber(line);
+        if (line.find(L"\"customTzeitDegreesValue\"")  != std::wstring::npos) s.customTzeitDegreesValue = ParseJsonNumber(line);
         if (line.find(L"\"zmanimBarMask\"")            != std::wstring::npos) s.zmanimBarMask = (uint32_t)ParseJsonNumber(line);
         if (line.find(L"\"customMinchaGedolaPreset\"") != std::wstring::npos) s.customMinchaGedolaPreset = (int)ParseJsonNumber(line);
         if (line.find(L"\"customMinchaKetanaPreset\"") != std::wstring::npos) s.customMinchaKetanaPreset = (int)ParseJsonNumber(line);
@@ -445,6 +454,7 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"customMinchaKetanaValue\"")  != std::wstring::npos) s.customMinchaKetanaValue  = ParseJsonNumber(line);
         if (line.find(L"\"customPlagValue\"")          != std::wstring::npos) s.customPlagValue          = ParseJsonNumber(line);
         if (line.find(L"\"customEndFastValue\"")       != std::wstring::npos) s.customEndFastValue       = ParseJsonNumber(line);
+        if (line.find(L"\"customEndFastMinuteMode\"")  != std::wstring::npos) s.customEndFastMinuteMode  = (int)ParseJsonNumber(line);
         if (line.find(L"\"customSofZmanMaPreset\"")    != std::wstring::npos) s.customSofZmanMaPreset    = (int)ParseJsonNumber(line);
         if (line.find(L"\"customSofZmanGraPreset\"")   != std::wstring::npos) s.customSofZmanGraPreset   = (int)ParseJsonNumber(line);
         if (line.find(L"\"customMisheyakirPreset\"")   != std::wstring::npos) s.customMisheyakirPreset   = (int)ParseJsonNumber(line);
@@ -524,6 +534,18 @@ bool LoadSettings(AppSettings& s)
     // Migrate legacy single URL to new list
     if (s.webCalendars.empty() && !s.webCalendarUrl.empty())
         s.webCalendars.push_back({ s.webCalendarUrl, true });
+
+    // v0.8.82 — migrate old per-zman mode=0 (degrees) values into the new
+    // separate degreesValue fields so existing users keep their settings.
+    // Old format stored degrees in customXValue when mode==0.
+    if (s.customAlotMode == 0 && s.customAlotValue > 0.0 && s.customAlotValue < 30.0)
+        s.customAlotDegreesValue = s.customAlotValue;
+    if (s.customMisheyakirMode == 0 && s.customMisheyakirValue > 0.0 && s.customMisheyakirValue < 30.0)
+        s.customMisheyakirDegreesValue = s.customMisheyakirValue;
+    if (s.customSofZmanMode == 0 && s.customSofZmanValue > 0.0 && s.customSofZmanValue < 30.0)
+        s.customSofZmanDegreesValue = s.customSofZmanValue;
+    if (s.customTzeitMode == 0 && s.customTzeitValue > 0.0 && s.customTzeitValue < 30.0)
+        s.customTzeitDegreesValue = s.customTzeitValue;
 
     // Load personal events from separate file
     LoadEvents(s.userEvents);
