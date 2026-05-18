@@ -16,6 +16,7 @@
 #include "pch.h"
 #include "CalendarView.h"
 #include "CalPrintDlg.h"
+#include "WinLuachApp.h"  // for theApp.m_settings (BeHaB, v0.8.78)
 
 static long CalendarDateKey(const GregorianDate& g)
 {
@@ -393,6 +394,10 @@ COLORREF CCalendarView::GetCellColor(const CalCellData& cell,
         if (h.flags & HOLIDAY_CHOL_HAMOED)  return m_pFrame->m_colorCholHamoedCell;
     for (const auto& h : cell.holidays)
         if (h.flags & HOLIDAY_FAST)         return m_pFrame->m_colorFastDayCell;
+
+    // v0.8.78 — BeHaB days use fast-day cell color when the option is enabled
+    if (theApp.m_settings.showBeHaB && IsBeHaBDay(GregorianToHebrew(g)))
+        return m_pFrame->m_colorFastDayCell;
 
     if (GetDayOfWeek(g) == SHABBAT) return m_pFrame->m_colorShabbosCell;
     return m_pFrame->m_colorNormalCell;

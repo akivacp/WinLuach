@@ -9,6 +9,11 @@
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.71 - Added anchor (int) to ReminderRule: 0=custom Tzeit, 1=Shkia,
+//           2=Civil midnight. Added lastFiredDate (wstring "YYYY-MM-DD") for
+//           deduplication. Added reminderDailyHour / reminderDailyMinute to
+//           AppSettings for the configurable morning fire time used with
+//           day/week/month offsets.
 // v0.8.70 - Added afterEvent bool to ReminderRule so reminders can fire after
 //           (not just before) their trigger event. Persisted as
 //           advancedReminderN_afterEvent in settings.json.
@@ -57,11 +62,13 @@ struct UserEventEntry
 struct ReminderRule
 {
     bool enabled = true;
-    int style = 1;         // 0=off, 1=toast, 2=popup, 3=both
-    std::wstring kind;     // Zman, Parsha, Holiday, Personal Event
-    std::wstring target;   // e.g. Shkiah, Emor, Pesach
-    std::wstring offsets;  // e.g. "15 minutes; 1 day"
+    int  style      = 1;    // 0=off, 1=toast, 2=popup, 3=both
+    std::wstring kind;      // Zman, Parsha, Holiday, Personal Event
+    std::wstring target;    // e.g. Shkiah, Emor, Pesach
+    std::wstring offsets;   // e.g. "15 minutes"
     bool afterEvent = false; // false=notify before trigger, true=notify after
+    int  anchor     = 0;    // Holiday/Parsha anchor: 0=custom Tzeit, 1=Shkia, 2=Civil midnight
+    std::wstring lastFiredDate; // "YYYY-MM-DD" — prevents double-firing within one day
 };
 
 // =============================================================================
@@ -139,6 +146,10 @@ struct AppSettings
     int  winLuachToastDuration    = 5;     // numeric duration
     int  winLuachToastDurationUnit = 0;   // 0=minutes,1=hours,2=days,3=weeks,4=months
     std::vector<ReminderRule> advancedReminders;
+    // Time of day used when a reminder offset is in days/weeks/months.
+    // e.g. "1 day before Pesach" fires at this time on the prior civil day.
+    int reminderDailyHour   = 9;   // 0-23
+    int reminderDailyMinute = 0;   // 0-59
 
     // --- Print / location defaults ---
     bool         printWeeklyZmanim = true;
@@ -166,8 +177,12 @@ struct AppSettings
     // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop
     int          tzeitShita  = 0;
 
+    // --- Month View display ---
+    bool         showChatzosOnFasts  = false; // show chatzos on public fast day cells
+    bool         showBeHaB           = false; // highlight Mon-Thu-Mon in Cheshvan/Iyar (BeHaB)
+    bool         showChatzosOnBeHaB  = false; // show chatzos on BeHaB cells (requires showBeHaB)
+
     // --- Zmanim display ---
-    bool         showChatzosOnFasts = false; // show chatzos on public fast day cells
     int          customAlotMode = 0;         // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
     double       customAlotValue = 16.1;
     int          customMisheyakirMode = 0;   // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes

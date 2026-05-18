@@ -22,6 +22,7 @@
 #include "Location.h"
 #include "HolidayEngine.h"
 #include "Settings.h"
+#include "ReminderEngine.h"
 #include <shellapi.h>
 
 // Forward declarations
@@ -46,23 +47,7 @@ struct CalendarEventLine
     bool         isWebCalendar = false;
 };
 
-struct DisplayZmanimTimes
-{
-    TimeOfDay alot;
-    TimeOfDay misheyakir;
-    TimeOfDay sofShema;
-    TimeOfDay sofTefilla;
-    TimeOfDay minchaGedola;
-    TimeOfDay minchaKetana;
-    TimeOfDay plagMincha;
-    TimeOfDay tzeit;
-    double    shaahZmanit = 0.0;
-    std::wstring alotLabel;
-    std::wstring misheyakirLabel;
-    std::wstring sofShemaLabel;
-    std::wstring sofTefillaLabel;
-    std::wstring tzeitLabel;
-};
+// DisplayZmanimTimes is defined in Zmanim.h (moved there v0.8.71 so ReminderEngine can use it)
 
 // =============================================================================
 // LAYOUT CONSTANTS
@@ -384,6 +369,7 @@ protected:
     void RefreshWebCalendarEvents();
     void CheckZmanNotifications();
     void CheckSefirahNotification();
+    void CheckAdvancedReminders(); // v0.8.71 — fires ReminderRule engine every minute
     bool ShouldHideToTrayOnClose() const;
     void HideToTray();
     void AddTrayIcon();
