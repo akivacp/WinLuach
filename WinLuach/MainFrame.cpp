@@ -1055,6 +1055,10 @@ protected:
                     for (const auto& ho : holsNext)
                         if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT = true; break; }
 
+                    bool hasCholHamoed = false;
+                    for (const auto& ho : hols)
+                        if (ho.flags & HOLIDAY_CHOL_HAMOED) { hasCholHamoed = true; break; }
+
                     if (isFri)
                     {
                         // Regular Friday candle lighting
@@ -1067,10 +1071,14 @@ protected:
                     }
                     else if (hasYomTov && !m_pFrame->m_isIsrael && nextIsYT)
                     {
-                        // Day 1 of 2-day Yom Tov (diaspora): candle lighting is
-                        // after tzeis, not at shkia - offset (feature #5).
-                        // Use the user's custom tzeit from BuildDisplayZmanim().
+                        // Day 1 of 2-day Yom Tov (diaspora): light after custom Tzais
                         candleCountdownTime = dz.tzeit;
+                    }
+                    else if (!hasYomTov && hasCholHamoed && nextIsYT)
+                    {
+                        // Last day of Chol HaMoed (Hoshana Raba, last Chol HaMoed
+                        // Pesach): next day is Yom Tov → standard candle lighting
+                        candleCountdownTime = z.candleLighting;
                     }
                     // All other days: candleCountdownTime stays invalid → not shown
                 }
@@ -2287,10 +2295,33 @@ public:
             if (dow == FRIDAY || (dow != SHABBAT && (hasErev2 || isErevYK)))
                 m_z.candleLighting = AddMinutes(m_z.shkia, -theApp.m_settings.candleLightingMinutes);
             else if (!pFrame->m_isIsrael && hasYT2 && dow != FRIDAY && dow != SHABBAT) {
+                // 1st day of 2-day YT: light after Tzais (user's custom setting)
                 HebrewDate hNext = JDNToHebrew(GregorianToJDN(g) + 1);
                 auto holsN = GetHolidays(hNext, pFrame->m_isIsrael);
-                for (const auto& ho : holsN)
-                    if (ho.flags & HOLIDAY_YOM_TOV) { m_z.candleLighting = m_z.tzeit_GRA; break; }
+                for (const auto& ho : holsN) {
+                    if (ho.flags & HOLIDAY_YOM_TOV) {
+                        DisplayZmanimTimes dz = pFrame->BuildDisplayZmanim(g, m_z, dst);
+                        m_z.candleLighting = dz.tzeit;
+                        break;
+                    }
+                }
+            }
+            // Last day of Chol HaMoed (Hoshana Raba, last Chol HaMoed Pesach):
+            // not YT today, but next day is YT → standard candle lighting
+            else if (dow != FRIDAY && dow != SHABBAT && !hasYT2) {
+                bool hasCholHamoed2 = false;
+                for (const auto& ho : m_hols)
+                    if (ho.flags & HOLIDAY_CHOL_HAMOED) { hasCholHamoed2 = true; break; }
+                if (hasCholHamoed2) {
+                    HebrewDate hNext2 = JDNToHebrew(GregorianToJDN(g) + 1);
+                    for (const auto& ho : GetHolidays(hNext2, pFrame->m_isIsrael)) {
+                        if (ho.flags & HOLIDAY_YOM_TOV) {
+                            m_z.candleLighting = AddMinutes(m_z.shkia,
+                                -theApp.m_settings.candleLightingMinutes);
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -2640,7 +2671,7 @@ public:
         struct Tmpl { DLGTEMPLATE t; WORD m, c; wchar_t title[30]; } b = {};
         b.t.style = WS_POPUP|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 230; b.t.cy = 440;
+        b.t.cx = 230; b.t.cy = 560;  // v0.8.75: taller for 7 custom shita rows
         wcscpy_s(b.title, L"Print Zmanim Month");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -2666,14 +2697,20 @@ protected:
         m_tab.AdjustRect(FALSE, &tabRc);
         int tx = tabRc.left, ty = tabRc.top, tw = tabRc.Width();
 
-        // --- Tab 0: 15 column checkboxes ---
-        static const wchar_t* kNames[15] = {
+        // --- Tab 0: standard + custom shita column checkboxes (v0.8.75: 22 total) ---
+        static const wchar_t* kNames[22] = {
+            // Standard zmanim (bits 0–14)
             L"Alos HaShachar",   L"Misheyakir",       L"Netz (Sunrise)",
             L"Sof Shema (MA)",   L"Sof Shema (GRA)",
             L"Sof Tefilla (MA)", L"Sof Tefilla (GRA)",
             L"Chatzos",          L"Mincha Gedola",     L"Mincha Ketana",
             L"Plag HaMincha",    L"Candle Lighting",
-            L"Shkia (Sunset)",   L"Tzais HaKochavim",  L"Sha'ah Zmanit"
+            L"Shkia (Sunset)",   L"Tzais HaKochavim",  L"Sha'ah Zmanit",
+            // Custom shita zmanim (bits 15–21) — use user's configured shita
+            L"Alos (custom shita)",        L"Sof Shema (custom)",
+            L"Sof Tefilla (custom)",       L"Mincha Gedola (custom)",
+            L"Mincha Ketana (custom)",     L"Plag HaMincha (custom)",
+            L"Tzais (custom shita)"
         };
         uint32_t savedMask = theApp.m_settings.printZmanimColMask;
         for (int i = 0; i < 15; i++) {
@@ -2683,8 +2720,25 @@ protected:
             m_chk[i].SetFont(pF);
             m_chk[i].SetCheck((savedMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
         }
+        // Separator label + 7 custom shita checkboxes
+        {
+            int sepY = ty + 4 + 15*17 + 6;
+            CStatic* pSep = new CStatic;
+            pSep->Create(L"Custom shita (from your Zmanim settings):",
+                WS_CHILD|WS_VISIBLE|SS_LEFT,
+                CRect(tx+6, sepY, tx+tw-6, sepY+14), this, IDC_ZPD_CUSTOM_LBL);
+            pSep->SetFont(pF);
+            for (int i = 15; i < 22; i++) {
+                int y2 = sepY + 16 + (i-15)*17;
+                m_chk[i].Create(kNames[i],
+                    WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
+                    CRect(tx+6, y2, tx+tw-6, y2+15), this, IDC_ZPD_CHK+i);
+                m_chk[i].SetFont(pF);
+                m_chk[i].SetCheck((savedMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+            }
+        }
         // Sedra column toggle + holiday sub-options
-        int sedY = ty + 4 + 15*17 + 4;
+        int sedY = ty + 4 + 15*17 + 6 + 16 + 7*17 + 6;
         m_chkSedra.Create(L"Show weekly Sedra (Parasha) column",
             WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,
             CRect(tx+6, sedY, tx+tw-6, sedY+15), this, IDC_ZPD_SEDRA);
@@ -2853,7 +2907,7 @@ private:
     int          m_year, m_month;
     CMainFrame*  m_pFrame;
     CTabCtrl     m_tab;
-    CButton      m_chk[15];
+    CButton      m_chk[22];  // v0.8.75: expanded from 15 to 22 (7 custom shita added)
     CButton      m_radPortrait, m_radLandscape;
     CButton      m_rad12hr, m_rad24hr;
     CStatic      m_lblTop, m_lblBot, m_lblLeft, m_lblRight;
@@ -2865,25 +2919,27 @@ private:
 
     enum {
         IDC_ZPD_TAB        = 600,
-        IDC_ZPD_CHK        = 601,  // 601..615
-        IDC_ZPD_PORT       = 616,
-        IDC_ZPD_LAND       = 617,
-        IDC_ZPD_PRINT      = 618,
-        IDC_ZPD_PREVIEW    = 619,
-        IDC_ZPD_12HR       = 620,
-        IDC_ZPD_24HR       = 621,
-        IDC_ZPD_FOOTER     = 622,
-        IDC_ZPD_SEDRA      = 623,
-        IDC_ZPD_HOL_MAJOR  = 624,
-        IDC_ZPD_HOL_MINOR  = 625,
-        IDC_ZPD_HOL_FAST   = 626,
-        IDC_ZPD_HOL_ISRAEL = 627,
-        IDC_ZPD_SEDRA_LBL  = 628,
+        IDC_ZPD_CHK        = 601,  // 601..622 (22 checkboxes, v0.8.75)
+        // Non-checkbox IDs start at 630 to avoid overlap with extended checkbox range
+        IDC_ZPD_PORT       = 630,
+        IDC_ZPD_LAND       = 631,
+        IDC_ZPD_PRINT      = 632,
+        IDC_ZPD_PREVIEW    = 633,
+        IDC_ZPD_12HR       = 634,
+        IDC_ZPD_24HR       = 635,
+        IDC_ZPD_FOOTER     = 636,
+        IDC_ZPD_SEDRA      = 637,
+        IDC_ZPD_HOL_MAJOR  = 638,
+        IDC_ZPD_HOL_MINOR  = 639,
+        IDC_ZPD_HOL_FAST   = 640,
+        IDC_ZPD_HOL_ISRAEL = 641,
+        IDC_ZPD_SEDRA_LBL  = 642,
+        IDC_ZPD_CUSTOM_LBL = 643,  // "Custom shita" separator label
     };
 
     uint32_t ReadColMask() {
         uint32_t mask = 0;
-        for (int i = 0; i < 15; i++)
+        for (int i = 0; i < 22; i++)  // v0.8.75: extended to 22
             if (m_chk[i].GetCheck() == BST_CHECKED) mask |= (1u << i);
         return mask;
     }
@@ -3452,6 +3508,7 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         }
         CheckZmanNotifications();
         CheckSefirahNotification();
+        CheckAdvancedReminders(); // v0.8.71
         return;
     }
     CFrameWnd::OnTimer(nIDEvent);
@@ -3747,6 +3804,17 @@ void CMainFrame::OnViewPaneMolad()
 
 void CMainFrame::OnCalPrintMonth()
 {
+    // v0.8.75 — When in Hebrew calendar mode, sync the civil view to the first
+    // civil day of the current Hebrew month so DoPrint prints the right month.
+    // DoPrint reads m_viewYear/m_viewMonth directly from the frame.
+    if (m_hebrewMonthView)
+    {
+        HebrewDate    hFirst(m_viewHebrewYear, m_viewHebrewMonth, 1);
+        GregorianDate gFirst = HebrewToGregorian(hFirst);
+        m_viewYear  = gFirst.year;
+        m_viewMonth = gFirst.month;
+    }
+
     CalPrintOptions opts;
     opts.range         = CalPrintOptions::RANGE_MONTH;
     opts.landscape     = theApp.m_settings.printLandscape;
@@ -3764,7 +3832,17 @@ void CMainFrame::OnCalPrintMonth()
 
 void CMainFrame::OnCalPrintZmanim()
 {
-    CZmanimPrintDlg dlg(m_viewYear, m_viewMonth, this, nullptr);
+    // v0.8.75 — Same Hebrew mode sync for the Zmanim print dialog
+    int printYear  = m_viewYear;
+    int printMonth = m_viewMonth;
+    if (m_hebrewMonthView)
+    {
+        HebrewDate    hFirst(m_viewHebrewYear, m_viewHebrewMonth, 1);
+        GregorianDate gFirst = HebrewToGregorian(hFirst);
+        printYear  = gFirst.year;
+        printMonth = gFirst.month;
+    }
+    CZmanimPrintDlg dlg(printYear, printMonth, this, nullptr);
     dlg.DoModal();
 }
 
@@ -4025,6 +4103,57 @@ void CMainFrame::RefreshZmanim()
     m_zmanim = CalculateZmanim(m_selectedDate, m_location, m_isDST);
     m_zmanim.candleLighting = AddMinutes(m_zmanim.shkia,
         -theApp.m_settings.candleLightingMinutes);
+
+    // On day 1 of a 2-day Yom Tov (diaspora only), candle lighting must be
+    // lit after Yom Tov ends — i.e. at Tzais, not at Shkia minus offset.
+    // Use the user's custom Tzais (from Settings → Zmanim).
+    // This fixes the ZmanimPanel, SidebarPanel, and anywhere else that reads
+    // m_zmanim.candleLighting for the selected date.
+    if (!m_isIsrael)
+    {
+        DayOfWeek dow = GetDayOfWeek(m_selectedDate);
+        if (dow != FRIDAY && dow != SHABBAT)
+        {
+            bool hasYomTov = false;
+            for (const auto& ho : GetHolidays(m_selectedHebrew, m_isIsrael))
+                if (ho.flags & HOLIDAY_YOM_TOV) { hasYomTov = true; break; }
+
+            if (hasYomTov)
+            {
+                HebrewDate hNext = JDNToHebrew(GregorianToJDN(m_selectedDate) + 1);
+                bool nextIsYT = false;
+                for (const auto& ho : GetHolidays(hNext, m_isIsrael))
+                    if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT = true; break; }
+
+                if (nextIsYT)
+                {
+                    // Replace with user's custom Tzais
+                    DisplayZmanimTimes dz = BuildDisplayZmanim(m_selectedDate, m_zmanim, m_isDST);
+                    m_zmanim.candleLighting = dz.tzeit;
+                }
+            }
+
+            // Last day of Chol HaMoed (Hoshana Raba, last Chol HaMoed Pesach):
+            // next day is Yom Tov → standard candle lighting at Shkia minus offset
+            if (!hasYomTov)
+            {
+                bool hasCholHamoed = false;
+                for (const auto& ho : GetHolidays(m_selectedHebrew, m_isIsrael))
+                    if (ho.flags & HOLIDAY_CHOL_HAMOED) { hasCholHamoed = true; break; }
+
+                if (hasCholHamoed)
+                {
+                    HebrewDate hNext2 = JDNToHebrew(GregorianToJDN(m_selectedDate) + 1);
+                    bool nextIsYT2 = false;
+                    for (const auto& ho : GetHolidays(hNext2, m_isIsrael))
+                        if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT2 = true; break; }
+                    if (nextIsYT2)
+                        m_zmanim.candleLighting = AddMinutes(m_zmanim.shkia,
+                            -theApp.m_settings.candleLightingMinutes);
+                }
+            }
+        }
+    }
 }
 
 DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
@@ -4793,6 +4922,35 @@ void CMainFrame::CheckZmanNotifications()
     HebrewDate h = GregorianToHebrew(today);
     auto hols = GetHolidays(h, m_isIsrael);
 
+    // Adjust candle lighting for special cases
+    {
+        DayOfWeek dowToday = GetDayOfWeek(today);
+        if (!m_isIsrael && dowToday != FRIDAY && dowToday != SHABBAT)
+        {
+            bool hasYomTov    = false;
+            bool hasCholHamoed = false;
+            for (const auto& ho : hols) {
+                if (ho.flags & HOLIDAY_YOM_TOV)    hasYomTov     = true;
+                if (ho.flags & HOLIDAY_CHOL_HAMOED) hasCholHamoed = true;
+            }
+            HebrewDate hNext = JDNToHebrew(GregorianToJDN(today) + 1);
+            bool nextIsYT = false;
+            for (const auto& ho : GetHolidays(hNext, m_isIsrael))
+                if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT = true; break; }
+
+            if (nextIsYT) {
+                if (hasYomTov) {
+                    // 1st day of 2-day YT: use custom Tzais
+                    DisplayZmanimTimes dz = BuildDisplayZmanim(today, z, isDst);
+                    z.candleLighting = dz.tzeit;
+                } else if (hasCholHamoed) {
+                    // Last day of Chol HaMoed: standard candle lighting
+                    z.candleLighting = AddMinutes(z.shkia, -s.candleLightingMinutes);
+                }
+            }
+        }
+    }
+
     struct NotifyZman { int bit; const wchar_t* label; TimeOfDay time; };
     std::vector<NotifyZman> items = {
         { 0, L"Alos Hashachar", z.alot_GRA },
@@ -4964,6 +5122,73 @@ void CMainFrame::CheckSefirahNotification()
     ShowEventNotification(L"Sefiras HaOmer", omer.text, s.notifySefirahStyle);
 }
 
+// =============================================================================
+// CheckAdvancedReminders  (v0.8.71)
+// Called every 60 seconds from OnTimer (ID 1).
+// For each enabled ReminderRule, computes the next fire time using the
+// ReminderEngine helpers, checks if it falls within the current ±30-second
+// window, verifies it hasn't already fired today (lastFiredDate), fires the
+// notification, and persists lastFiredDate back to settings.
+// =============================================================================
+void CMainFrame::CheckAdvancedReminders()
+{
+    AppSettings& s = theApp.m_settings;
+    if (s.advancedReminders.empty()) return;
+
+    // Build today's zmanim once — passed to the engine for Zman-kind rules
+    // and as a base for holiday/parsha lookups on today's date.
+    GregorianDate today    = GetTodayGregorian();
+    bool          isDst    = IsDST(today, m_location);
+    ZmanimResult  todayZ   = CalculateZmanim(today, m_location, isDst);
+    todayZ.candleLighting  = AddMinutes(todayZ.shkia, -s.candleLightingMinutes);
+    DisplayZmanimTimes todayDz = BuildDisplayZmanim(today, todayZ, isDst);
+
+    CTime now = CTime::GetCurrentTime();
+
+    // Today's date string "YYYY-MM-DD" for lastFiredDate deduplication
+    wchar_t todayBuf[16];
+    _snwprintf_s(todayBuf, _TRUNCATE, L"%04d-%02d-%02d",
+        today.year, today.month, today.day);
+    std::wstring todayStr(todayBuf);
+
+    bool settingsChanged = false;
+
+    for (auto& rule : s.advancedReminders)
+    {
+        if (!rule.enabled || rule.style <= 0) continue;
+
+        // Compute when this rule should next fire
+        CTime fireTime = ComputeReminderFireTime(
+            rule, s, m_isIsrael, m_location, todayZ, todayDz, today);
+
+        if (fireTime.GetTime() == 0) continue;
+
+        // Check ±30-second window (timer fires every 60 s)
+        CTimeSpan diff = now - fireTime;
+        if (std::abs((long)diff.GetTotalSeconds()) > 30) continue;
+
+        // Prevent double-firing within the same civil day
+        if (rule.lastFiredDate == todayStr) continue;
+
+        // Build notification text
+        int    amount = 0;
+        std::wstring unit;
+        ParseReminderOffset(rule.offsets, amount, unit);
+        std::wstring direction = rule.afterEvent ? L" after " : L" before ";
+        std::wstring title = L"Reminder: " + rule.target;
+        std::wstring body  = std::to_wstring(amount) + L" " + unit
+                           + direction + rule.target;
+
+        ShowEventNotification(title, body, rule.style);
+
+        rule.lastFiredDate = todayStr;
+        settingsChanged    = true;
+    }
+
+    if (settingsChanged)
+        SaveSettings(s);
+}
+
 void CMainFrame::CheckTodayEvents()
 {
     GregorianDate today  = GetTodayGregorian();
@@ -5013,10 +5238,11 @@ std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
             if (ho.flags & flag) return true;
         return false;
     };
-    bool hasYomTov = hasFlag(HOLIDAY_YOM_TOV);
-    bool hasErev   = hasFlag(HOLIDAY_EREV);
+    bool hasYomTov    = hasFlag(HOLIDAY_YOM_TOV);
+    bool hasErev      = hasFlag(HOLIDAY_EREV);
+    bool hasCholHamoed = hasFlag(HOLIDAY_CHOL_HAMOED);
 
-    // Peek at next day to detect multi-day YT
+    // Peek at next day — needed for 2-day YT and Chol HaMoed→YT transitions
     long      jdn     = GregorianToJDN(g);
     HebrewDate hNext  = JDNToHebrew(jdn + 1);
     auto holsNext     = GetHolidays(hNext, m_isIsrael);
@@ -5038,11 +5264,19 @@ std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
         // Erev YT / Erev Yom Kippur on a weekday
         candleStr = L"Cand " + FormatTime(z.candleLighting, m_use24hr);
     }
-    else if (!isFriday && !isShabbat && hasYomTov && !m_isIsrael && nextDayIsYT
-             && z.tzeit_GRA.IsValid())
+    else if (!isFriday && !isShabbat && hasYomTov && !m_isIsrael && nextDayIsYT)
     {
-        // 1st day YT diaspora — light candles at tzeis for 2nd day
-        candleStr = L"Cand " + FormatTime(z.tzeit_GRA, m_use24hr);
+        // 1st day of 2-day YT (diaspora) — light after Tzais, not at Shkia-offset
+        DisplayZmanimTimes dz = BuildDisplayZmanim(g, z, isDSTLocal);
+        if (dz.tzeit.IsValid())
+            candleStr = L"Cand " + FormatTime(dz.tzeit, m_use24hr);
+    }
+    else if (!isFriday && !isShabbat && !hasYomTov && hasCholHamoed
+             && nextDayIsYT && z.candleLighting.IsValid())
+    {
+        // Last day of Chol HaMoed (Hoshana Raba, last Chol HaMoed Pesach):
+        // next day is Yom Tov → standard candle lighting at Shkia minus offset
+        candleStr = L"Cand " + FormatTime(z.candleLighting, m_use24hr);
     }
 
     // --- Motz / Chatz string (blue) ---
@@ -5079,6 +5313,10 @@ std::pair<std::wstring, std::wstring> CMainFrame::GetCellZmanimLabels(
         else if (theApp.m_settings.showChatzosOnFasts
                  && hasFlag(HOLIDAY_FAST) && !isShabbat && z.chatzot.IsValid())
             motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);       // public fast days (when enabled)
+        // v0.8.78 — BeHaB chatzos
+        else if (theApp.m_settings.showBeHaB && theApp.m_settings.showChatzosOnBeHaB
+                 && !isShabbat && IsBeHaBDay(h) && z.chatzot.IsValid())
+            motzStr = L"Chatz " + FormatTime(z.chatzot, m_use24hr);
     }
 
     return { candleStr, motzStr };

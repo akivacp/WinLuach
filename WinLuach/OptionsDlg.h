@@ -75,6 +75,7 @@ protected:
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
     afx_msg void OnDisableAutoUpdate();
     afx_msg void OnCheckNow();
+    afx_msg void OnShowBeHaBChanged(); // v0.8.78 — enables/disables chatzos-on-BeHaB checkbox
 
     DECLARE_MESSAGE_MAP()
 
@@ -123,7 +124,9 @@ private:
     CComboBox m_cmbNotifyWebCal;
     CComboBox m_cmbAlotShita;
     CComboBox m_cmbTzeitShita;
-    CButton   m_chkChatzosOnFasts;
+    CButton   m_chkChatzosOnFasts;   // now on Month View tab
+    CButton   m_chkShowBeHaB;        // v0.8.78
+    CButton   m_chkChatzosOnBeHaB;   // v0.8.78 — enabled only when showBeHaB
     CEdit     m_editCustomAlot;
     CButton   m_radAlotDegrees;
     CButton   m_radAlotMinutes;
@@ -269,6 +272,10 @@ private:
     CEdit     m_editToastDuration;
     CComboBox m_cmbToastDurationUnit;
     CButton   m_btnAdvancedReminders;
+    // Daily reminder time picker — used when offset unit is days/weeks/months (v0.8.71)
+    CComboBox m_cmbReminderDailyHour;
+    CComboBox m_cmbReminderDailyMin;
+    CComboBox m_cmbReminderDailyAmpm;
     void UpdateNotificationControls();
     void SetDirty(bool dirty);
 

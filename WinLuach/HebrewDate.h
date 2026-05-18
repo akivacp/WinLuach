@@ -177,3 +177,8 @@ GregorianDate GetTodayGregorian();
 
 // Returns today's Hebrew date.
 HebrewDate    GetTodayHebrew();
+
+// Returns true if h is one of the three BeHaB fast days (Mon-Thu-Mon) that
+// fall in Cheshvan (after Sukkot) or Iyar (after Pesach).
+// BeHaB = first Mon/Thu/Mon on or after the 2nd of those months.
+bool IsBeHaBDay(const HebrewDate& h);

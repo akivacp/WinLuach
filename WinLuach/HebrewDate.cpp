@@ -354,3 +354,32 @@ HebrewDate GetTodayHebrew()
 {
     return GregorianToHebrew(GetTodayGregorian());
 }
+
+// =============================================================================
+// IsBeHaBDay  (v0.8.78)
+// BeHaB = Beis-Hey-Beis = Monday / Thursday / Monday.
+// These voluntary fast days occur in the first full weeks of:
+//   • Cheshvan  — after the Sukkot-Shemini Atzeret-Simchat Torah season
+//   • Iyar      — after Pesach
+// Calculation: find the first Monday on or after the 2nd of the month (to
+// skip Rosh Chodesh), then add 3 days (Thursday) and 7 days (next Monday).
+// =============================================================================
+bool IsBeHaBDay(const HebrewDate& h)
+{
+    if (h.month != CHESHVAN && h.month != IYAR) return false;
+
+    // Find JDN of the 2nd of this Hebrew month
+    HebrewDate h2(h.year, h.month, 2);
+    long jdn2 = GregorianToJDN(HebrewToGregorian(h2));
+
+    // Advance to first Monday on or after jdn2
+    GregorianDate g2 = JDNToGregorian(jdn2);
+    int dow2 = (int)GetDayOfWeek(g2);
+    int daysToMon = ((int)MONDAY - dow2 + 7) % 7;
+    long behab1 = jdn2 + daysToMon;   // 1st BeHaB — Monday
+    long behab2 = behab1 + 3;          // 2nd BeHaB — Thursday
+    long behab3 = behab1 + 7;          // 3rd BeHaB — following Monday
+
+    long hjdn = GregorianToJDN(HebrewToGregorian(h));
+    return (hjdn == behab1 || hjdn == behab2 || hjdn == behab3);
+}

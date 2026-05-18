@@ -155,7 +155,9 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printDayZmanimMask\": " << (unsigned long long)s.printDayZmanimMask << L",\n";
     f << L"  \"printShowFooter\": " << (s.printShowFooter ? L"true" : L"false") << L",\n";
     f << L"  \"printTwoColumns\": " << (s.printTwoColumns ? L"true" : L"false") << L",\n";
-    f << L"  \"showChatzosOnFasts\": " << (s.showChatzosOnFasts ? L"true" : L"false") << L",\n";
+    f << L"  \"showChatzosOnFasts\": "  << (s.showChatzosOnFasts  ? L"true" : L"false") << L",\n";
+    f << L"  \"showBeHaB\": "           << (s.showBeHaB           ? L"true" : L"false") << L",\n";
+    f << L"  \"showChatzosOnBeHaB\": "  << (s.showChatzosOnBeHaB  ? L"true" : L"false") << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
     f << L"  \"customAlotValue\": " << s.customAlotValue << L",\n";
     f << L"  \"customMisheyakirMode\": " << s.customMisheyakirMode << L",\n";
@@ -225,8 +227,12 @@ bool SaveSettings(const AppSettings& s)
         f << L"  \"advancedReminder" << i << L"_kind\": \"" << JsonEscape(r.kind) << L"\",\n";
         f << L"  \"advancedReminder" << i << L"_target\": \"" << JsonEscape(r.target) << L"\",\n";
         f << L"  \"advancedReminder" << i << L"_offsets\": \"" << JsonEscape(r.offsets) << L"\",\n";
-        f << L"  \"advancedReminder" << i << L"_afterEvent\": " << (r.afterEvent ? L"true" : L"false") << L",\n";
+        f << L"  \"advancedReminder" << i << L"_afterEvent\": "   << (r.afterEvent ? L"true" : L"false") << L",\n";
+        f << L"  \"advancedReminder" << i << L"_anchor\": "      << r.anchor                              << L",\n";
+        f << L"  \"advancedReminder" << i << L"_lastFiredDate\": \"" << JsonEscape(r.lastFiredDate)       << L"\",\n";
     }
+    f << L"  \"reminderDailyHour\": "   << s.reminderDailyHour   << L",\n";
+    f << L"  \"reminderDailyMinute\": " << s.reminderDailyMinute << L",\n";
     f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
     f << L"  \"zmanimHeight\": "     << s.zmanimHeight                              << L",\n";
     f << L"  \"sidebarCollapsed\": " << (s.sidebarCollapsed ? L"true" : L"false")   << L",\n";
@@ -400,7 +406,9 @@ bool LoadSettings(AppSettings& s)
                     if (field == L"kind")       s.advancedReminders[idx].kind       = ParseJsonString(line);
                     if (field == L"target")     s.advancedReminders[idx].target     = ParseJsonString(line);
                     if (field == L"offsets")    s.advancedReminders[idx].offsets    = ParseJsonString(line);
-                    if (field == L"afterEvent") s.advancedReminders[idx].afterEvent = ParseJsonBool(line);
+                    if (field == L"afterEvent")    s.advancedReminders[idx].afterEvent    = ParseJsonBool(line);
+                    if (field == L"anchor")        s.advancedReminders[idx].anchor        = (int)ParseJsonNumber(line);
+                    if (field == L"lastFiredDate") s.advancedReminders[idx].lastFiredDate = ParseJsonString(line);
                 }
             }
         }
@@ -417,7 +425,9 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"printDayZmanimMask\"")!= std::wstring::npos) s.printDayZmanimMask = (uint64_t)ParseJsonNumber(line);
         if (line.find(L"\"printShowFooter\"")   != std::wstring::npos) s.printShowFooter   = ParseJsonBool(line);
         if (line.find(L"\"printTwoColumns\"")   != std::wstring::npos) s.printTwoColumns   = ParseJsonBool(line);
-        if (line.find(L"\"showChatzosOnFasts\"") != std::wstring::npos) s.showChatzosOnFasts = ParseJsonBool(line);
+        if (line.find(L"\"showChatzosOnFasts\"")  != std::wstring::npos) s.showChatzosOnFasts  = ParseJsonBool(line);
+        if (line.find(L"\"showBeHaB\"")           != std::wstring::npos) s.showBeHaB           = ParseJsonBool(line);
+        if (line.find(L"\"showChatzosOnBeHaB\"")  != std::wstring::npos) s.showChatzosOnBeHaB  = ParseJsonBool(line);
         if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customAlotValue\"")    != std::wstring::npos) s.customAlotValue = ParseJsonNumber(line);
         if (line.find(L"\"customMisheyakirMode\"")  != std::wstring::npos) s.customMisheyakirMode = (int)ParseJsonNumber(line);
@@ -458,6 +468,8 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"colorLearningText\"")    != std::wstring::npos) s.colorLearningText = (int)ParseJsonNumber(line);
         if (line.find(L"\"colorCandleText\"")      != std::wstring::npos) s.colorCandleText = (int)ParseJsonNumber(line);
         if (line.find(L"\"colorMotzText\"")        != std::wstring::npos) s.colorMotzText = (int)ParseJsonNumber(line);
+        if (line.find(L"\"reminderDailyHour\"")   != std::wstring::npos) s.reminderDailyHour   = (int)ParseJsonNumber(line);
+        if (line.find(L"\"reminderDailyMinute\"") != std::wstring::npos) s.reminderDailyMinute = (int)ParseJsonNumber(line);
         if (line.find(L"\"sidebarWidth\"")     != std::wstring::npos) s.sidebarWidth     = (int)ParseJsonNumber(line);
         if (line.find(L"\"zmanimHeight\"")     != std::wstring::npos) s.zmanimHeight     = (int)ParseJsonNumber(line);
         if (line.find(L"\"sidebarCollapsed\"") != std::wstring::npos) s.sidebarCollapsed = ParseJsonBool(line);
