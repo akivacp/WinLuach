@@ -32,6 +32,22 @@
 #define IDC_OPT_CHECK_LAUNCH       4603
 #define IDC_OPT_CHECK_NOW          4604
 #define ID_HELP_CHECK_UPDATES      4605
+// v0.8.82 — custom degrees checkbox/value + minutes mode per zman;
+//           end-of-fast minute mode dropdown; tray tooltip 5-limit message
+#define IDC_OPT_ALOT_DEG_CHK        4700
+#define IDC_OPT_ALOT_DEG_VAL        4701
+#define IDC_OPT_ALOT_MIN_MODE       4702
+#define IDC_OPT_MISH_DEG_CHK        4703
+#define IDC_OPT_MISH_DEG_VAL        4704
+#define IDC_OPT_MISH_MIN_MODE       4705
+#define IDC_OPT_SOF_DEG_CHK         4706
+#define IDC_OPT_SOF_DEG_VAL         4707
+#define IDC_OPT_SOF_MIN_MODE        4708
+#define IDC_OPT_TZEIT_DEG_CHK       4709
+#define IDC_OPT_TZEIT_DEG_VAL       4710
+#define IDC_OPT_TZEIT_MIN_MODE      4711
+#define IDC_OPT_END_FAST_MIN_MODE   4712
+#define IDC_OPT_TRAY_TIP_LIMIT_MSG  4720
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED

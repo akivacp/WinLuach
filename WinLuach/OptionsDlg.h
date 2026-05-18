@@ -76,6 +76,7 @@ protected:
     afx_msg void OnDisableAutoUpdate();
     afx_msg void OnCheckNow();
     afx_msg void OnShowBeHaBChanged(); // v0.8.78 — enables/disables chatzos-on-BeHaB checkbox
+    afx_msg void OnTrayTipZmanClicked(UINT nID); // v0.8.82 — enforces 5-zmanim max
 
     DECLARE_MESSAGE_MAP()
 
@@ -131,20 +132,34 @@ private:
     CButton   m_radAlotDegrees;
     CButton   m_radAlotMinutes;
     CButton   m_radAlotZmanis;
+    // v0.8.82 — new per-zman degrees checkbox + value + minutes mode dropdown
+    CButton   m_chkAlotCustomDeg;
+    CEdit     m_editCustomAlotDeg;
+    CComboBox m_cmbAlotMinutesMode;
     CComboBox m_cmbMisheyakirShita;
     CEdit     m_editCustomMisheyakir;
     CButton   m_radMisheyakirDegrees;
     CButton   m_radMisheyakirMinutes;
     CButton   m_radMisheyakirZmanis;
+    CButton   m_chkMishCustomDeg;
+    CEdit     m_editCustomMishDeg;
+    CComboBox m_cmbMishMinutesMode;
     CComboBox m_cmbSofZmanShita;
     CEdit     m_editCustomSofZman;
     CButton   m_radSofZmanDegrees;
     CButton   m_radSofZmanMinutes;
     CButton   m_radSofZmanZmanis;
+    CButton   m_chkSofCustomDeg;
+    CEdit     m_editCustomSofDeg;
+    CComboBox m_cmbSofMinutesMode;
     CEdit     m_editCustomTzeit;
     CButton   m_radTzeitDegrees;
     CButton   m_radTzeitMinutes;
     CButton   m_radTzeitZmanis;
+    CButton   m_chkTzeitCustomDeg;
+    CEdit     m_editCustomTzeitDeg;
+    CComboBox m_cmbTzeitMinutesMode;
+    CComboBox m_cmbEndFastMinuteMode;   // v0.8.82: fixed vs shaah zmanit for custom end of fast
 
     std::vector<CWnd*> m_pageGeneral;
     std::vector<CWnd*> m_pageMonth;
@@ -183,6 +198,10 @@ private:
     CEdit m_editCustomMinchaKetana;
     CEdit m_editCustomPlag;
     CEdit m_editCustomEndFast;
+
+    // v0.8.82 — tray tooltip 5-zmanim limit UI
+    CStatic m_statTrayTipInstruction;  // "Select up to 5 zmanim:" label
+    CStatic m_statTrayTipMaxMsg;       // "Maximum 5 zmanim selected" message
 
     // Auto-update controls (added in General tab)
     CButton m_chkDisableAutoUpdate;
