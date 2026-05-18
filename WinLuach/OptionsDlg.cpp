@@ -31,6 +31,17 @@
 // v0.8.1 - Sub-page widgets are raised to the top of z-order on show so the
 //          Zmanim sub-tab control doesn't paint over them, and the Omer
 //          'manual time' radio is no longer clipped by its sibling label.
+// v0.8.82 - (1) End-of-Fast custom tab: added "Minutes type" dropdown
+//               (fixed vs shaah zmanit) for custom preset.
+//           (2) All zman custom options: replaced 3-radio
+//               (degrees/fixed/shaah) with separate degrees checkbox+value
+//               and minutes value+type dropdown.
+//           (3) Holiday Schedule group moved below Updates group on General
+//               tab (was overlapping Reset group at same y position).
+//           (4) Tray tooltip: custom Sof Shema/Tefilla checkboxes shown
+//               before GRA entries; max-5 limit with instruction + warning.
+//           (5) Zmanim Bar checkbox order: custom Sof Shema/Tefilla listed
+//               before their GRA counterparts.
 // v0.8.0 - Added "Zmanim Bar" tab with one checkbox per kZmanimBarLabels
 //          entry; restructured "Zmanim" tab into a TCS sub-tab with pages
 //          for Alos, Misheyakir, Sof Zman MA, Sof Zman GRA, Mincha Gedola,
@@ -1142,6 +1153,8 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_DISABLE_AUTOUPDATE, &COptionsDlg::OnDisableAutoUpdate)
     ON_BN_CLICKED(IDC_OPT_CHECK_NOW,       &COptionsDlg::OnCheckNow)
     ON_BN_CLICKED(IDC_OPT_SHOW_BEHAB,     &COptionsDlg::OnShowBeHaBChanged) // v0.8.78
+    ON_CONTROL_RANGE(BN_CLICKED, IDC_OPT_TRAY_TIP_ZMAN_FIRST, IDC_OPT_TRAY_TIP_ZMAN_FIRST + 30, OnTrayTipZmanClicked)
+    ON_CONTROL_RANGE(BN_CLICKED, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + 6, OnTrayTipZmanClicked)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_WM_SIZE()
@@ -1422,7 +1435,9 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_BEHAB);
     track(m_pageMonth, &m_chkChatzosOnBeHaB);
 
-    y = 138;
+    // v0.8.82 — moved Holiday Schedule below the Updates group (y=330)
+    // to fix overlap with Reset group (both were at y=138 previously).
+    y = 330;
 
     mkGroup(m_pageGeneral, L"Holiday Schedule", 14, y, W - 28, 54); y += 22;
     m_radDiaspora.Create(L"Diaspora (outside Israel)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
@@ -1473,7 +1488,20 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Tray Tooltip tab
     y = 38;
-    mkGroup(m_pageTrayTooltip, L"Items Shown In Today's Tray Tooltip", 14, y, W - 28, 336); y += 24;
+    mkGroup(m_pageTrayTooltip, L"Items Shown In Today's Tray Tooltip", 14, y, W - 28, 358); y += 22;
+    // v0.8.82 — instruction label + max-5 warning
+    m_statTrayTipInstruction.Create(L"Select up to 5 zmanim to display in the tray tooltip:",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        CRect(28, y, W - 28, y + 16), this, IDC_STATIC);
+    m_statTrayTipInstruction.SetFont(pFont);
+    track(m_pageTrayTooltip, &m_statTrayTipInstruction);
+    y += 18;
+    m_statTrayTipMaxMsg.Create(L"  ⚠ Maximum of 5 zmanim selected.  Uncheck one to select another.",
+        WS_CHILD | SS_LEFT,          // hidden initially — shown when max reached
+        CRect(28, y, W - 28, y + 16), this, IDC_OPT_TRAY_TIP_LIMIT_MSG);
+    m_statTrayTipMaxMsg.SetFont(pFont);
+    track(m_pageTrayTooltip, &m_statTrayTipMaxMsg);
+    y += 20;
     for (int i = 0; i < kTrayTooltipZmanCount; ++i)
     {
         int col = i / 16;
@@ -1835,11 +1863,20 @@ BOOL COptionsDlg::OnInitDialog()
     // =========================================================================
     y = 38;
     mkGroup(m_pageZmanimBar, L"Show in bottom Zmanim bar", 14, y, W - 28, 360); y += 24;
+    // v0.8.82 — display order puts custom Sof Shema (bit 6) before GRA (bit 5),
+    // and custom Sof Tefilla (bit 10) before GRA (bit 9), for chronological order.
+    static const int kZBarDisplayOrder[] = {
+        0, 1, 2,   // Alos, Misheyakir, Hanetz
+        3, 4, 6, 5, // Shma MA72, MA90, custom, GRA
+        7, 8, 10, 9, // Tefilla MA72, MA90, custom, GRA
+        11, 12, 13, 14, 15, 16, 17, 18, 19  // Chatzos, Mincha Gedola/Ketana, Plag, Shkiah, Tzeis, Candles, Sha'a, End of Fast
+    };
     m_zmanimBarChecks.resize(kZmanimBarLabelCount, nullptr);
-    for (int i = 0; i < kZmanimBarLabelCount; ++i)
+    for (int idx = 0; idx < kZmanimBarLabelCount; ++idx)
     {
-        int col = i / 10;
-        int row = i % 10;
+        int i   = kZBarDisplayOrder[idx];
+        int col = idx / 10;
+        int row = idx % 10;
         int x0 = 28 + col * 220;
         int yy = y + row * 22;
         CButton* chk = new CButton;
@@ -1905,25 +1942,55 @@ BOOL COptionsDlg::OnInitDialog()
         return yy;
     };
 
+    // v0.8.82 — revised custom controls: degrees checkbox+value on one line,
+    // minutes value+mode-dropdown on a second line.
+    // chkDeg / editDeg: new checkbox and degrees value box.
+    // editMin / cmbMode: minutes value box and fixed/shaah dropdown.
+    // The old deg/min/zmanis radio buttons are still created (kept for
+    // legacy Zman Shitos tab compatibility) but moved off-screen at (-1,-1).
     auto attachCustomZmanControls =
         [&](std::vector<CWnd*>& page,
-            CEdit& edit,
-            CButton& deg,
-            CButton& minutes,
-            CButton& zmanis,
-            int startY) -> int
+            CEdit& editMin,
+            CButton& degRad,
+            CButton& minutesRad,
+            CButton& zmanisRad,
+            int startY,
+            CButton& chkDeg,
+            CEdit& editDeg,
+            CComboBox& cmbMode,
+            int degChkId,
+            int degValId,
+            int modeId) -> int
     {
-        int yy = startY + 12;
-        mkStatic(page, L"Custom value:", 40, yy, 100, 20);
-        edit.MoveWindow(142, yy, 62, 22);
-        deg.MoveWindow(216, yy, 76, 20);
-        minutes.MoveWindow(300, yy, 78, 20);
-        zmanis.MoveWindow(216, yy + 24, 180, 20);
-        page.push_back(&edit);
-        page.push_back(&deg);
-        page.push_back(&minutes);
-        page.push_back(&zmanis);
-        return yy + 50;
+        // Hide the old radio buttons off-screen (kept for legacy compatibility)
+        degRad.MoveWindow(-1, -1, 1, 1);
+        minutesRad.MoveWindow(-1, -1, 1, 1);
+        zmanisRad.MoveWindow(-1, -1, 1, 1);
+
+        int yy = startY + 8;
+        // Row 1: [x] Custom degrees: [value edit]
+        chkDeg.Create(L"Custom degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(40, yy, 168, yy + 20), this, degChkId);
+        chkDeg.SetFont(pFont);
+        chkDeg.SetCheck(BST_UNCHECKED);
+        page.push_back(&chkDeg);
+        editDeg.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+            CRect(170, yy, 234, yy + 22), this, degValId);
+        editDeg.SetFont(pFont);
+        page.push_back(&editDeg);
+        yy += 28;
+        // Row 2: Custom minutes: [value] [Fixed minutes / Shaah zmanit v]
+        mkStatic(page, L"Custom minutes:", 40, yy, 108, 20);
+        editMin.MoveWindow(150, yy, 62, 22);
+        page.push_back(&editMin);
+        cmbMode.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+            CRect(218, yy - 1, 360, yy + 60), this, modeId);
+        cmbMode.SetFont(pFont);
+        cmbMode.AddString(L"Fixed minutes");
+        cmbMode.AddString(L"Shaah zmanit min");
+        cmbMode.SetCurSel(0);
+        page.push_back(&cmbMode);
+        return yy + 30;
     };
 
     auto attachCustomNumber =
@@ -1950,7 +2017,14 @@ BOOL COptionsDlg::OnInitDialog()
         int sel = max(0, min(3, m_current.customAlotPreset));
         m_radAlosPreset[sel]->SetCheck(BST_CHECKED);
         attachCustomZmanControls(m_subPageAlos, m_editCustomAlot,
-            m_radAlotDegrees, m_radAlotMinutes, m_radAlotZmanis, yy);
+            m_radAlotDegrees, m_radAlotMinutes, m_radAlotZmanis, yy,
+            m_chkAlotCustomDeg, m_editCustomAlotDeg, m_cmbAlotMinutesMode,
+            IDC_OPT_ALOT_DEG_CHK, IDC_OPT_ALOT_DEG_VAL, IDC_OPT_ALOT_MIN_MODE);
+        // Set degrees checkbox + value from settings
+        m_chkAlotCustomDeg.SetCheck(m_current.customAlotMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        { CString sv; sv.Format(L"%.4g", m_current.customAlotDegreesValue); m_editCustomAlotDeg.SetWindowText(sv); }
+        m_cmbAlotMinutesMode.SetCurSel(m_current.customAlotMode == 2 ? 1 : 0);
+        { CString sv; sv.Format(L"%.4g", m_current.customAlotValue > 0 ? m_current.customAlotValue : 72.0); m_editCustomAlot.SetWindowText(sv); }
     }
 
     // ----- Misheyakir sub-page
@@ -1962,7 +2036,13 @@ BOOL COptionsDlg::OnInitDialog()
         int sel = max(0, min(3, m_current.customMisheyakirPreset));
         m_radMisheyakirPreset[sel]->SetCheck(BST_CHECKED);
         attachCustomZmanControls(m_subPageMisheyakir, m_editCustomMisheyakir,
-            m_radMisheyakirDegrees, m_radMisheyakirMinutes, m_radMisheyakirZmanis, yy);
+            m_radMisheyakirDegrees, m_radMisheyakirMinutes, m_radMisheyakirZmanis, yy,
+            m_chkMishCustomDeg, m_editCustomMishDeg, m_cmbMishMinutesMode,
+            IDC_OPT_MISH_DEG_CHK, IDC_OPT_MISH_DEG_VAL, IDC_OPT_MISH_MIN_MODE);
+        m_chkMishCustomDeg.SetCheck(m_current.customMisheyakirMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        { CString sv; sv.Format(L"%.4g", m_current.customMisheyakirDegreesValue); m_editCustomMishDeg.SetWindowText(sv); }
+        m_cmbMishMinutesMode.SetCurSel(m_current.customMisheyakirMode == 2 ? 1 : 0);
+        { CString sv; sv.Format(L"%.4g", m_current.customMisheyakirValue > 0 ? m_current.customMisheyakirValue : 50.0); m_editCustomMisheyakir.SetWindowText(sv); }
     }
 
     // ----- Sof Zman MA sub-page (Shma MA + Tfila MA)
@@ -1975,7 +2055,13 @@ BOOL COptionsDlg::OnInitDialog()
         int sel = max(0, min(3, m_current.customSofZmanMaPreset));
         m_radSofMAPreset[sel]->SetCheck(BST_CHECKED);
         attachCustomZmanControls(m_subPageSofMA, m_editCustomSofZman,
-            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy);
+            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy,
+            m_chkSofCustomDeg, m_editCustomSofDeg, m_cmbSofMinutesMode,
+            IDC_OPT_SOF_DEG_CHK, IDC_OPT_SOF_DEG_VAL, IDC_OPT_SOF_MIN_MODE);
+        m_chkSofCustomDeg.SetCheck(m_current.customSofZmanMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        { CString sv; sv.Format(L"%.4g", m_current.customSofZmanDegreesValue); m_editCustomSofDeg.SetWindowText(sv); }
+        m_cmbSofMinutesMode.SetCurSel(m_current.customSofZmanMode == 2 ? 1 : 0);
+        { double mv = m_current.customSofZmanValue > 0 ? m_current.customSofZmanValue : 72.0; CString sv; sv.Format(L"%.4g", mv); m_editCustomSofZman.SetWindowText(sv); }
     }
 
     // ----- Sof Zman GRA sub-page
@@ -1988,7 +2074,9 @@ BOOL COptionsDlg::OnInitDialog()
         int sel = max(0, min(3, m_current.customSofZmanGraPreset));
         m_radSofGRAPreset[sel]->SetCheck(BST_CHECKED);
         attachCustomZmanControls(m_subPageSofGRA, m_editCustomSofZman,
-            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy);
+            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy,
+            m_chkSofCustomDeg, m_editCustomSofDeg, m_cmbSofMinutesMode,
+            IDC_OPT_SOF_DEG_CHK, IDC_OPT_SOF_DEG_VAL, IDC_OPT_SOF_MIN_MODE);
     }
 
     // ----- Mincha Gedola sub-page (simple preset + 'Custom (minutes)')
@@ -2038,8 +2126,17 @@ BOOL COptionsDlg::OnInitDialog()
               L"Custom (minutes)" }, yy);
         int sel = max(0, min(2, m_current.customEndFastPreset));
         m_radEndFastPreset[sel]->SetCheck(BST_CHECKED);
-        attachCustomNumber(m_subPageEndFast, m_editCustomEndFast,
+        yy = attachCustomNumber(m_subPageEndFast, m_editCustomEndFast,
             L"Custom min after shkiah:", m_current.customEndFastValue, yy);
+        // v0.8.82 — minutes type dropdown for custom End of Fast
+        mkStatic(m_subPageEndFast, L"Minutes type:", 40, yy + 4, 100, 20);
+        m_cmbEndFastMinuteMode.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+            CRect(144, yy + 2, 296, yy + 62), this, IDC_OPT_END_FAST_MIN_MODE);
+        m_cmbEndFastMinuteMode.SetFont(pFont);
+        m_cmbEndFastMinuteMode.AddString(L"Fixed minutes");
+        m_cmbEndFastMinuteMode.AddString(L"Shaah zmanit min");
+        m_cmbEndFastMinuteMode.SetCurSel(max(0, min(1, m_current.customEndFastMinuteMode)));
+        track(m_subPageEndFast, &m_cmbEndFastMinuteMode);
     }
 
     // ----- Tzais sub-page
@@ -2052,7 +2149,13 @@ BOOL COptionsDlg::OnInitDialog()
         int sel = max(0, min(5, m_current.customTzeitPreset));
         m_radTzaisPreset[sel]->SetCheck(BST_CHECKED);
         attachCustomZmanControls(m_subPageTzais, m_editCustomTzeit,
-            m_radTzeitDegrees, m_radTzeitMinutes, m_radTzeitZmanis, yy);
+            m_radTzeitDegrees, m_radTzeitMinutes, m_radTzeitZmanis, yy,
+            m_chkTzeitCustomDeg, m_editCustomTzeitDeg, m_cmbTzeitMinutesMode,
+            IDC_OPT_TZEIT_DEG_CHK, IDC_OPT_TZEIT_DEG_VAL, IDC_OPT_TZEIT_MIN_MODE);
+        m_chkTzeitCustomDeg.SetCheck(m_current.customTzeitMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        { CString sv; sv.Format(L"%.4g", m_current.customTzeitDegreesValue); m_editCustomTzeitDeg.SetWindowText(sv); }
+        m_cmbTzeitMinutesMode.SetCurSel(m_current.customTzeitMode == 2 ? 1 : 0);
+        { double mv = m_current.customTzeitValue > 0 ? m_current.customTzeitValue : 42.0; CString sv; sv.Format(L"%.4g", mv); m_editCustomTzeit.SetWindowText(sv); }
     }
 
     // OK / Cancel buttons
@@ -3069,6 +3172,44 @@ void COptionsDlg::OnShowBeHaBChanged()
     SetDirty(true);
 }
 
+// v0.8.82 — OnTrayTipZmanClicked: counts all checked tray tooltip zmanim and
+// enforces a maximum of 5. If max is reached, disables all unchecked items and
+// shows the warning label; re-enables them and hides the label when below max.
+void COptionsDlg::OnTrayTipZmanClicked(UINT /*nID*/)
+{
+    // Count all currently checked items across both groups
+    int checked = 0;
+    for (int i = 0; i < kTrayTooltipZmanCount; ++i)
+        if (m_chkTrayTooltipZmanim[i].GetSafeHwnd() &&
+            m_chkTrayTooltipZmanim[i].GetCheck() == BST_CHECKED)
+            ++checked;
+    for (int i = 0; i < kTrayTooltipCustomZmanCount; ++i)
+        if (m_chkTrayTooltipCustomZmanim[i].GetSafeHwnd() &&
+            m_chkTrayTooltipCustomZmanim[i].GetCheck() == BST_CHECKED)
+            ++checked;
+
+    constexpr int kMaxTrayZmanim = 5;
+    bool atMax = (checked >= kMaxTrayZmanim);
+
+    // Show or hide the warning label
+    if (m_statTrayTipMaxMsg.GetSafeHwnd())
+        m_statTrayTipMaxMsg.ShowWindow(atMax ? SW_SHOW : SW_HIDE);
+
+    // Enable/disable unchecked items
+    for (int i = 0; i < kTrayTooltipZmanCount; ++i)
+    {
+        if (!m_chkTrayTooltipZmanim[i].GetSafeHwnd()) continue;
+        if (m_chkTrayTooltipZmanim[i].GetCheck() != BST_CHECKED)
+            m_chkTrayTooltipZmanim[i].EnableWindow(!atMax);
+    }
+    for (int i = 0; i < kTrayTooltipCustomZmanCount; ++i)
+    {
+        if (!m_chkTrayTooltipCustomZmanim[i].GetSafeHwnd()) continue;
+        if (m_chkTrayTooltipCustomZmanim[i].GetCheck() != BST_CHECKED)
+            m_chkTrayTooltipCustomZmanim[i].EnableWindow(!atMax);
+    }
+}
+
 void COptionsDlg::UpdateNotificationControls()
 {
     bool enableZmanim = m_cmbNotifyZmanim.GetSafeHwnd() && m_cmbNotifyZmanim.GetCurSel() > 0;
@@ -3134,24 +3275,36 @@ void COptionsDlg::ReadControlsIntoResult()
         m_result.showBeHaB          = (m_chkShowBeHaB.GetCheck()      == BST_CHECKED);
         m_result.showChatzosOnBeHaB = (m_chkChatzosOnBeHaB.GetCheck() == BST_CHECKED);
     }
-    m_result.customAlotMode = (m_radAlotMinutes.GetCheck() == BST_CHECKED) ? 1
-        : (m_radAlotZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
-    m_result.customMisheyakirMode = (m_radMisheyakirMinutes.GetCheck() == BST_CHECKED) ? 1
-        : (m_radMisheyakirZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
-    m_result.customSofZmanMode = (m_radSofZmanMinutes.GetCheck() == BST_CHECKED) ? 1
-        : (m_radSofZmanZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
-    m_result.customTzeitMode = (m_radTzeitMinutes.GetCheck() == BST_CHECKED) ? 1
-        : (m_radTzeitZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
+    // v0.8.82 — read from new degrees checkbox + minutes mode dropdown
+    if (m_chkAlotCustomDeg.GetSafeHwnd() && m_chkAlotCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customAlotMode = 0;  // degrees
+    else
+        m_result.customAlotMode = (m_cmbAlotMinutesMode.GetSafeHwnd() && m_cmbAlotMinutesMode.GetCurSel() == 1) ? 2 : 1;
+    m_result.customAlotDegreesValue = GetEditValue(m_editCustomAlotDeg, 16.1);
+    m_result.customAlotValue = GetEditValue(m_editCustomAlot, 72.0);
+
+    if (m_chkMishCustomDeg.GetSafeHwnd() && m_chkMishCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customMisheyakirMode = 0;
+    else
+        m_result.customMisheyakirMode = (m_cmbMishMinutesMode.GetSafeHwnd() && m_cmbMishMinutesMode.GetCurSel() == 1) ? 2 : 1;
+    m_result.customMisheyakirDegreesValue = GetEditValue(m_editCustomMishDeg, 10.2);
+    m_result.customMisheyakirValue = GetEditValue(m_editCustomMisheyakir, 50.0);
+
+    if (m_chkSofCustomDeg.GetSafeHwnd() && m_chkSofCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customSofZmanMode = 0;
+    else
+        m_result.customSofZmanMode = (m_cmbSofMinutesMode.GetSafeHwnd() && m_cmbSofMinutesMode.GetCurSel() == 1) ? 2 : 1;
+    m_result.customSofZmanDegreesValue = GetEditValue(m_editCustomSofDeg, 16.1);
+    m_result.customSofZmanValue = GetEditValue(m_editCustomSofZman, 72.0);
+
+    if (m_chkTzeitCustomDeg.GetSafeHwnd() && m_chkTzeitCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customTzeitMode = 0;
+    else
+        m_result.customTzeitMode = (m_cmbTzeitMinutesMode.GetSafeHwnd() && m_cmbTzeitMinutesMode.GetCurSel() == 1) ? 2 : 1;
+    m_result.customTzeitDegreesValue = GetEditValue(m_editCustomTzeitDeg, 8.5);
+    m_result.customTzeitValue = GetEditValue(m_editCustomTzeit, 42.0);
 
     CString customValue;
-    m_editCustomAlot.GetWindowText(customValue);
-    m_result.customAlotValue = max(0.1, _wtof(customValue));
-    m_editCustomMisheyakir.GetWindowText(customValue);
-    m_result.customMisheyakirValue = max(0.1, _wtof(customValue));
-    m_editCustomSofZman.GetWindowText(customValue);
-    m_result.customSofZmanValue = max(0.0, _wtof(customValue));
-    m_editCustomTzeit.GetWindowText(customValue);
-    m_result.customTzeitValue = max(0.1, _wtof(customValue));
 
     CString candle;
     m_cmbCandleMinutes.GetWindowText(candle);
@@ -3277,6 +3430,8 @@ void COptionsDlg::ReadControlsIntoResult()
         m_editCustomEndFast.GetWindowText(customValue);
         m_result.customEndFastValue = max(0.0, _wtof(customValue));
     }
+    if (m_cmbEndFastMinuteMode.GetSafeHwnd())
+        m_result.customEndFastMinuteMode = max(0, min(1, m_cmbEndFastMinuteMode.GetCurSel()));
     if ((v = pickedIndex(m_radTzaisPreset)) >= 0)
     {
         m_result.customTzeitPreset = v;

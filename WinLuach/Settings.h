@@ -75,6 +75,14 @@ struct ReminderRule
 // APP SETTINGS STRUCT
 // Holds all user-configurable preferences.
 // =============================================================================
+// CHANGELOG (Settings.h):
+// v0.8.82 - Added customEndFastMinuteMode (0=fixed, 1=shaah zmanit) for the
+//           custom End-of-Fast value.
+//         - Added per-zman separate degrees values: customAlotDegreesValue,
+//           customMisheyakirDegreesValue, customSofZmanDegreesValue,
+//           customTzeitDegreesValue.  customXValue fields now store the
+//           minutes value; degrees have their own field.
+// =============================================================================
 
 struct AppSettings
 {
@@ -183,14 +191,21 @@ struct AppSettings
     bool         showChatzosOnBeHaB  = false; // show chatzos on BeHaB cells (requires showBeHaB)
 
     // --- Zmanim display ---
-    int          customAlotMode = 0;         // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
-    double       customAlotValue = 16.1;
-    int          customMisheyakirMode = 0;   // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
-    double       customMisheyakirValue = 10.2;
-    int          customSofZmanMode = 0;      // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes; value 0 means netz-to-shkiah
-    double       customSofZmanValue = -1.0;  // -1 migrates from legacy zmanimShita
-    int          customTzeitMode = 0;        // 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
-    double       customTzeitValue = 8.5;
+    // customXMode: 0=degrees, 1=fixed minutes, 2=shaah zmanit minutes
+    // customXValue: minutes value (used when mode=1 or 2)
+    // customXDegreesValue: degrees value (used when mode=0; defaults to shita default)
+    int          customAlotMode = 0;
+    double       customAlotValue = 72.0;       // minutes value for mode 1/2
+    double       customAlotDegreesValue = 16.1; // degrees value for mode 0 (v0.8.82)
+    int          customMisheyakirMode = 0;
+    double       customMisheyakirValue = 50.0;       // minutes value for mode 1/2
+    double       customMisheyakirDegreesValue = 10.2; // degrees value for mode 0 (v0.8.82)
+    int          customSofZmanMode = 0;      // value 0 means netz-to-shkiah
+    double       customSofZmanValue = -1.0;  // -1 migrates from legacy zmanimShita (minutes for mode 1/2)
+    double       customSofZmanDegreesValue = 16.1; // degrees value for mode 0 (v0.8.82)
+    int          customTzeitMode = 0;
+    double       customTzeitValue = 42.0;        // minutes value for mode 1/2
+    double       customTzeitDegreesValue = 8.5;  // degrees value for mode 0 (v0.8.82)
 
     // --- Zmanim bar (which zmanim show in the bottom bar) ---
     uint32_t     zmanimBarMask = 0xFFFFFFFFu;  // bit per zman, see kZmanimBarLabels
@@ -202,7 +217,8 @@ struct AppSettings
     double       customMinchaGedolaValue  = 30.0;  // fixed minutes after chatzos when preset=custom
     double       customMinchaKetanaValue  = 570.0; // zmanis minutes after hanetz when preset=custom
     double       customPlagValue          = 645.0; // zmanis minutes after hanetz when preset=custom
-    double       customEndFastValue       = 27.0;  // fixed minutes after shkiah when preset=custom
+    double       customEndFastValue       = 27.0;  // minutes after shkiah when preset=custom
+    int          customEndFastMinuteMode  = 0;     // v0.8.82: 0=fixed minutes, 1=shaah zmanit minutes
     // --- Per-sub-tab custom Sof Zman MA vs GRA (in addition to existing customSofZman*) ---
     int          customSofZmanMaPreset    = 0;   // 0=90 min as degrees, 1=fixed 72 min, 2=72 min as 16.1 deg, 3=custom
     int          customSofZmanGraPreset   = 0;   // 0=90 min as degrees, 1=fixed 72 min, 2=72 min as 16.1 deg, 3=custom
