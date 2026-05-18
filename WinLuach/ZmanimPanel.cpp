@@ -106,8 +106,8 @@ void CZmanimPanel::OnPaint()
 
     uint32_t mask = m_pFrame->m_zmanimBarMask;
     int maShita = m_pFrame->m_zmanimShita; // 0=GRA,1=MA72,2=MA90
-    TimeOfDay sofShemaMaCustom  = (maShita == 2) ? z.sofShema_MA90  : z.sofShema_MA72;
-    TimeOfDay sofTefMaCustom    = (maShita == 2) ? z.sofTefilla_MA90 : z.sofTefilla_MA72;
+    TimeOfDay sofShemaMaCustom  = d.sofShema;
+    TimeOfDay sofTefMaCustom    = d.sofTefilla;
 
     // End-of-Fast time: shkia + 27 min for R' Tukaccinsky, or tzeit_MA72 for
     // R' Moshe Feinstein.  Picked by customEndFastPreset.
@@ -128,11 +128,11 @@ void CZmanimPanel::OnPaint()
     pushIf(3,  kZmanimBarLabels[3],       z.sofShema_MA72);
     pushIf(4,  kZmanimBarLabels[4],       z.sofShema_MA90);
     pushIf(5,  kZmanimBarLabels[5],       z.sofShema_GRA);
-    pushIf(6,  kZmanimBarLabels[6],       sofShemaMaCustom);
+    pushIf(6,  d.sofShemaLabel.c_str(),    sofShemaMaCustom);
     pushIf(7,  kZmanimBarLabels[7],       z.sofTefilla_MA72);
     pushIf(8,  kZmanimBarLabels[8],       z.sofTefilla_MA90);
     pushIf(9,  kZmanimBarLabels[9],       z.sofTefilla_GRA);
-    pushIf(10, kZmanimBarLabels[10],      sofTefMaCustom);
+    pushIf(10, d.sofTefillaLabel.c_str(),  sofTefMaCustom);
     pushIf(11, kZmanimBarLabels[11],      z.chatzot);
     pushIf(12, kZmanimBarLabels[12],      d.minchaGedola);
     pushIf(13, kZmanimBarLabels[13],      d.minchaKetana);
