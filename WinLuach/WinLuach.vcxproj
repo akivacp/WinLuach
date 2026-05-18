@@ -162,6 +162,7 @@
     <ClInclude Include="Settings.h" />
     <ClInclude Include="SidebarPanel.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="ReminderEngine.h" />
     <ClInclude Include="UpdateChecker.h" />
     <ClInclude Include="Version.h" />
     <ClInclude Include="WinLuachApp.h" />
@@ -180,6 +181,7 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="ReminderEngine.cpp" />
     <ClCompile Include="Settings.cpp" />
     <ClCompile Include="SidebarPanel.cpp" />
     <ClCompile Include="UpdateChecker.cpp" />

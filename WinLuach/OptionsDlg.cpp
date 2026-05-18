@@ -84,6 +84,8 @@
 #define IDC_OPT_ALOT_SHITA      338
 #define IDC_OPT_TZEIT_SHITA     339
 #define IDC_OPT_CHATZOS_FASTS   340
+#define IDC_OPT_SHOW_BEHAB      411   // v0.8.78
+#define IDC_OPT_CHATZOS_BEHAB   412   // v0.8.78
 #define IDC_OPT_TAB             341
 #define IDC_OPT_COLOR_RESTORE   342
 #define IDC_OPT_ALOT_VALUE      343
@@ -145,6 +147,10 @@
 #define IDC_OPT_RAD_WINLUACHTOAST  521
 #define IDC_OPT_TOAST_DURATION     522
 #define IDC_OPT_TOAST_UNIT         523
+// Daily reminder time (for day/week/month offset rules) — v0.8.71
+#define IDC_OPT_REMIND_DAILY_HOUR  530
+#define IDC_OPT_REMIND_DAILY_MIN   531
+#define IDC_OPT_REMIND_DAILY_AMPM  532
 
 enum ColorPreviewKind
 {
@@ -741,7 +747,7 @@ public:
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 360; b.t.cy = 205;
+        b.t.cx = 360; b.t.cy = 235;  // expanded for anchor row (v0.8.71)
         wcscpy_s(b.title, L"Reminder");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -818,6 +824,17 @@ protected:
         m_enabled.SetFont(pF);
         m_enabled.SetCheck(rule.enabled ? BST_CHECKED : BST_UNCHECKED);
 
+        // Anchor row (v0.8.71) — only meaningful for Holiday and Parsha kinds;
+        // shown for all kinds to keep the UI simple.
+        label(L"Anchor:", 10, 140, 70);
+        m_anchor.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(82, 140, W - 10, 260), this, 6108);
+        m_anchor.SetFont(pF);
+        m_anchor.AddString(L"Tzais (custom)");   // 0 — default
+        m_anchor.AddString(L"Shkia");             // 1
+        m_anchor.AddString(L"Civil midnight");    // 2
+        m_anchor.SetCurSel(max(0, min(2, rule.anchor)));
+
         CButton* ok = new CButton;
         ok->Create(L"OK", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
             CRect(W - 146, H - 34, W - 78, H - 8), this, IDOK);
@@ -862,6 +879,7 @@ protected:
         m_offsetUnit.GetLBText(unitSel, unit);
         rule.offsets = std::wstring((LPCWSTR)amount) + L" " + std::wstring((LPCWSTR)unit);
         rule.afterEvent = (m_direction.GetCurSel() == 1); // 0=Before, 1=After
+        rule.anchor     = max(0, m_anchor.GetCurSel());   // 0=Tzais, 1=Shkia, 2=Midnight
         rule.style = max(0, m_style.GetCurSel());
         rule.enabled = (m_enabled.GetCheck() == BST_CHECKED);
         if (rule.target.empty() || amount.IsEmpty()) {
@@ -956,6 +974,7 @@ private:
     CComboBox m_kind, m_target, m_style;
     CComboBox m_offsetUnit;
     CComboBox m_direction;  // Before / After (v0.8.70)
+    CComboBox m_anchor;     // Tzais / Shkia / Civil midnight (v0.8.71)
     CEdit m_offsetAmount;
     CButton m_enabled;
 };
@@ -1122,6 +1141,7 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_APPLY,           &COptionsDlg::OnApply)
     ON_BN_CLICKED(IDC_OPT_DISABLE_AUTOUPDATE, &COptionsDlg::OnDisableAutoUpdate)
     ON_BN_CLICKED(IDC_OPT_CHECK_NOW,       &COptionsDlg::OnCheckNow)
+    ON_BN_CLICKED(IDC_OPT_SHOW_BEHAB,     &COptionsDlg::OnShowBeHaBChanged) // v0.8.78
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_WM_SIZE()
@@ -1377,6 +1397,31 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(240, y, 395, y + 20), this, IDC_OPT_MISHNA); track(m_pageMonth, &m_chkMishna); y += 24;
     m_chkTanach.Create(L"Tanach yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(240, y, 395, y + 20), this, IDC_OPT_TANACH); track(m_pageMonth, &m_chkTanach);
+
+    // --- v0.8.78: Fast Days group (moved from Zmanim tab + new BeHaB options) ---
+    y = 164;
+    mkGroup(m_pageMonth, L"Fast Days", 14, y, W - 28, 96); y += 22;
+
+    // Chatzos on fast days (moved from Zmanim tab)
+    m_chkChatzosOnFasts.Create(L"Show chatzos on fast-day cells",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_FASTS);
+    track(m_pageMonth, &m_chkChatzosOnFasts);
+    y += 26;
+
+    // BeHaB (Mon-Thu-Mon of Cheshvan / Iyar)
+    m_chkShowBeHaB.Create(L"Show BeHaB days  (Mon-Thu-Mon after Sukkot & Pesach)",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 20), this, IDC_OPT_SHOW_BEHAB);
+    track(m_pageMonth, &m_chkShowBeHaB);
+    y += 26;
+
+    // Chatzos on BeHaB — grayed out when BeHaB is off
+    m_chkChatzosOnBeHaB.Create(L"  └ Show chatzos on BeHaB cells",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_BEHAB);
+    track(m_pageMonth, &m_chkChatzosOnBeHaB);
+
     y = 138;
 
     mkGroup(m_pageGeneral, L"Holiday Schedule", 14, y, W - 28, 54); y += 22;
@@ -1516,8 +1561,7 @@ BOOL COptionsDlg::OnInitDialog()
     mkStatic(m_pageZmanim, L"Candle lighting", 28, y, 105, 22);
     initCombo(m_pageZmanim, m_cmbCandleMinutes, 138, y - 1, 70, IDC_OPT_CANDLE,
         { L"15", L"18", L"21", L"22", L"30", L"40" }, 1);
-    m_chkChatzosOnFasts.Create(L"Show chatzos on fast-day cells", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(220, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_FASTS); track(m_pageZmanim, &m_chkChatzosOnFasts);
+    // m_chkChatzosOnFasts moved to Month View tab (v0.8.78)
     y += 34;
     mkStatic(m_pageZmanim, L"Mincha and shaah zmanis shita:", 28, y, 300, 20); y += 24;
     m_radGRA.Create(L"GRA / Baal HaTanya", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
@@ -1760,6 +1804,30 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(28, y, 240, y + 26), this, IDC_OPT_ADV_REMINDERS);
     track(m_pageNotifications, &m_btnAdvancedReminders);
+
+    // Daily reminder time — fires when an offset rule uses day/week/month units (v0.8.71)
+    y += 34;
+    mkStatic(m_pageNotifications, L"Daily reminder time:", 28, y + 3, 140, 22);
+    m_cmbReminderDailyHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(170, y, 210, y + 140), this, IDC_OPT_REMIND_DAILY_HOUR);
+    m_cmbReminderDailyMin.Create( WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(216, y, 256, y + 140), this, IDC_OPT_REMIND_DAILY_MIN);
+    m_cmbReminderDailyAmpm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+        CRect(262, y, 302, y + 140), this, IDC_OPT_REMIND_DAILY_AMPM);
+    FillClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm);
+    // Convert stored integer hour/minute to "H:MM AM/PM" string for SetClockCombos
+    {
+        int h = m_current.reminderDailyHour;
+        int m = m_current.reminderDailyMinute;
+        bool pm = (h >= 12);
+        wchar_t buf[16];
+        _snwprintf_s(buf, _TRUNCATE, L"%d:%02d %s", (h % 12 == 0 ? 12 : h % 12), m, pm ? L"PM" : L"AM");
+        SetClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm,
+            buf, h, m);
+    }
+    track(m_pageNotifications, &m_cmbReminderDailyHour);
+    track(m_pageNotifications, &m_cmbReminderDailyMin);
+    track(m_pageNotifications, &m_cmbReminderDailyAmpm);
 
     // =========================================================================
     // v0.8.0 - Zmanim Bar tab: one checkbox per kZmanimBarLabels entry,
@@ -2020,6 +2088,12 @@ BOOL COptionsDlg::OnInitDialog()
     m_chkMishna.SetCheck(m_current.showMishnaYomit ? BST_CHECKED : BST_UNCHECKED);
     m_chkTanach.SetCheck(m_current.showTanachYomi ? BST_CHECKED : BST_UNCHECKED);
     m_chkChatzosOnFasts.SetCheck(m_current.showChatzosOnFasts ? BST_CHECKED : BST_UNCHECKED);
+    if (m_chkShowBeHaB.GetSafeHwnd())
+    {
+        m_chkShowBeHaB.SetCheck(m_current.showBeHaB ? BST_CHECKED : BST_UNCHECKED);
+        m_chkChatzosOnBeHaB.SetCheck(m_current.showChatzosOnBeHaB ? BST_CHECKED : BST_UNCHECKED);
+        m_chkChatzosOnBeHaB.EnableWindow(m_current.showBeHaB);
+    }
     m_chkShowTrayIcon.SetCheck(m_current.showTrayIcon ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeToTray.SetCheck(m_current.minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
@@ -2173,7 +2247,12 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_radMA90,           L"Use Magen Avraham with 90-minute shaah zmanit before sunrise/after sunset (default)");
     m_tooltip.AddTool(&m_cmbAlotShita,      L"Preset method for calculating Alos HaShachar (dawn)");
     m_tooltip.AddTool(&m_cmbTzeitShita,     L"Preset method for calculating Tzeis HaKochavim (nightfall)");
-    m_tooltip.AddTool(&m_chkChatzosOnFasts, L"Show Chatzos time on public fast day calendar cells");
+    m_tooltip.AddTool(&m_chkChatzosOnFasts,    L"Show Chatzos time on public fast day calendar cells");
+    if (m_chkShowBeHaB.GetSafeHwnd())
+    {
+        m_tooltip.AddTool(&m_chkShowBeHaB,      L"Highlight BeHaB days (Mon-Thu-Mon of Cheshvan and Iyar) with fast-day cell color");
+        m_tooltip.AddTool(&m_chkChatzosOnBeHaB, L"Show Chatzos time on BeHaB day calendar cells (requires Show BeHaB days)");
+    }
     m_tooltip.AddTool(&m_cmbCandleMinutes,  L"Minutes before sunset for Shabbos/Yom Tov candle lighting");
     m_tooltip.AddTool(&m_editCustomAlot,    L"Custom value for Alos HaShachar (degrees below horizon or minutes)");
     m_tooltip.AddTool(&m_radAlotDegrees,    L"Express Alos as degrees below the horizon");
@@ -2976,6 +3055,20 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     return CDialog::OnCommand(wParam, lParam);
 }
 
+// v0.8.78 — Enable/disable the "Show chatzos on BeHaB" checkbox based on
+// whether the "Show BeHaB days" master checkbox is currently checked.
+void COptionsDlg::OnShowBeHaBChanged()
+{
+    if (m_chkShowBeHaB.GetSafeHwnd() && m_chkChatzosOnBeHaB.GetSafeHwnd())
+    {
+        bool behabOn = (m_chkShowBeHaB.GetCheck() == BST_CHECKED);
+        m_chkChatzosOnBeHaB.EnableWindow(behabOn ? TRUE : FALSE);
+        if (!behabOn)
+            m_chkChatzosOnBeHaB.SetCheck(BST_UNCHECKED);
+    }
+    SetDirty(true);
+}
+
 void COptionsDlg::UpdateNotificationControls()
 {
     bool enableZmanim = m_cmbNotifyZmanim.GetSafeHwnd() && m_cmbNotifyZmanim.GetCurSel() > 0;
@@ -3036,6 +3129,11 @@ void COptionsDlg::ReadControlsIntoResult()
             : max(0, min(4, m_current.tzeitShita));
     }
     m_result.showChatzosOnFasts = (m_chkChatzosOnFasts.GetCheck() == BST_CHECKED);
+    if (m_chkShowBeHaB.GetSafeHwnd())
+    {
+        m_result.showBeHaB          = (m_chkShowBeHaB.GetCheck()      == BST_CHECKED);
+        m_result.showChatzosOnBeHaB = (m_chkChatzosOnBeHaB.GetCheck() == BST_CHECKED);
+    }
     m_result.customAlotMode = (m_radAlotMinutes.GetCheck() == BST_CHECKED) ? 1
         : (m_radAlotZmanis.GetCheck() == BST_CHECKED) ? 2 : 0;
     m_result.customMisheyakirMode = (m_radMisheyakirMinutes.GetCheck() == BST_CHECKED) ? 1
@@ -3102,6 +3200,15 @@ void COptionsDlg::ReadControlsIntoResult()
       m_result.winLuachToastDuration = max(1, _wtoi(dur)); }
     m_result.winLuachToastDurationUnit = max(0, min(4, m_cmbToastDurationUnit.GetSafeHwnd() ?
         m_cmbToastDurationUnit.GetCurSel() : 0));
+    // Daily reminder time (v0.8.71) — read H:MM AM/PM string and convert to hour24 + minute
+    if (m_cmbReminderDailyHour.GetSafeHwnd())
+    {
+        std::wstring ts = ReadClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm);
+        int h24 = 9, min0 = 0;
+        ParseClockText(ts, h24, min0);
+        m_result.reminderDailyHour   = max(0, min(23, h24));
+        m_result.reminderDailyMinute = max(0, min(59, min0));
+    }
 
     // v0.8.0 - Zmanim bar mask: one bit per checkbox.
     uint32_t mask = 0;
