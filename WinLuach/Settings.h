@@ -9,6 +9,9 @@
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.70 - Added afterEvent bool to ReminderRule so reminders can fire after
+//           (not just before) their trigger event. Persisted as
+//           advancedReminderN_afterEvent in settings.json.
 // v0.1.0 - Initial file. Declares AppSettings struct and
 //          SaveSettings / LoadSettings functions.
 // v0.8.0 - Added zmanim bar mask + per-sub-tab preset fields.
@@ -54,10 +57,11 @@ struct UserEventEntry
 struct ReminderRule
 {
     bool enabled = true;
-    int style = 1; // 0=off, 1=toast, 2=popup, 3=both
-    std::wstring kind;    // Zman, Parsha, Holiday, Personal Event
-    std::wstring target;  // e.g. Shkiah, Emor, Pesach
-    std::wstring offsets; // e.g. "15 minutes; 1 day"
+    int style = 1;         // 0=off, 1=toast, 2=popup, 3=both
+    std::wstring kind;     // Zman, Parsha, Holiday, Personal Event
+    std::wstring target;   // e.g. Shkiah, Emor, Pesach
+    std::wstring offsets;  // e.g. "15 minutes; 1 day"
+    bool afterEvent = false; // false=notify before trigger, true=notify after
 };
 
 // =============================================================================

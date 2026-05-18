@@ -5,6 +5,22 @@
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.70 - Advanced Reminders dialog:
+//           (a) Added Before/After direction dropdown — reminders can now fire
+//               either before OR after their trigger (stored as afterEvent in
+//               ReminderRule; label changed from "Before:" to "Offset:").
+//           (b) Expanded Holiday targets: Rosh Chodesh (Day 1 & 2), Chol HaMoed
+//               Sukkos/Pesach, all fast days, all minor holidays (Pesach Sheini,
+//               Tu B'Av, Purim Katan, Shushan Purim, Hoshana Raba, Isru Chag,
+//               Simchas Torah), Israeli holidays (Yom HaShoah, Yom Hazikaron,
+//               Yom HaAtzmaut, Yom Yerushalayim).
+//           (c) Added 7 custom zmanim to Zman targets (Custom Alos, Custom Sof
+//               Shema, Custom Sof Tefilla, Custom Mincha Gedola, Custom Mincha
+//               Ketana, Custom Plag HaMincha, Custom Tzeit).
+// v0.8.69 - Wired OnCheckNow() (Options → Updates tab "Check Now" button) to
+//           CMainFrame::CheckForUpdates(). Previously showed a placeholder
+//           "coming soon" message. Now runs the full update flow: GitHub API
+//           fetch, version compare, download, and auto-replace + restart.
 // v0.1.0 - Initial implementation.
 // v0.1.1 - Fixed: use InitModalIndirect + in-memory template.
 // v0.1.2 - Fixed CreateEx call to use 10 arguments (removed 2 extra nullptrs).
@@ -25,6 +41,7 @@
 #include "pch.h"
 #include "OptionsDlg.h"
 #include "MainFrame.h"
+#include "UpdateChecker.h"
 #include "Resource.h"
 #include "ZmanimPanel.h"
 #include <cmath>
@@ -765,7 +782,8 @@ protected:
         FillTargets();
         m_target.SetWindowText(rule.target.c_str());
 
-        label(L"Before:", 10, 76, 70);
+        // "Offset:" label (replaces the old hardcoded "Before:")
+        label(L"Offset:", 10, 76, 70);
         CString offsetAmount;
         int offsetUnit = 0;
         ParseReminderOffsetText(rule.offsets, offsetAmount, offsetUnit);
@@ -773,12 +791,20 @@ protected:
             CRect(82, 76, 136, 98), this, 6103);
         m_offsetAmount.SetFont(pF);
         m_offsetAmount.SetWindowText(offsetAmount);
+        // Unit dropdown — narrowed to make room for the direction dropdown
         m_offsetUnit.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(145, 76, W - 10, 210), this, 6106);
+            CRect(145, 76, 240, 210), this, 6106);
         m_offsetUnit.SetFont(pF);
         for (const wchar_t* unit : { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" })
             m_offsetUnit.AddString(unit);
         m_offsetUnit.SetCurSel(max(0, min(5, offsetUnit)));
+        // Before / After direction dropdown (v0.8.70)
+        m_direction.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(248, 76, W - 10, 200), this, 6107);
+        m_direction.SetFont(pF);
+        m_direction.AddString(L"Before");
+        m_direction.AddString(L"After");
+        m_direction.SetCurSel(rule.afterEvent ? 1 : 0);
 
         label(L"Notify:", 10, 108, 70);
         m_style.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -835,6 +861,7 @@ protected:
         CString unit;
         m_offsetUnit.GetLBText(unitSel, unit);
         rule.offsets = std::wstring((LPCWSTR)amount) + L" " + std::wstring((LPCWSTR)unit);
+        rule.afterEvent = (m_direction.GetCurSel() == 1); // 0=Before, 1=After
         rule.style = max(0, m_style.GetCurSel());
         rule.enabled = (m_enabled.GetCheck() == BST_CHECKED);
         if (rule.target.empty() || amount.IsEmpty()) {
@@ -865,8 +892,27 @@ private:
                 L"Pinchas", L"Matos", L"Masei", L"Devarim", L"Vaeschanan", L"Eikev", L"Reeh",
                 L"Shoftim", L"Ki Seitzei", L"Ki Savo", L"Nitzavim", L"Vayelech", L"Haazinu" });
         else if (kind == L"Holiday")
-            addMany({ L"Rosh Hashana", L"Yom Kippur", L"Sukkos", L"Shemini Atzeres", L"Chanukah",
-                L"Tu BiShvat", L"Purim", L"Pesach", L"Lag BaOmer", L"Shavuos", L"Tisha B'Av" });
+            // v0.8.70: expanded to include all holiday categories from HolidayEngine
+            addMany({
+                // --- Major Yom Tov ---
+                L"Rosh Hashana", L"Yom Kippur",
+                L"Sukkos", L"Shemini Atzeres", L"Simchas Torah",
+                L"Pesach", L"Shavuos",
+                // --- Chol HaMoed ---
+                L"Chol HaMoed Sukkos", L"Chol HaMoed Pesach", L"Hoshana Raba",
+                // --- Rosh Chodesh ---
+                L"Rosh Chodesh (Day 1)", L"Rosh Chodesh (Day 2)",
+                // --- Fast Days ---
+                L"Fast of Gedaliah", L"Fast of 10 Teves", L"Fast of Esther",
+                L"Fast of 17 Tammuz", L"Tisha B'Av",
+                // --- Minor Holidays ---
+                L"Chanukah", L"Tu BiShvat", L"Purim", L"Shushan Purim",
+                L"Purim Katan", L"Shushan Purim Katan",
+                L"Pesach Sheini", L"Lag BaOmer", L"Tu B'Av",
+                L"Isru Chag",
+                // --- Israeli / Modern Holidays ---
+                L"Yom HaShoah", L"Yom Hazikaron", L"Yom HaAtzmaut", L"Yom Yerushalayim",
+            });
         else if (kind == L"Personal Event")
             addMany({ L"Any personal event", L"Birthday", L"Anniversary", L"Yahrzeit", L"Custom" });
         else if (kind == L"Shmita Year")
@@ -881,7 +927,9 @@ private:
             addMany({ L"Birchas Hachama (April 8)", L"1 Nissan of Cycle Year",
                       L"Start of New Solar Cycle" });
         else
+            // v0.8.70: added 7 custom zmanim entries at the end
             addMany({
+                // Standard / preset zmanim
                 L"Alos (GRA 16.1 deg)", L"Alos (MA 72)", L"Alos (MA 90)",
                 L"Alos (MA 72 proportional)", L"Alos (MA 90 proportional)",
                 L"Misheyakir (10.2 deg)", L"Misheyakir (11.5 deg)",
@@ -895,7 +943,11 @@ private:
                 L"Shkiah",
                 L"Tzeis (GRA 8.5 deg)", L"Tzeis (MA 72)", L"Tzeis (MA 90)",
                 L"Tzeis (MA 72 proportional)", L"Tzeis (MA 90 proportional)",
-                L"Candle Lighting", L"Fast start/end", L"Eat chametz", L"Burn chametz"
+                L"Candle Lighting", L"Fast start/end", L"Eat chametz", L"Burn chametz",
+                // Custom zmanim (use the user's chosen shita from Settings → Zmanim)
+                L"Custom Alos", L"Custom Sof Shema", L"Custom Sof Tefilla",
+                L"Custom Mincha Gedola", L"Custom Mincha Ketana",
+                L"Custom Plag HaMincha", L"Custom Tzeit"
             });
         if (!cur.IsEmpty()) m_target.SetWindowText(cur);
     }
@@ -903,6 +955,7 @@ private:
     int m_nextId = 0;
     CComboBox m_kind, m_target, m_style;
     CComboBox m_offsetUnit;
+    CComboBox m_direction;  // Before / After (v0.8.70)
     CEdit m_offsetAmount;
     CButton m_enabled;
 };
@@ -3271,10 +3324,15 @@ void COptionsDlg::OnDisableAutoUpdate()
 
 void COptionsDlg::OnCheckNow()
 {
-    // Immediately check for updates
-    // This is a placeholder that will be integrated with the UpdateChecker
-    AfxMessageBox(L"Update check functionality coming soon!", MB_ICONINFORMATION);
-    SetDirty(true);
+    // v0.8.69 - Forward to CMainFrame::OnHelpCheckUpdates(), which owns the
+    // full update flow: fetch GitHub release, compare versions, offer download,
+    // and auto-replace + restart if the user accepts.
+    // MainFrame.h is already included so the cast is safe.
+    // If an update is accepted and the main frame calls DestroyWindow(),
+    // this modeless dialog is destroyed along with it automatically.
+    CMainFrame* pFrame = dynamic_cast<CMainFrame*>(AfxGetMainWnd());
+    if (pFrame)
+        pFrame->CheckForUpdates();
 }
 
 void COptionsDlg::OnManageCals()
