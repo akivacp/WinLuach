@@ -165,6 +165,30 @@ struct ZmanimResult
 };
 
 // =============================================================================
+// DISPLAY ZMANIM TIMES
+// Holds the user-shita-dependent ("custom") zmanim computed by
+// CMainFrame::BuildDisplayZmanim().  Defined here so ReminderEngine and other
+// translation units can use it without including MainFrame.h.
+// =============================================================================
+struct DisplayZmanimTimes
+{
+    TimeOfDay alot;
+    TimeOfDay misheyakir;
+    TimeOfDay sofShema;
+    TimeOfDay sofTefilla;
+    TimeOfDay minchaGedola;
+    TimeOfDay minchaKetana;
+    TimeOfDay plagMincha;
+    TimeOfDay tzeit;
+    double    shaahZmanit = 0.0;
+    std::wstring alotLabel;
+    std::wstring misheyakirLabel;
+    std::wstring sofShemaLabel;
+    std::wstring sofTefillaLabel;
+    std::wstring tzeitLabel;
+};
+
+// =============================================================================
 // MAIN CALCULATION FUNCTION
 // =============================================================================
 

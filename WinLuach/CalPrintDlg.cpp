@@ -795,14 +795,17 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
     DrawTextFit(pDC, locName, CRect(x0+W*72/100, y0, x0+W-8, y0+titleH), DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
 
     // ── Build active column list from bitmask ─────────────────────────────────
-    static const wchar_t* kColHdr[15] = {
+    // Bits 0-14: standard zmanim.  Bits 15-21: custom shita zmanim (v0.8.75).
+    static const wchar_t* kColHdr[22] = {
         L"Alos", L"Mishey.", L"Netz",
         L"Shma MA", L"Shma GRA", L"Tfla MA", L"Tfla GRA",
         L"Chatzos", L"Mn.Gd.", L"Mn.Kt.",
-        L"Plag", L"Candle", L"Shkia", L"Tzais", L"Sha'a"
+        L"Plag", L"Candle", L"Shkia", L"Tzais", L"Sha'a",
+        // custom shita (user's configured shita, marked with *)
+        L"Alos*", L"Shma*", L"Tfla*", L"Mn.Gd*", L"Mn.Kt*", L"Plag*", L"Tzais*"
     };
     std::vector<int> activeCols;
-    for (int i = 0; i < 15; i++)
+    for (int i = 0; i < 22; i++)
         if (colMask & (1u << i)) activeCols.push_back(i);
     int nc = (int)activeCols.size();
 
@@ -890,13 +893,20 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
             bool nextIsYT2    = false;
             for (const auto& ho : holsN) if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT2 = true; break; }
 
+            bool isCholHamoed2 = hasFlag2(HOLIDAY_CHOL_HAMOED);
             bool showCandle = (dow == FRIDAY)
                 || (!isIsrael && hasFlag2(HOLIDAY_YOM_TOV) && nextIsYT2)
-                || (dow != FRIDAY && dow != SHABBAT && (hasErev2 || erevYK));
+                || (dow != FRIDAY && dow != SHABBAT && (hasErev2 || erevYK))
+                || (dow != FRIDAY && dow != SHABBAT && !hasFlag2(HOLIDAY_YOM_TOV)
+                    && isCholHamoed2 && nextIsYT2);  // Hoshana Raba / last Chol HaMoed Pesach
             if (!showCandle)
                 z.candleLighting = TimeOfDay{};
-            else if (!isIsrael && hasFlag2(HOLIDAY_YOM_TOV) && nextIsYT2 && dow != FRIDAY)
-                z.candleLighting = z.tzeit_GRA;  // light at tzeis for 2nd day
+            else if (!isIsrael && hasFlag2(HOLIDAY_YOM_TOV) && nextIsYT2 && dow != FRIDAY) {
+                // 1st day of 2-day YT: light after custom Tzais (not GRA hardcoded)
+                DisplayZmanimTimes dzTmp = pFrame ? pFrame->BuildDisplayZmanim(g, z, dst) : DisplayZmanimTimes{};
+                z.candleLighting = dzTmp.tzeit.IsValid() ? dzTmp.tzeit : z.tzeit_GRA;
+            } else if (isCholHamoed2 && nextIsYT2 && dow != FRIDAY && dow != SHABBAT)
+                z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
         }
         else
             z.candleLighting = TimeOfDay{};
@@ -957,7 +967,11 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
             }
         }
 
-        // Time columns
+        // Build custom shita times for this day (bits 15-21, v0.8.75)
+        DisplayZmanimTimes dz = pFrame
+            ? pFrame->BuildDisplayZmanim(g, z, dst) : DisplayZmanimTimes{};
+
+        // Time columns (bits 0-14 = standard, bits 15-21 = custom shita)
         const TimeOfDay* kTimes[14] = {
             &z.alot_GRA,        &z.misheyakir_11,   &z.hanetz,
             &z.sofShema_MA72,   &z.sofShema_GRA,
@@ -966,6 +980,11 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
             &z.plagMincha_GRA,  &z.candleLighting,
             &z.shkia,           &z.tzeit_GRA
         };
+        // Custom shita times map: index 15-21 → dz fields
+        const TimeOfDay* kCustom[7] = {
+            &dz.alot, &dz.sofShema, &dz.sofTefilla,
+            &dz.minchaGedola, &dz.minchaKetana, &dz.plagMincha, &dz.tzeit
+        };
         pDC->SetTextColor(RGB(20,40,100));
         for (int c = 0; c < nc; c++)
         {
@@ -973,11 +992,19 @@ void DrawZmanimMonthPage(CDC* pDC, const CRect& rcPage,
             std::wstring ts;
             if (ci == 14)
             {
+                // Sha'a Zmanit
                 if (z.shaahZmanit_GRA > 0.0) {
                     int szMin = (int)round(z.shaahZmanit_GRA);
                     CString ss; ss.Format(L"%d:%02d", szMin/60, szMin%60);
                     ts = (LPCWSTR)ss;
                 }
+            }
+            else if (ci >= 15 && ci <= 21)
+            {
+                // Custom shita (bits 15-21)
+                const TimeOfDay* ct = kCustom[ci - 15];
+                if (ct && ct->IsValid())
+                    ts = FormatTime(*ct, use24hr);
             }
             else if (ci < 14 && kTimes[ci]->IsValid())
             {
@@ -2935,10 +2962,22 @@ BOOL CCalPrintDlg::OnInitDialog()
     CString sMonth, sYear;
     if (m_pFrame)
     {
-        sMonth.Format(L"Current month  (%s %d)",
-            GregorianMonthName(m_pFrame->m_viewMonth).c_str(),
-            m_pFrame->m_viewYear);
-        sYear.Format(L"Full year  (%d)", m_pFrame->m_viewYear);
+        // v0.8.75 — In Hebrew calendar mode show the Hebrew month name in the label
+        if (m_pFrame->m_hebrewMonthView)
+        {
+            bool leap = IsHebrewLeapYear(m_pFrame->m_viewHebrewYear);
+            sMonth.Format(L"Current month  (%s %d)",
+                HebrewMonthName(m_pFrame->m_viewHebrewMonth, leap).c_str(),
+                m_pFrame->m_viewHebrewYear);
+            sYear.Format(L"Full year  (%d)", m_pFrame->m_viewHebrewYear);
+        }
+        else
+        {
+            sMonth.Format(L"Current month  (%s %d)",
+                GregorianMonthName(m_pFrame->m_viewMonth).c_str(),
+                m_pFrame->m_viewYear);
+            sYear.Format(L"Full year  (%d)", m_pFrame->m_viewYear);
+        }
     }
     else
     {
