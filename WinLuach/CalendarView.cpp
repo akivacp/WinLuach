@@ -33,6 +33,8 @@ BEGIN_MESSAGE_MAP(CCalendarView, CWnd)
     ON_WM_KEYDOWN()
     ON_WM_ERASEBKGND()
     ON_WM_SIZE()
+    ON_WM_MOUSEWHEEL()
+    ON_WM_MOUSELEAVE()
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -400,6 +402,15 @@ COLORREF CCalendarView::GetCellColor(const CalCellData& cell,
         return m_pFrame->m_colorFastDayCell;
 
     if (GetDayOfWeek(g) == SHABBAT) return m_pFrame->m_colorShabbosCell;
+
+    // Hover highlight when date tracking is enabled
+    if (!isSelected && theApp.m_settings.dateTracking &&
+        m_hoverIdx >= 0 && m_hoverIdx < (int)m_cells.size() &&
+        g.year  == m_cells[m_hoverIdx].greg.year  &&
+        g.month == m_cells[m_hoverIdx].greg.month &&
+        g.day   == m_cells[m_hoverIdx].greg.day)
+        return RGB(215, 228, 248);
+
     return m_pFrame->m_colorNormalCell;
 }
 
@@ -575,6 +586,47 @@ void CCalendarView::OnMouseMove(UINT nFlags, CPoint pt)
             Invalidate(FALSE);
         }
     }
+
+    // Request WM_MOUSELEAVE so hover is cleared when the mouse exits
+    if (!m_mouseTracking)
+    {
+        TRACKMOUSEEVENT tme = { sizeof(tme) };
+        tme.dwFlags   = TME_LEAVE;
+        tme.hwndTrack = GetSafeHwnd();
+        TrackMouseEvent(&tme);
+        m_mouseTracking = true;
+    }
+
+    // Hover cell tracking (date tracking highlight + tooltip)
+    int idx = HitTest(pt);
+    if (idx != m_hoverIdx)
+    {
+        m_hoverIdx = idx;
+        if (theApp.m_settings.dateTracking)
+            Invalidate(FALSE);
+
+        EnsureTipInit();
+        if (m_calTip.GetSafeHwnd() && idx >= 0 && idx < (int)m_cells.size())
+        {
+            CString tipText(BuildHoverText(idx).c_str());
+            m_calTip.UpdateTipText(tipText, this);
+        }
+    }
+
+    // Relay mouse events to the tooltip so it can auto-show/hide
+    if (m_calTip.GetSafeHwnd())
+    {
+        MSG msg = {};
+        msg.hwnd    = GetSafeHwnd();
+        msg.message = WM_MOUSEMOVE;
+        msg.wParam  = nFlags;
+        msg.lParam  = MAKELPARAM(pt.x, pt.y);
+        msg.time    = GetMessageTime();
+        msg.pt      = pt;
+        ClientToScreen(&msg.pt);
+        m_calTip.RelayEvent(&msg);
+    }
+
     CWnd::OnMouseMove(nFlags, pt);
 }
 
@@ -683,6 +735,120 @@ void CCalendarView::OnRButtonDown(UINT nFlags, CPoint pt)
     }
 
     CWnd::OnRButtonDown(nFlags, pt);
+}
+
+// =============================================================================
+// KEYBOARD HANDLING
+// =============================================================================
+
+// =============================================================================
+// MOUSE WHEEL
+// =============================================================================
+
+// Scroll wheel moves the selected date by one week per tick.
+BOOL CCalendarView::OnMouseWheel(UINT /*nFlags*/, short zDelta, CPoint /*pt*/)
+{
+    if (!m_pFrame) return TRUE;
+    long jdn = GregorianToJDN(m_pFrame->m_selectedDate);
+    ClearMultiSelection();
+    m_pFrame->SelectDate(JDNToGregorian(jdn + (zDelta > 0 ? -7 : 7)));
+    return TRUE;
+}
+
+// =============================================================================
+// MOUSE LEAVE
+// =============================================================================
+
+void CCalendarView::OnMouseLeave()
+{
+    m_mouseTracking = false;
+    if (m_hoverIdx >= 0)
+    {
+        m_hoverIdx = -1;
+        if (theApp.m_settings.dateTracking)
+            Invalidate(FALSE);
+    }
+}
+
+// =============================================================================
+// TOOLTIP
+// =============================================================================
+
+BOOL CCalendarView::PreTranslateMessage(MSG* pMsg)
+{
+    if (m_calTip.GetSafeHwnd())
+        m_calTip.RelayEvent(pMsg);
+    return CWnd::PreTranslateMessage(pMsg);
+}
+
+void CCalendarView::EnsureTipInit()
+{
+    if (m_tipInit || !GetSafeHwnd()) return;
+    m_calTip.Create(this, TTS_ALWAYSTIP | TTS_NOPREFIX);
+    m_calTip.SetMaxTipWidth(230);
+    m_calTip.SetDelayTime(TTDT_INITIAL,  600);
+    m_calTip.SetDelayTime(TTDT_AUTOPOP, 9000);
+    m_calTip.SetDelayTime(TTDT_RESHOW,   200);
+    m_calTip.AddTool(this, L"");
+    m_tipInit = true;
+}
+
+std::wstring CCalendarView::BuildHoverText(int idx) const
+{
+    if (idx < 0 || idx >= (int)m_cells.size() || !m_pFrame)
+        return L"";
+
+    const CalCellData& c = m_cells[idx];
+    bool leap = IsHebrewLeapYear(c.hebrew.year);
+    std::wstring text;
+
+    // Day of week + civil date
+    text += DayOfWeekName(GetDayOfWeek(c.greg));
+    text += L"\r\n";
+    wchar_t buf[64];
+    swprintf_s(buf, L"%d %s %d",
+        c.greg.day,
+        GregorianMonthName(c.greg.month).c_str(),
+        c.greg.year);
+    text += buf;
+
+    // Hebrew date
+    text += L"\r\n";
+    swprintf_s(buf, L"%d %s %d",
+        c.hebrew.day,
+        HebrewMonthName(c.hebrew.month, leap).c_str(),
+        c.hebrew.year);
+    text += buf;
+
+    // Holidays
+    for (const auto& hol : c.holidays)
+    {
+        if (hol.flags & HOLIDAY_SHABBOS_MEVAR) continue;
+        text += L"\r\n" + hol.name;
+        if (!hol.subtitle.empty()) text += L" – " + hol.subtitle;
+    }
+
+    // Omer
+    if (c.omer.isOmerDay && !c.omer.text.empty())
+        text += L"\r\n" + c.omer.text;
+
+    // Parasha (only Shabbat has one)
+    if (GetDayOfWeek(c.greg) == SHABBAT)
+    {
+        ParashaInfo par = GetParasha(c.hebrew, m_pFrame->m_isIsrael);
+        if (!par.name.empty())
+        {
+            text += L"\r\nParasha: " + par.name;
+            if (par.isCombined && !par.name2.empty())
+                text += L" – " + par.name2;
+        }
+    }
+
+    // Candle lighting / Motzei Shabbos
+    if (!c.candleStr.empty()) text += L"\r\n" + c.candleStr;
+    if (!c.motzStr.empty())   text += L"\r\n" + c.motzStr;
+
+    return text;
 }
 
 // =============================================================================
