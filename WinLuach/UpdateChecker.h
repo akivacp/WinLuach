@@ -6,6 +6,17 @@
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.68 - Fixed GetCurrentVersion() returning "0.0.0". Runtime VerQueryValueW
+//           call with hardcoded locale 040904B0 fails when RC uses a different
+//           codepage. Replaced with compile-time WINLUACH_VERSION_TEXT constant.
+// v0.8.67 - Fixed asset URL parsing bug in FetchLatestRelease: rfind() searched
+//           backward for browser_download_url but that field follows the .exe name
+//           in the JSON; switched to find() (forward). Added HTTP status-code check
+//           and filled m_lastError for every previously-silent failure path.
+// v0.8.65 - Added LaunchUpdateAndExit(). Writes a hidden batch file that waits
+//           for the app to exit, renames the old exe, copies the new one into
+//           place, restarts WinLuach, then cleans up. Enables true one-click
+//           auto-update with no manual steps required.
 // v0.8.54 - Initial implementation. Fetches latest release from GitHub API,
 //           compares semantic versions, downloads updates, shows dialogs.
 // =============================================================================
@@ -75,6 +86,16 @@ public:
     int ShowUpdateDialog(const GitHubRelease& release,
                          const std::wstring& currentVersion,
                          CWnd* pParent = nullptr);
+
+    // Writes a hidden batch file that:
+    //   1. Waits for this process to exit
+    //   2. Renames the running exe to .old.exe (Windows allows renaming a running exe)
+    //   3. Copies newExePath to the original exe location
+    //   4. Launches the new exe
+    //   5. Cleans up the downloaded file, the .old.exe, and the batch itself
+    // After calling this, immediately call DestroyWindow() to close the app.
+    // Returns true if the batch was launched successfully.
+    static bool LaunchUpdateAndExit(const std::wstring& newExePath);
 
     // Gets any error message from the last operation
     std::wstring GetLastError() const { return m_lastError; }
