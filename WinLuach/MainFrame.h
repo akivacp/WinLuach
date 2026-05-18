@@ -159,6 +159,11 @@ public:
     // Creates the window — called from WinLuachApp::InitInstance
     BOOL Create();
 
+    // Runs the full update flow: fetch GitHub release, compare versions,
+    // offer download, and auto-replace + restart if the user accepts.
+    // Called by OnHelpCheckUpdates() (menu) and COptionsDlg::OnCheckNow() (Options dialog).
+    void CheckForUpdates();
+
     // Navigates to the previous month
     void PrevMonth();
 

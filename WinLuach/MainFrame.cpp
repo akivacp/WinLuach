@@ -1022,6 +1022,60 @@ protected:
             ZmanimResult z = CalculateZmanim(g, m_pFrame->m_location, isDst);
             z.candleLighting = AddMinutes(z.shkia, -theApp.m_settings.candleLightingMinutes);
             DisplayZmanimTimes dz = m_pFrame->BuildDisplayZmanim(g, z, isDst);
+
+            // v0.8.70 — Determine whether candle lighting actually occurs on this
+            // day, and which time to use.  Rules mirror GetCellZmanimLabels():
+            //   • Friday           → shkia - user offset (regular candle lighting)
+            //   • Erev YT / Erev YK on weekday → shkia - user offset
+            //   • Day 1 of 2-day YT (diaspora) → custom tzeit (not shkia-offset)
+            //   • Any other day    → no candle lighting (leave time invalid)
+            // This prevents the countdown from showing "Candle Lighting" on an
+            // ordinary Sunday through Thursday.
+            TimeOfDay candleCountdownTime; // invalid by default
+            {
+                DayOfWeek dow = GetDayOfWeek(g);
+                bool isFri  = (dow == FRIDAY);
+                bool isSat  = (dow == SHABBAT);
+                if (!isSat)
+                {
+                    HebrewDate heb = JDNToHebrew(GregorianToJDN(g));
+                    auto       hols = GetHolidays(heb, m_pFrame->m_isIsrael);
+                    bool hasYomTov = false, hasErev = false;
+                    for (const auto& ho : hols)
+                    {
+                        if (ho.flags & HOLIDAY_YOM_TOV) hasYomTov = true;
+                        if (ho.flags & HOLIDAY_EREV)    hasErev    = true;
+                    }
+                    bool isErevYK = (heb.month == TISHREI && heb.day == 9);
+
+                    // Peek at tomorrow to detect multi-day Yom Tov
+                    HebrewDate hNext   = JDNToHebrew(GregorianToJDN(g) + 1);
+                    auto       holsNext = GetHolidays(hNext, m_pFrame->m_isIsrael);
+                    bool nextIsYT = false;
+                    for (const auto& ho : holsNext)
+                        if (ho.flags & HOLIDAY_YOM_TOV) { nextIsYT = true; break; }
+
+                    if (isFri)
+                    {
+                        // Regular Friday candle lighting
+                        candleCountdownTime = z.candleLighting;
+                    }
+                    else if (hasErev || isErevYK)
+                    {
+                        // Erev Yom Tov / Erev Yom Kippur on a weekday
+                        candleCountdownTime = z.candleLighting;
+                    }
+                    else if (hasYomTov && !m_pFrame->m_isIsrael && nextIsYT)
+                    {
+                        // Day 1 of 2-day Yom Tov (diaspora): candle lighting is
+                        // after tzeis, not at shkia - offset (feature #5).
+                        // Use the user's custom tzeit from BuildDisplayZmanim().
+                        candleCountdownTime = dz.tzeit;
+                    }
+                    // All other days: candleCountdownTime stays invalid → not shown
+                }
+            }
+
             struct Item { const wchar_t* label; TimeOfDay time; };
             std::vector<Item> items = {
                 { L"Alos Hashachar (GRA)",   z.alot_GRA          },
@@ -1048,15 +1102,16 @@ protected:
                 { L"Tzeit (GRA)",            z.tzeit_GRA         },
                 { L"Tzeit (MA72)",           z.tzeit_MA72        },
                 { L"Tzeit (MA90)",           z.tzeit_MA90        },
-                { L"Candle Lighting",        z.candleLighting    },
+                // Candle Lighting — only valid on actual candle-lighting days (v0.8.70)
+                { L"Candle Lighting",        candleCountdownTime  },
                 // Custom (user-configured shita) zmanim (indices 25-31)
-                { dz.alotLabel.c_str(),           dz.alot         },
-                { dz.sofShemaLabel.c_str(),        dz.sofShema     },
-                { dz.sofTefillaLabel.c_str(),      dz.sofTefilla   },
-                { L"Mincha Gedola (custom)",       dz.minchaGedola },
-                { L"Mincha Ketana (custom)",       dz.minchaKetana },
-                { L"Plag HaMincha (custom)",       dz.plagMincha   },
-                { dz.tzeitLabel.c_str(),           dz.tzeit        },
+                { dz.alotLabel.c_str(),      dz.alot         },
+                { dz.sofShemaLabel.c_str(),  dz.sofShema     },
+                { dz.sofTefillaLabel.c_str(),dz.sofTefilla   },
+                { L"Mincha Gedola (custom)", dz.minchaGedola },
+                { L"Mincha Ketana (custom)", dz.minchaKetana },
+                { L"Plag HaMincha (custom)", dz.plagMincha   },
+                { dz.tzeitLabel.c_str(),     dz.tzeit        },
             };
             uint32_t zmask = theApp.m_settings.countdownZmanimMask;
             for (int idx = 0; idx < (int)items.size(); ++idx)
@@ -5482,6 +5537,13 @@ void CMainFrame::OnOptionsDialogClosed(COptionsDlg* dlg)
 
 void CMainFrame::OnHelpCheckUpdates()
 {
+    // v0.8.69 - Delegate to public CheckForUpdates() so the Options dialog
+    // can also invoke the same flow without accessing a protected member.
+    CheckForUpdates();
+}
+
+void CMainFrame::CheckForUpdates()
+{
     // v0.8.54 - Check for updates from GitHub
     CUpdateChecker checker;
     std::wstring currentVersion = checker.GetCurrentVersion();
@@ -5507,10 +5569,31 @@ void CMainFrame::OnHelpCheckUpdates()
 
                     if (checker.DownloadAsset(release.downloadUrl, downloadPath, true))
                     {
-                        std::wstring msg = L"Update downloaded successfully!\n\n"
-                                          L"File: " + downloadPath +
-                                          L"\n\nPlease close WinLuach and run the installer.";
+                        // v0.8.65 - Auto-replace: launch a hidden batch that
+                        // renames the old exe, copies the new one into place,
+                        // restarts WinLuach, and cleans up - then exit now.
+                        std::wstring msg =
+                            L"Update downloaded!\n\n"
+                            L"WinLuach will now close, apply the update, "
+                            L"and restart automatically.";
                         AfxMessageBox(msg.c_str(), MB_ICONINFORMATION);
+
+                        if (CUpdateChecker::LaunchUpdateAndExit(downloadPath))
+                        {
+                            // Remove the tray icon before destroying the window
+                            // so Windows doesn't leave a ghost icon in the taskbar.
+                            RemoveTrayIcon();
+                            DestroyWindow();
+                        }
+                        else
+                        {
+                            // Batch launch failed - fall back to manual instructions
+                            std::wstring errMsg =
+                                L"Could not launch the updater automatically.\n\n"
+                                L"File: " + downloadPath +
+                                L"\n\nPlease close WinLuach and run this file manually.";
+                            AfxMessageBox(errMsg.c_str(), MB_ICONWARNING);
+                        }
                     }
                     else
                     {

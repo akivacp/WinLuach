@@ -225,6 +225,7 @@ bool SaveSettings(const AppSettings& s)
         f << L"  \"advancedReminder" << i << L"_kind\": \"" << JsonEscape(r.kind) << L"\",\n";
         f << L"  \"advancedReminder" << i << L"_target\": \"" << JsonEscape(r.target) << L"\",\n";
         f << L"  \"advancedReminder" << i << L"_offsets\": \"" << JsonEscape(r.offsets) << L"\",\n";
+        f << L"  \"advancedReminder" << i << L"_afterEvent\": " << (r.afterEvent ? L"true" : L"false") << L",\n";
     }
     f << L"  \"sidebarWidth\": "     << s.sidebarWidth                              << L",\n";
     f << L"  \"zmanimHeight\": "     << s.zmanimHeight                              << L",\n";
@@ -394,11 +395,12 @@ bool LoadSettings(AppSettings& s)
                     while ((int)s.advancedReminders.size() <= idx) s.advancedReminders.push_back(ReminderRule{});
                     std::wstring field = line.substr(q + 1);
                     field = field.substr(0, field.find(L'"'));
-                    if (field == L"enabled") s.advancedReminders[idx].enabled = ParseJsonBool(line);
-                    if (field == L"style") s.advancedReminders[idx].style = (int)ParseJsonNumber(line);
-                    if (field == L"kind") s.advancedReminders[idx].kind = ParseJsonString(line);
-                    if (field == L"target") s.advancedReminders[idx].target = ParseJsonString(line);
-                    if (field == L"offsets") s.advancedReminders[idx].offsets = ParseJsonString(line);
+                    if (field == L"enabled")    s.advancedReminders[idx].enabled    = ParseJsonBool(line);
+                    if (field == L"style")      s.advancedReminders[idx].style      = (int)ParseJsonNumber(line);
+                    if (field == L"kind")       s.advancedReminders[idx].kind       = ParseJsonString(line);
+                    if (field == L"target")     s.advancedReminders[idx].target     = ParseJsonString(line);
+                    if (field == L"offsets")    s.advancedReminders[idx].offsets    = ParseJsonString(line);
+                    if (field == L"afterEvent") s.advancedReminders[idx].afterEvent = ParseJsonBool(line);
                 }
             }
         }
