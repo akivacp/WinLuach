@@ -51,6 +51,8 @@ public:
     // Called whenever the month changes.
     void RebuildCells();
 
+    virtual BOOL PreTranslateMessage(MSG* pMsg);
+
 protected:
     // MFC message handlers
     afx_msg void OnPaint();
@@ -62,6 +64,8 @@ protected:
     afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
     afx_msg BOOL OnEraseBkgnd(CDC* pDC);
     afx_msg void OnSize(UINT nType, int cx, int cy);
+    afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
+    afx_msg void OnMouseLeave();
 
 private:
     // Draws a single calendar cell.
@@ -70,6 +74,10 @@ private:
 
     // Returns the background color for a cell.
     COLORREF GetCellColor(const CalCellData& cell, bool isSelected) const;
+
+    // Tooltip helpers
+    void EnsureTipInit();
+    std::wstring BuildHoverText(int idx) const;
 
     // Returns the cell index (0-41) for the given point, or -1.
     int HitTest(CPoint pt) const;
@@ -107,6 +115,12 @@ private:
     bool m_dragMoved = false;
     int  m_dragStartIndex = -1;
     int  m_lastDragIndex = -1;
+
+    // Hover tracking (for date tracking highlight and tooltip)
+    int  m_hoverIdx = -1;
+    bool m_mouseTracking = false;
+    CToolTipCtrl m_calTip;
+    bool m_tipInit = false;
 
     DECLARE_MESSAGE_MAP()
 };
