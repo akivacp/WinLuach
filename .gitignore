@@ -381,3 +381,7 @@ BuildSettingUpdate_WIN32_WINNT_*.log
 *.bak_*
 Build-Release_*.log
 BuildSettingUpdate_WIN32_WINNT_*.log
+# Temporary backup and build log files
+*.bak_*
+Build-Release_*.log
+BuildSettingUpdate_WIN32_WINNT_*.log

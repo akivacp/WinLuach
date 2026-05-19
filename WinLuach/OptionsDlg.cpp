@@ -1193,6 +1193,7 @@ static void NormalizeCustomZmanSettings(AppSettings& s)
     s.customTzeitMode = max(0, min(2, s.customTzeitMode));
     if (s.customTzeitValue <= 0.0) s.customTzeitValue = 8.5;
     s.shaahZmanitShita = max(0, min(4, s.shaahZmanitShita));
+    s.sofZmanShaahMode = max(0, min(1, s.sofZmanShaahMode));
     s.customShaahStartMode = max(0, min(1, s.customShaahStartMode));
     if (s.customShaahStartValue <= 0.0) s.customShaahStartValue = 72.0;
     if (s.customShaahStartDegreesValue <= 0.0) s.customShaahStartDegreesValue = 16.1;
@@ -2380,7 +2381,22 @@ BOOL COptionsDlg::OnInitDialog()
                 sel = i;
         for (CButton* r : m_radShaahZmanitPreset) r->SetCheck(BST_UNCHECKED);
         m_radShaahZmanitPreset[sel]->SetCheck(BST_CHECKED);
-        yy += 8;
+        yy += 12;
+
+        mkStatic(m_subPageShaahZmanit, L"Sof Shema / Tefilla hour length:", 40, yy, 220, 20);
+        yy += 22;
+        m_radSofShaahDisplayed.Create(L"Use selected Sha'a Zmanit above",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+            CRect(54, yy, 300, yy + 20), this, IDC_OPT_SOF_SHA_USE_DISPLAYED);
+        track(m_subPageShaahZmanit, &m_radSofShaahDisplayed);
+        m_radSofShaahDisplayed.SetCheck(m_current.sofZmanShaahMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        yy += 24;
+        m_radSofShaahBoundary.Create(L"Use Sof Zman method boundaries",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(54, yy, 300, yy + 20), this, IDC_OPT_SOF_SHA_USE_BOUNDARY);
+        track(m_subPageShaahZmanit, &m_radSofShaahBoundary);
+        m_radSofShaahBoundary.SetCheck(m_current.sofZmanShaahMode == 1 ? BST_CHECKED : BST_UNCHECKED);
+        yy += 28;
 
         mkStatic(m_subPageShaahZmanit, L"Custom start boundary:", 40, yy, 160, 20);
         yy += 22;
@@ -3428,6 +3444,14 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
+    if (code == BN_CLICKED &&
+        (id == IDC_OPT_SOF_SHA_USE_DISPLAYED || id == IDC_OPT_SOF_SHA_USE_BOUNDARY))
+    {
+        m_radSofShaahDisplayed.SetCheck(id == IDC_OPT_SOF_SHA_USE_DISPLAYED ? BST_CHECKED : BST_UNCHECKED);
+        m_radSofShaahBoundary.SetCheck(id == IDC_OPT_SOF_SHA_USE_BOUNDARY ? BST_CHECKED : BST_UNCHECKED);
+        SetDirty(true);
+        return TRUE;
+    }
     if (id == IDC_OPT_ALOT_DEG)    { selectCustomPresetForUnit(); ConvertAlotMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_MIN)    { selectCustomPresetForUnit(); ConvertAlotMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_ZMANIS) { selectCustomPresetForUnit(); ConvertAlotMode(2); SetDirty(true); return TRUE; }
@@ -3685,6 +3709,10 @@ void COptionsDlg::ReadControlsIntoResult()
         m_result.customTzeitMode = (m_cmbTzeitMinutesMode.GetSafeHwnd() && m_cmbTzeitMinutesMode.GetCurSel() == 1) ? 2 : 1;
     m_result.customTzeitDegreesValue = GetEditValue(m_editCustomTzeitDeg, 8.5);
     m_result.customTzeitValue = GetEditValue(m_editCustomTzeit, 42.0);
+
+    m_result.sofZmanShaahMode =
+        (m_radSofShaahBoundary.GetSafeHwnd() &&
+         m_radSofShaahBoundary.GetCheck() == BST_CHECKED) ? 1 : 0;
 
     if (m_radShaahStartDegrees.GetSafeHwnd() &&
         m_radShaahStartDegrees.GetCheck() == BST_CHECKED)

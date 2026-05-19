@@ -159,6 +159,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"showBeHaB\": "           << (s.showBeHaB           ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnBeHaB\": "  << (s.showChatzosOnBeHaB  ? L"true" : L"false") << L",\n";
     f << L"  \"shaahZmanitShita\": " << s.shaahZmanitShita << L",\n";
+    f << L"  \"sofZmanShaahMode\": " << s.sofZmanShaahMode << L",\n";
     f << L"  \"customShaahStartMode\": " << s.customShaahStartMode << L",\n";
     f << L"  \"customShaahStartValue\": " << s.customShaahStartValue << L",\n";
     f << L"  \"customShaahStartDegreesValue\": " << s.customShaahStartDegreesValue << L",\n";
@@ -441,6 +442,7 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"showBeHaB\"")           != std::wstring::npos) s.showBeHaB           = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnBeHaB\"")  != std::wstring::npos) s.showChatzosOnBeHaB  = ParseJsonBool(line);
         if (line.find(L"\"shaahZmanitShita\"")   != std::wstring::npos) s.shaahZmanitShita = (int)ParseJsonNumber(line);
+        if (line.find(L"\"sofZmanShaahMode\"")   != std::wstring::npos) s.sofZmanShaahMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customShaahStartMode\"") != std::wstring::npos) s.customShaahStartMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customShaahStartValue\"") != std::wstring::npos) s.customShaahStartValue = ParseJsonNumber(line);
         if (line.find(L"\"customShaahStartDegreesValue\"") != std::wstring::npos) s.customShaahStartDegreesValue = ParseJsonNumber(line);

@@ -188,6 +188,9 @@ struct AppSettings
     // 0=GRA (hanetz->shkia)/12, 1=MA72, 2=MA90, 3=custom boundaries,
     // 4=16.1 degrees before hanetz to 16.1 degrees after shkia
     int          shaahZmanitShita = 0;
+    // sofZmanShaahMode: 0=use displayed shaahZmanitShita for Sof Shema/Tefilla,
+    // 1=derive the hour length from the selected Sof Zman start/end boundaries.
+    int          sofZmanShaahMode = 0;
     int          customShaahStartMode = 1; // 0=degrees before hanetz, 1=fixed minutes before hanetz
     double       customShaahStartValue = 72.0;
     double       customShaahStartDegreesValue = 16.1;
