@@ -365,3 +365,7 @@ wiki/WinLuach.wiki/
 
 # Temporary project backups
 *.bak_*
+# Temporary backup and build log files
+*.bak_*
+Build-Release_*.log
+BuildSettingUpdate_WIN32_WINNT_*.log
