@@ -4174,11 +4174,22 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
 
     TimeOfDay sofStart = CustomMorningBoundary(g, m_location, isDst, z,
         m_customSofZmanMode, m_customSofZmanValue, 16.1);
-    TimeOfDay sofEnd = CustomEveningBoundary(g, m_location, isDst, z,
-        m_customSofZmanMode, m_customSofZmanValue, 16.1);
-    double sofShaah = CalculateShaahZmanit(sofStart, sofEnd);
-    out.shaahZmanit = sofShaah > 0.0 ? sofShaah : minchaShaah;
-    out.sofShema = AddShaot(sofStart, out.shaahZmanit, 3.0);
+
+    // v0.8.83 — Sha'a Zmanit is now an independent setting (m_shaahZmanitShita)
+    // so users can choose GRA/MA72/MA90 for the halachic clock regardless of
+    // which shita defines the start-of-day for Sof Shema/Tefilla.
+    double selectedShaah;
+    switch (max(0, min(2, m_shaahZmanitShita)))
+    {
+    case 1:  selectedShaah = z.shaahZmanit_MA72; break;
+    case 2:  selectedShaah = z.shaahZmanit_MA90; break;
+    default: selectedShaah = z.shaahZmanit_GRA;  break;
+    }
+    out.shaahZmanit = selectedShaah > 0.0 ? selectedShaah : z.shaahZmanit_GRA;
+
+    // Sof Shema/Tefilla: start-of-day comes from the Sof Zman shita (sofStart),
+    // but the shaah length comes from the independent Sha'a Zmanit setting.
+    out.sofShema   = AddShaot(sofStart, out.shaahZmanit, 3.0);
     out.sofTefilla = AddShaot(sofStart, out.shaahZmanit, 4.0);
 
     switch (max(0, min(3, m_customMinchaGedolaPreset)))
@@ -4255,6 +4266,7 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_customMinchaGedolaPreset = max(0, min(3, s.customMinchaGedolaPreset));
     m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
     m_customPlagPreset = max(0, min(2, s.customPlagPreset));
+    m_shaahZmanitShita        = max(0, min(2, s.shaahZmanitShita));         // v0.8.83
     m_customEndFastPreset     = max(0, min(2, s.customEndFastPreset));
     m_customEndFastMinuteMode = max(0, min(1, s.customEndFastMinuteMode)); // v0.8.82
     m_customMinchaGedolaValue = s.customMinchaGedolaValue > 0.0 ? s.customMinchaGedolaValue : 30.0;
