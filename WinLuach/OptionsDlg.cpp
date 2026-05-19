@@ -2804,12 +2804,18 @@ void COptionsDlg::ShowNotifySubPage(int sub)
         for (CWnd* c : *pages[i])
             if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
     if (sub < 0 || sub >= count) return;
+    // Place the first control at the very top of z-order, then chain each
+    // subsequent control just below the previous one.  This preserves the
+    // creation-order z-order so that WS_GROUP radio-button brackets stay
+    // intact (all-to-wndTop reverses the order, mixing radio groups).
+    CWnd* insertAfter = const_cast<CWnd*>(&CWnd::wndTop);
     for (CWnd* c : *pages[sub]) {
         if (!c || !c->GetSafeHwnd()) continue;
         c->ShowWindow(SW_SHOW);
-        c->SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0,
+        c->SetWindowPos(insertAfter, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         c->Invalidate();
+        insertAfter = c;
     }
     if (sub == 0) UpdateSefirahControls();
     if (sub == 1) UpdateNotificationControls();
