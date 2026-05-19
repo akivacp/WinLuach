@@ -159,6 +159,12 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"showBeHaB\": "           << (s.showBeHaB           ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnBeHaB\": "  << (s.showChatzosOnBeHaB  ? L"true" : L"false") << L",\n";
     f << L"  \"shaahZmanitShita\": " << s.shaahZmanitShita << L",\n";
+    f << L"  \"customShaahStartMode\": " << s.customShaahStartMode << L",\n";
+    f << L"  \"customShaahStartValue\": " << s.customShaahStartValue << L",\n";
+    f << L"  \"customShaahStartDegreesValue\": " << s.customShaahStartDegreesValue << L",\n";
+    f << L"  \"customShaahEndMode\": " << s.customShaahEndMode << L",\n";
+    f << L"  \"customShaahEndValue\": " << s.customShaahEndValue << L",\n";
+    f << L"  \"customShaahEndDegreesValue\": " << s.customShaahEndDegreesValue << L",\n";
     f << L"  \"customAlotMode\": " << s.customAlotMode << L",\n";
     f << L"  \"customAlotValue\": " << s.customAlotValue << L",\n";
     f << L"  \"customAlotDegreesValue\": " << s.customAlotDegreesValue << L",\n";
@@ -435,6 +441,12 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"showBeHaB\"")           != std::wstring::npos) s.showBeHaB           = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnBeHaB\"")  != std::wstring::npos) s.showChatzosOnBeHaB  = ParseJsonBool(line);
         if (line.find(L"\"shaahZmanitShita\"")   != std::wstring::npos) s.shaahZmanitShita = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customShaahStartMode\"") != std::wstring::npos) s.customShaahStartMode = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customShaahStartValue\"") != std::wstring::npos) s.customShaahStartValue = ParseJsonNumber(line);
+        if (line.find(L"\"customShaahStartDegreesValue\"") != std::wstring::npos) s.customShaahStartDegreesValue = ParseJsonNumber(line);
+        if (line.find(L"\"customShaahEndMode\"") != std::wstring::npos) s.customShaahEndMode = (int)ParseJsonNumber(line);
+        if (line.find(L"\"customShaahEndValue\"") != std::wstring::npos) s.customShaahEndValue = ParseJsonNumber(line);
+        if (line.find(L"\"customShaahEndDegreesValue\"") != std::wstring::npos) s.customShaahEndDegreesValue = ParseJsonNumber(line);
         if (line.find(L"\"customAlotMode\"")     != std::wstring::npos) s.customAlotMode = (int)ParseJsonNumber(line);
         if (line.find(L"\"customAlotValue\"")    != std::wstring::npos) s.customAlotValue = ParseJsonNumber(line);
         if (line.find(L"\"customAlotDegreesValue\"")   != std::wstring::npos) s.customAlotDegreesValue = ParseJsonNumber(line);

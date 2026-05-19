@@ -161,6 +161,12 @@ private:
     CEdit     m_editCustomTzeitDeg;
     CComboBox m_cmbTzeitMinutesMode;
     CComboBox m_cmbEndFastMinuteMode;   // v0.8.82: fixed vs shaah zmanit for custom end of fast
+    CButton   m_chkShaahStartCustomDeg;
+    CEdit     m_editCustomShaahStartDeg;
+    CEdit     m_editCustomShaahStart;
+    CButton   m_chkShaahEndCustomDeg;
+    CEdit     m_editCustomShaahEndDeg;
+    CEdit     m_editCustomShaahEnd;
 
     std::vector<CWnd*> m_pageGeneral;
     std::vector<CWnd*> m_pageMonth;
@@ -200,7 +206,7 @@ private:
     std::vector<CButton*> m_radPlagPreset;       // 3 entries
     std::vector<CButton*> m_radEndFastPreset;    // 3 entries
     std::vector<CButton*> m_radTzaisPreset;      // 6 entries
-    std::vector<CButton*> m_radShaahZmanitPreset; // v0.8.83: 3 entries (GRA, MA72, MA90)
+    std::vector<CButton*> m_radShaahZmanitPreset; // v0.8.83+: GRA, MA72, MA90, custom
     CEdit m_editCustomMinchaGedola;
     CEdit m_editCustomMinchaKetana;
     CEdit m_editCustomPlag;

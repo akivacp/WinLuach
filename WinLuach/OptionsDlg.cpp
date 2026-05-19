@@ -1187,6 +1187,13 @@ static void NormalizeCustomZmanSettings(AppSettings& s)
     if (s.customMisheyakirValue <= 0.0) s.customMisheyakirValue = 10.2;
     s.customTzeitMode = max(0, min(2, s.customTzeitMode));
     if (s.customTzeitValue <= 0.0) s.customTzeitValue = 8.5;
+    s.shaahZmanitShita = max(0, min(3, s.shaahZmanitShita));
+    s.customShaahStartMode = max(0, min(1, s.customShaahStartMode));
+    if (s.customShaahStartValue <= 0.0) s.customShaahStartValue = 72.0;
+    if (s.customShaahStartDegreesValue <= 0.0) s.customShaahStartDegreesValue = 16.1;
+    s.customShaahEndMode = max(0, min(1, s.customShaahEndMode));
+    if (s.customShaahEndValue <= 0.0) s.customShaahEndValue = 72.0;
+    if (s.customShaahEndDegreesValue <= 0.0) s.customShaahEndDegreesValue = 8.5;
     s.customSofZmanMode = max(0, min(2, s.customSofZmanMode));
     if (s.customSofZmanValue < 0.0)
     {
@@ -2355,13 +2362,46 @@ BOOL COptionsDlg::OnInitDialog()
         yy = makePresetSubPage(m_subPageShaahZmanit, m_radShaahZmanitPreset,
             { L"GRA — Hanetz to Shkia \xF7 12  (shorter in winter, longer in summer)",
               L"MA 72 min — (Hanetz\x2212" L"72) to (Shkia+72) \xF7 12",
-              L"MA 90 min — (Hanetz\x2212" L"90) to (Shkia+90) \xF7 12" },
+              L"MA 90 min — (Hanetz\x2212" L"90) to (Shkia+90) \xF7 12",
+              L"Custom boundaries" },
             yy);
         // v0.8.83 — explicitly uncheck all before checking the selected one
         // so radio-group exclusivity is enforced even before the dialog shows.
-        int sel = max(0, min(2, m_current.shaahZmanitShita));
+        int sel = max(0, min(3, m_current.shaahZmanitShita));
         for (CButton* r : m_radShaahZmanitPreset) r->SetCheck(BST_UNCHECKED);
         m_radShaahZmanitPreset[sel]->SetCheck(BST_CHECKED);
+        yy += 8;
+
+        mkStatic(m_subPageShaahZmanit, L"Custom start boundary:", 40, yy, 160, 20);
+        yy += 22;
+        m_chkShaahStartCustomDeg.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_DEG_CHK);
+        track(m_subPageShaahZmanit, &m_chkShaahStartCustomDeg);
+        m_chkShaahStartCustomDeg.SetCheck(m_current.customShaahStartMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        setEdit(m_subPageShaahZmanit, m_editCustomShaahStartDeg, 184, yy - 1, 58,
+            IDC_OPT_SHAAH_START_DEG_VAL, m_current.customShaahStartDegreesValue);
+        mkStatic(m_subPageShaahZmanit, L"degrees before Hanetz", 248, yy, 160, 20);
+        yy += 26;
+        mkStatic(m_subPageShaahZmanit, L"Or fixed offset:", 54, yy, 112, 20);
+        setEdit(m_subPageShaahZmanit, m_editCustomShaahStart, 184, yy - 1, 58,
+            IDC_OPT_SHAAH_START_VALUE, m_current.customShaahStartValue);
+        mkStatic(m_subPageShaahZmanit, L"minutes before Hanetz", 248, yy, 160, 20);
+        yy += 32;
+
+        mkStatic(m_subPageShaahZmanit, L"Custom end boundary:", 40, yy, 160, 20);
+        yy += 22;
+        m_chkShaahEndCustomDeg.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_DEG_CHK);
+        track(m_subPageShaahZmanit, &m_chkShaahEndCustomDeg);
+        m_chkShaahEndCustomDeg.SetCheck(m_current.customShaahEndMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        setEdit(m_subPageShaahZmanit, m_editCustomShaahEndDeg, 184, yy - 1, 58,
+            IDC_OPT_SHAAH_END_DEG_VAL, m_current.customShaahEndDegreesValue);
+        mkStatic(m_subPageShaahZmanit, L"degrees after Shkia", 248, yy, 150, 20);
+        yy += 26;
+        mkStatic(m_subPageShaahZmanit, L"Or fixed offset:", 54, yy, 112, 20);
+        setEdit(m_subPageShaahZmanit, m_editCustomShaahEnd, 184, yy - 1, 58,
+            IDC_OPT_SHAAH_END_VALUE, m_current.customShaahEndValue);
+        mkStatic(m_subPageShaahZmanit, L"minutes after Shkia", 248, yy, 150, 20);
     }
 
     // OK / Cancel buttons
@@ -3345,6 +3385,21 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         else if (id == IDC_OPT_TZEIT_DEG || id == IDC_OPT_TZEIT_MIN || id == IDC_OPT_TZEIT_ZMANIS)
             setPresetRadio(m_radTzaisPreset, 5);
     };
+    auto isShaahCustomControl = [](UINT ctlId) {
+        return ctlId == IDC_OPT_SHAAH_START_DEG_CHK ||
+               ctlId == IDC_OPT_SHAAH_START_DEG_VAL ||
+               ctlId == IDC_OPT_SHAAH_START_VALUE ||
+               ctlId == IDC_OPT_SHAAH_END_DEG_CHK ||
+               ctlId == IDC_OPT_SHAAH_END_DEG_VAL ||
+               ctlId == IDC_OPT_SHAAH_END_VALUE;
+    };
+    if (m_initialized && (code == BN_CLICKED || code == EN_CHANGE) &&
+        isShaahCustomControl(id))
+    {
+        setPresetRadio(m_radShaahZmanitPreset, 3);
+        SetDirty(true);
+        return TRUE;
+    }
     if (id == IDC_OPT_ALOT_DEG)    { selectCustomPresetForUnit(); ConvertAlotMode(0); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_MIN)    { selectCustomPresetForUnit(); ConvertAlotMode(1); SetDirty(true); return TRUE; }
     if (id == IDC_OPT_ALOT_ZMANIS) { selectCustomPresetForUnit(); ConvertAlotMode(2); SetDirty(true); return TRUE; }
@@ -3602,6 +3657,22 @@ void COptionsDlg::ReadControlsIntoResult()
         m_result.customTzeitMode = (m_cmbTzeitMinutesMode.GetSafeHwnd() && m_cmbTzeitMinutesMode.GetCurSel() == 1) ? 2 : 1;
     m_result.customTzeitDegreesValue = GetEditValue(m_editCustomTzeitDeg, 8.5);
     m_result.customTzeitValue = GetEditValue(m_editCustomTzeit, 42.0);
+
+    if (m_chkShaahStartCustomDeg.GetSafeHwnd() &&
+        m_chkShaahStartCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customShaahStartMode = 0;
+    else
+        m_result.customShaahStartMode = 1;
+    m_result.customShaahStartDegreesValue = GetEditValue(m_editCustomShaahStartDeg, 16.1);
+    m_result.customShaahStartValue = GetEditValue(m_editCustomShaahStart, 72.0);
+
+    if (m_chkShaahEndCustomDeg.GetSafeHwnd() &&
+        m_chkShaahEndCustomDeg.GetCheck() == BST_CHECKED)
+        m_result.customShaahEndMode = 0;
+    else
+        m_result.customShaahEndMode = 1;
+    m_result.customShaahEndDegreesValue = GetEditValue(m_editCustomShaahEndDeg, 8.5);
+    m_result.customShaahEndValue = GetEditValue(m_editCustomShaahEnd, 72.0);
 
     CString customValue;
 
