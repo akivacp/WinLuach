@@ -854,7 +854,7 @@ protected:
         m_enabled.SetFont(pF);
         m_enabled.SetCheck(rule.enabled ? BST_CHECKED : BST_UNCHECKED);
 
-        // Anchor row (v0.8.71) — currently used only by Holiday reminders.
+        // Anchor row (v0.8.71) — not meaningful for Zman reminders.
         m_anchorLabel.Create(L"Anchor:", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
             CRect(10, 140, 80, 162), this, 6109);
         m_anchorLabel.SetFont(pF);
@@ -1008,7 +1008,7 @@ private:
         CString kind;
         if (m_kind.GetSafeHwnd())
             m_kind.GetWindowText(kind);
-        return kind == L"Holiday";
+        return kind != L"Zman";
     }
 
     void UpdateAnchorEnabled()
