@@ -181,6 +181,7 @@ private:
     std::vector<CWnd*> m_subPagePlag;
     std::vector<CWnd*> m_subPageEndFast;
     std::vector<CWnd*> m_subPageTzais;
+    std::vector<CWnd*> m_subPageShaahZmanit;  // v0.8.83
     CTabCtrl m_zmanimSubTab;
     std::vector<CButton*> m_zmanimBarChecks;     // one per kZmanimBarLabels entry
     // Sub-tab preset radio groups (created dynamically). We keep pointers so
@@ -194,6 +195,7 @@ private:
     std::vector<CButton*> m_radPlagPreset;       // 3 entries
     std::vector<CButton*> m_radEndFastPreset;    // 3 entries
     std::vector<CButton*> m_radTzaisPreset;      // 6 entries
+    std::vector<CButton*> m_radShaahZmanitPreset; // v0.8.83: 3 entries (GRA, MA72, MA90)
     CEdit m_editCustomMinchaGedola;
     CEdit m_editCustomMinchaKetana;
     CEdit m_editCustomPlag;
@@ -296,6 +298,7 @@ private:
     CComboBox m_cmbReminderDailyMin;
     CComboBox m_cmbReminderDailyAmpm;
     void UpdateNotificationControls();
+    void UpdateSefirahControls();
     void SetDirty(bool dirty);
 
     bool      m_modeless = false;
