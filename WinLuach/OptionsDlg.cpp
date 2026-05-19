@@ -3420,6 +3420,11 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
             SetDirty(true);
             return TRUE;
         }
+        if (enforceRadioGroup(m_radShaahZmanitPreset) >= 0)
+        {
+            SetDirty(true);
+            return TRUE;
+        }
         if (enforceRadioGroup(m_radMinchaGedolaPreset) >= 0 ||
             enforceRadioGroup(m_radMinchaKetanaPreset) >= 0 ||
             enforceRadioGroup(m_radPlagPreset) >= 0 ||
