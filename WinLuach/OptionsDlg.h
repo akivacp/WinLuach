@@ -169,6 +169,8 @@ private:
     CButton   m_radShaahEndFixed;
     CEdit     m_editCustomShaahEndDeg;
     CEdit     m_editCustomShaahEnd;
+    CButton   m_radSofShaahDisplayed;
+    CButton   m_radSofShaahBoundary;
 
     std::vector<CWnd*> m_pageGeneral;
     std::vector<CWnd*> m_pageMonth;
