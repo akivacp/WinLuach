@@ -272,6 +272,11 @@ static const wchar_t* kTrayTooltipCustomZmanLabels[] = {
 };
 static constexpr int kTrayTooltipCustomZmanCount = 7;
 
+static const int kShaahZmanitPresetSettingByUi[] = { 0, 1, 2, 4, 3 };
+static constexpr int kShaahZmanitPresetCount =
+    (int)(sizeof(kShaahZmanitPresetSettingByUi) / sizeof(kShaahZmanitPresetSettingByUi[0]));
+static constexpr int kShaahZmanitCustomUiIndex = 4;
+
 static const wchar_t* kYearDetailLabels[] = {
     L"Years from creation",
     L"Lunar cycle position",
@@ -1187,7 +1192,7 @@ static void NormalizeCustomZmanSettings(AppSettings& s)
     if (s.customMisheyakirValue <= 0.0) s.customMisheyakirValue = 10.2;
     s.customTzeitMode = max(0, min(2, s.customTzeitMode));
     if (s.customTzeitValue <= 0.0) s.customTzeitValue = 8.5;
-    s.shaahZmanitShita = max(0, min(3, s.shaahZmanitShita));
+    s.shaahZmanitShita = max(0, min(4, s.shaahZmanitShita));
     s.customShaahStartMode = max(0, min(1, s.customShaahStartMode));
     if (s.customShaahStartValue <= 0.0) s.customShaahStartValue = 72.0;
     if (s.customShaahStartDegreesValue <= 0.0) s.customShaahStartDegreesValue = 16.1;
@@ -2363,11 +2368,16 @@ BOOL COptionsDlg::OnInitDialog()
             { L"GRA — Hanetz to Shkia \xF7 12  (shorter in winter, longer in summer)",
               L"MA 72 min — (Hanetz\x2212" L"72) to (Shkia+72) \xF7 12",
               L"MA 90 min — (Hanetz\x2212" L"90) to (Shkia+90) \xF7 12",
+              L"16.1 degrees — dawn to nightfall \xF7 12",
               L"Custom boundaries" },
             yy);
         // v0.8.83 — explicitly uncheck all before checking the selected one
         // so radio-group exclusivity is enforced even before the dialog shows.
-        int sel = max(0, min(3, m_current.shaahZmanitShita));
+        int selectedShaahSetting = max(0, min(4, m_current.shaahZmanitShita));
+        int sel = 0;
+        for (int i = 0; i < kShaahZmanitPresetCount; ++i)
+            if (kShaahZmanitPresetSettingByUi[i] == selectedShaahSetting)
+                sel = i;
         for (CButton* r : m_radShaahZmanitPreset) r->SetCheck(BST_UNCHECKED);
         m_radShaahZmanitPreset[sel]->SetCheck(BST_CHECKED);
         yy += 8;
@@ -3414,7 +3424,7 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
             m_radShaahEndDegrees.SetCheck(id == IDC_OPT_SHAAH_END_DEG_RAD ? BST_CHECKED : BST_UNCHECKED);
             m_radShaahEndFixed.SetCheck(id == IDC_OPT_SHAAH_END_FIXED_RAD ? BST_CHECKED : BST_UNCHECKED);
         }
-        setPresetRadio(m_radShaahZmanitPreset, 3);
+        setPresetRadio(m_radShaahZmanitPreset, kShaahZmanitCustomUiIndex);
         SetDirty(true);
         return TRUE;
     }
@@ -3830,9 +3840,12 @@ void COptionsDlg::ReadControlsIntoResult()
         else if (v == 4) { m_result.customTzeitMode = 0; m_result.customTzeitValue = 16.1; }
     }
 
-    // v0.8.83 — Sha'a Zmanit independent shita (GRA / MA72 / MA90)
+    // Sha'a Zmanit independent shita. UI order differs from persisted values
+    // so the custom setting can keep its original value (3).
     if ((v = pickedIndex(m_radShaahZmanitPreset)) >= 0)
-        m_result.shaahZmanitShita = v;
+        m_result.shaahZmanitShita = (v < kShaahZmanitPresetCount)
+            ? kShaahZmanitPresetSettingByUi[v]
+            : 0;
 
     // v0.8.54 - Auto-update settings
     m_result.disableAutoUpdate = (m_chkDisableAutoUpdate.GetCheck() == BST_CHECKED);

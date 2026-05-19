@@ -185,7 +185,8 @@ struct AppSettings
     int          zmanimShita = 2;
     // shaahZmanitShita: which shaah zmanit to display and use as the
     // time-unit for all shaah-based calculations (independent of zmanimShita).
-    // 0=GRA (hanetz->shkia)/12, 1=MA72, 2=MA90, 3=custom boundaries
+    // 0=GRA (hanetz->shkia)/12, 1=MA72, 2=MA90, 3=custom boundaries,
+    // 4=16.1 degrees before hanetz to 16.1 degrees after shkia
     int          shaahZmanitShita = 0;
     int          customShaahStartMode = 1; // 0=degrees before hanetz, 1=fixed minutes before hanetz
     double       customShaahStartValue = 72.0;
