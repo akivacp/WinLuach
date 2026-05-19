@@ -161,10 +161,12 @@ private:
     CEdit     m_editCustomTzeitDeg;
     CComboBox m_cmbTzeitMinutesMode;
     CComboBox m_cmbEndFastMinuteMode;   // v0.8.82: fixed vs shaah zmanit for custom end of fast
-    CButton   m_chkShaahStartCustomDeg;
+    CButton   m_radShaahStartDegrees;
+    CButton   m_radShaahStartFixed;
     CEdit     m_editCustomShaahStartDeg;
     CEdit     m_editCustomShaahStart;
-    CButton   m_chkShaahEndCustomDeg;
+    CButton   m_radShaahEndDegrees;
+    CButton   m_radShaahEndFixed;
     CEdit     m_editCustomShaahEndDeg;
     CEdit     m_editCustomShaahEnd;
 
