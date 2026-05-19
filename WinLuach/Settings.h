@@ -76,6 +76,9 @@ struct ReminderRule
 // Holds all user-configurable preferences.
 // =============================================================================
 // CHANGELOG (Settings.h):
+// v0.8.83 - Added shaahZmanitShita (0=GRA, 1=MA72, 2=MA90): independent
+//           setting that controls which shaah zmanit is displayed in the bar
+//           and used as the time-unit for Sof Shema/Tefilla calculations.
 // v0.8.82 - Added customEndFastMinuteMode (0=fixed, 1=shaah zmanit) for the
 //           custom End-of-Fast value.
 //         - Added per-zman separate degrees values: customAlotDegreesValue,
@@ -180,6 +183,10 @@ struct AppSettings
     // --- Zmanim shita ---
     // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90 (default)
     int          zmanimShita = 2;
+    // shaahZmanitShita (v0.8.83): which shaah zmanit to display and use as the
+    // time-unit for all shaah-based calculations (independent of zmanimShita).
+    // 0=GRA (hanetz→shkia÷12), 1=MA72, 2=MA90
+    int          shaahZmanitShita = 0;
     // alotShita: 0=16.1deg(GRA), 1=72min, 2=90min
     int          alotShita   = 0;
     // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop

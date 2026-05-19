@@ -31,6 +31,19 @@
 // v0.8.1 - Sub-page widgets are raised to the top of z-order on show so the
 //          Zmanim sub-tab control doesn't paint over them, and the Omer
 //          'manual time' radio is no longer clipped by its sibling label.
+// v0.8.84 - Sha'a Zmanit sub-tab polish:
+//           (1) Sub-tab strip now uses TCS_MULTILINE (wraps to 2 rows) so
+//               all 10 tabs are always visible without scroll arrows.
+//               zmanPageTop raised from 64 → 90 to clear the 2-row strip.
+//           (2) Radio buttons explicitly set to BST_UNCHECKED before
+//               applying the selected state, fixing the double-selected
+//               visual glitch in the Sha'a Zmanit sub-page.
+//           (3) Removed location-specific example from radio button labels;
+//               replaced with seasonal context ("shorter in winter, longer
+//               in summer").
+// v0.8.83 - Added independent Sha'a Zmanit sub-tab (GRA / MA72 / MA90)
+//           so the displayed halachic hour and the time-unit used for Sof
+//           Shema / Tefilla are decoupled from the Sof Zman shita.
 // v0.8.82 - (1) End-of-Fast custom tab: added "Minutes type" dropdown
 //               (fixed vs shaah zmanit) for custom preset.
 //           (2) All zman custom options: replaced 3-radio
@@ -1181,6 +1194,137 @@ static void NormalizeCustomZmanSettings(AppSettings& s)
     }
 }
 
+// =============================================================================
+// ShowManageCalendarsDialog — simple Add/Remove/Enable dialog for ICS feeds
+// =============================================================================
+
+#define IDC_MNGCAL_LIST    1001
+#define IDC_MNGCAL_ADD     1002
+#define IDC_MNGCAL_REMOVE  1003
+#define IDC_MNGCAL_TOGGLE  1004
+#define IDC_MNGCAL_URL     1005
+
+class CManageCalendarsDlg : public CDialog
+{
+public:
+    std::vector<WebCalEntry>& m_cals;
+    CWnd* m_pParent = nullptr;
+    bool m_changed = false;
+
+    CListBox  m_list;
+    CEdit     m_editUrl;
+    CButton   m_btnAdd, m_btnRemove, m_btnToggle, m_btnClose;
+
+    CManageCalendarsDlg(std::vector<WebCalEntry>& cals, CWnd* pParent)
+        : CDialog(), m_cals(cals), m_pParent(pParent)
+    {
+    }
+
+    virtual INT_PTR DoModal() override
+    {
+        DLGTEMPLATE tpl = {};
+        tpl.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        tpl.cx = 280; tpl.cy = 200;
+        return InitModalIndirect(&tpl, m_pParent);
+    }
+
+    virtual BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        SetWindowText(L"Manage Web Calendars");
+        CRect rc; GetClientRect(&rc);
+        int W = rc.Width(), H = rc.Height();
+        int p = 8;
+
+        m_list.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+            CRect(p, p, W - p, H - 70), this, IDC_MNGCAL_LIST);
+        m_editUrl.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(p, H - 62, W - 76, H - 42), this, IDC_MNGCAL_URL);
+        m_editUrl.SetFont(GetFont());
+        m_btnAdd.Create(L"Add", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(W - 72, H - 62, W - p, H - 42), this, IDC_MNGCAL_ADD);
+        m_btnToggle.Create(L"Enable/Disable", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(p, H - 36, 110, H - p), this, IDC_MNGCAL_TOGGLE);
+        m_btnRemove.Create(L"Remove", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(114, H - 36, 190, H - p), this, IDC_MNGCAL_REMOVE);
+        m_btnClose.Create(L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            CRect(W - 72, H - 36, W - p, H - p), this, IDOK);
+
+        CFont* f = GetFont();
+        m_list.SetFont(f); m_btnAdd.SetFont(f); m_btnToggle.SetFont(f);
+        m_btnRemove.SetFont(f); m_btnClose.SetFont(f);
+        RebuildList();
+        return TRUE;
+    }
+
+    void RebuildList()
+    {
+        m_list.ResetContent();
+        for (const auto& e : m_cals)
+        {
+            CString s;
+            s.Format(L"%s  %s", e.enabled ? L"[on] " : L"[off]", e.url.c_str());
+            m_list.AddString(s);
+        }
+    }
+
+    virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
+    {
+        UINT id = LOWORD(wParam), code = HIWORD(wParam);
+        if (id == IDC_MNGCAL_ADD && code == BN_CLICKED)
+        {
+            CString url; m_editUrl.GetWindowText(url); url.Trim();
+            if (!url.IsEmpty())
+            {
+                WebCalEntry e; e.url = (LPCWSTR)url; e.enabled = true;
+                m_cals.push_back(e);
+                m_editUrl.SetWindowText(L"");
+                RebuildList();
+                m_changed = true;
+            }
+            return TRUE;
+        }
+        if (id == IDC_MNGCAL_REMOVE && code == BN_CLICKED)
+        {
+            int sel = m_list.GetCurSel();
+            if (sel >= 0 && sel < (int)m_cals.size())
+            {
+                m_cals.erase(m_cals.begin() + sel);
+                RebuildList();
+                m_changed = true;
+            }
+            return TRUE;
+        }
+        if (id == IDC_MNGCAL_TOGGLE && code == BN_CLICKED)
+        {
+            int sel = m_list.GetCurSel();
+            if (sel >= 0 && sel < (int)m_cals.size())
+            {
+                m_cals[sel].enabled = !m_cals[sel].enabled;
+                RebuildList();
+                m_list.SetCurSel(sel);
+                m_changed = true;
+            }
+            return TRUE;
+        }
+        return CDialog::OnCommand(wParam, lParam);
+    }
+
+    DECLARE_MESSAGE_MAP()
+};
+
+BEGIN_MESSAGE_MAP(CManageCalendarsDlg, CDialog)
+END_MESSAGE_MAP()
+
+bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent)
+{
+    CManageCalendarsDlg dlg(calendars, pParent);
+    dlg.DoModal();
+    return dlg.m_changed;
+}
+
+// =============================================================================
+
 COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
     : CDialog(), m_current(current), m_result(current)
 {
@@ -1277,6 +1421,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_subPagePlag.clear();
     m_subPageEndFast.clear();
     m_subPageTzais.clear();
+    m_subPageShaahZmanit.clear();      // v0.8.83
     m_zmanimBarChecks.clear();
     m_radAlosPreset.clear();
     m_radMisheyakirPreset.clear();
@@ -1287,6 +1432,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_radPlagPreset.clear();
     m_radEndFastPreset.clear();
     m_radTzaisPreset.clear();
+    m_radShaahZmanitPreset.clear();    // v0.8.83
 
     // v0.8.2 - WS_CLIPSIBLINGS so this main tab control does not paint over
     // its sibling sub-tab control inside the Zmanim page area.
@@ -1688,7 +1834,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_editToastDuration.EnableWindow(isWLToast ? TRUE : FALSE);
     m_cmbToastDurationUnit.EnableWindow(isWLToast ? TRUE : FALSE);
     y += 30;
-    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 178); y += 22;
+    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 212); y += 22;
     mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
     initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
@@ -1700,41 +1846,54 @@ BOOL COptionsDlg::OnInitDialog()
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifyWebCalEvents)));
     y += 28;
+    // Sefiras HaOmer — redesigned layout: each mode is self-contained on its own row
     mkStatic(m_pageNotifications, L"Sefiras HaOmer:", 28, y, 112, 22);
     initCombo(m_pageNotifications, m_cmbNotifySefirah, 145, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
         { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
         max(0, min(3, m_current.notifySefirahStyle)));
-    m_radNotifySefirahSunTzais.Create(L"sunset/tzais", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(286, y, 382, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
-    track(m_pageNotifications, &m_radNotifySefirahSunTzais);
     y += 28;
-    m_radNotifySefirahOther.Create(L"other zman", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(28, y, 118, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
-    track(m_pageNotifications, &m_radNotifySefirahOther);
-    // v0.8.1 - Shrank 'manual time' radio width and moved 'manual:' static
-    // right so they no longer overlap (the radio text was being clipped).
-    m_radNotifySefirahManual.Create(L"manual time", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(126, y, 218, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
-    track(m_pageNotifications, &m_radNotifySefirahManual);
     bool isManualOmer = (m_current.notifySefirahMode == 0);
-    bool isOtherOmer = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
-    m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
-    m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+    bool isOtherOmer  = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
+    // Row 1: relative to sunset / tzais
+    m_radNotifySefirahSunTzais.Create(L"relative to:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
+    track(m_pageNotifications, &m_radNotifySefirahSunTzais);
     m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
-    mkStatic(m_pageNotifications, L"at:", 230, y, 22, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 128, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
+        { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
+    y += 26;
+    // Row 2: other zman
+    m_radNotifySefirahOther.Create(L"other zman:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
+    track(m_pageNotifications, &m_radNotifySefirahOther);
+    m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+    m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+        CRect(128, y - 1, W - 28, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
+    track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
+    for (const wchar_t* label : kZmanCheckboxLabels)
+        m_cmbNotifySefirahOtherZman.AddString(label);
+    m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
+    y += 26;
+    // Row 3: manual time
+    m_radNotifySefirahManual.Create(L"manual time:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
+    track(m_pageNotifications, &m_radNotifySefirahManual);
+    m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
+    mkStatic(m_pageNotifications, L"at:", 130, y, 24, 22);
     m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(292, y - 1, 332, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
+        CRect(158, y - 1, 198, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
     track(m_pageNotifications, &m_cmbNotifySefirahHour);
     m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(336, y - 1, 376, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
+        CRect(202, y - 1, 242, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
     track(m_pageNotifications, &m_cmbNotifySefirahMinute);
     m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(380, y - 1, 424, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
+        CRect(246, y - 1, 290, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
     track(m_pageNotifications, &m_cmbNotifySefirahAmPm);
     FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
     SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
         m_current.notifySefirahTime, 21, 0);
-    y += 28;
+    y += 26;
+    // Row 4: offset (applies to rows 1 and 2; grayed when manual time is selected)
     mkStatic(m_pageNotifications, L"offset:", 28, y, 48, 22);
     m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
         CRect(78, y, 118, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
@@ -1744,18 +1903,10 @@ BOOL COptionsDlg::OnInitDialog()
         off.Format(L"%d", max(0, m_current.notifySefirahOffsetMinutes));
         m_editNotifySefirahOffset.SetWindowText(off);
     }
-    mkStatic(m_pageNotifications, L"minutes", 126, y, 55, 22);
-    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 184, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
+    mkStatic(m_pageNotifications, L"minutes", 122, y, 55, 22);
+    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 180, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
         { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
-    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 264, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
-        { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
-    m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        CRect(356, y - 1, W - 28, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
-    track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
-    for (const wchar_t* label : kZmanCheckboxLabels)
-        m_cmbNotifySefirahOtherZman.AddString(label);
-    m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
-    y += 50;
+    y += 30;
 
     mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 168); y += 22;
     mkStatic(m_pageNotifications, L"Zmanim:", 28, y, 70, 22);
@@ -1895,11 +2046,12 @@ BOOL COptionsDlg::OnInitDialog()
     // shaah-zmanis-aware sub-pages (Alos, Misheyakir, Sof MA, Sof GRA, Tzais)
     // reuse the existing CButton/CEdit members from the legacy Zmanim tab.
     // =========================================================================
-    int zmanPageTop    = 64;
+    // v0.8.83 — TCS_MULTILINE: 10 sub-tabs wrap to 2 rows instead of showing
+    // scroll arrows. zmanPageTop raised to 90 to clear the 2-row tab strip.
+    int zmanPageTop    = 90;
     int zmanPageBottom = H - 56;
-    // v0.8.2 - WS_CLIPSIBLINGS so the sub-tab body does not paint over its
-    // sibling radios/statics that live in the Zmanim sub-pages.
-    m_zmanimSubTab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
+    m_zmanimSubTab.Create(
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS | TCS_MULTILINE,
         CRect(20, 38, W - 20, zmanPageBottom), this, IDC_OPT_ZSUBTAB);
     m_zmanimSubTab.SetFont(pFont);
     {
@@ -1907,7 +2059,8 @@ BOOL COptionsDlg::OnInitDialog()
         sti.mask = TCIF_TEXT;
         const wchar_t* subNames[] = {
             L"Alos", L"Misheyakir", L"Sof Zman MA", L"Sof Zman GRA",
-            L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"End of Fast", L"Tzais"
+            L"Mincha Gedola", L"Mincha Ketana", L"Plag", L"End of Fast", L"Tzais",
+            L"Sha'a Zmanit"   // v0.8.83 — independent halachic-hour setting
         };
         for (int i = 0; i < (int)(sizeof(subNames) / sizeof(subNames[0])); ++i)
         {
@@ -2158,6 +2311,32 @@ BOOL COptionsDlg::OnInitDialog()
         { double mv = m_current.customTzeitValue > 0 ? m_current.customTzeitValue : 42.0; CString sv; sv.Format(L"%.4g", mv); m_editCustomTzeit.SetWindowText(sv); }
     }
 
+    // ----- Sha'a Zmanit sub-page (v0.8.83) — independent halachic-hour selector
+    {
+        int yy = zmanPageTop;
+        mkStatic(m_subPageShaahZmanit,
+            L"Select the halachic hour (Sha'a Zmanit) used for the bar display "
+            L"and as the time-unit for Sof Shema / Sof Tefilla calculations:",
+            28, yy, W - 56, 28);
+        yy += 34;
+        mkStatic(m_subPageShaahZmanit,
+            L"This is independent of the Sof Zman start-of-day. "
+            L"For example: start from Hanetz (GRA), but measure each hour "
+            L"using MA72 lengths — giving a later Sof Shema.",
+            28, yy, W - 56, 32);
+        yy += 40;
+        yy = makePresetSubPage(m_subPageShaahZmanit, m_radShaahZmanitPreset,
+            { L"GRA — Hanetz to Shkia \xF7 12  (shorter in winter, longer in summer)",
+              L"MA 72 min — (Hanetz\x2212" L"72) to (Shkia+72) \xF7 12",
+              L"MA 90 min — (Hanetz\x2212" L"90) to (Shkia+90) \xF7 12" },
+            yy);
+        // v0.8.83 — explicitly uncheck all before checking the selected one
+        // so radio-group exclusivity is enforced even before the dialog shows.
+        int sel = max(0, min(2, m_current.shaahZmanitShita));
+        for (CButton* r : m_radShaahZmanitPreset) r->SetCheck(BST_UNCHECKED);
+        m_radShaahZmanitPreset[sel]->SetCheck(BST_CHECKED);
+    }
+
     // OK / Cancel buttons
     m_btnOK.Create(L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
@@ -2385,13 +2564,13 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_cmbNotifySefirahHour,  L"Hour for a manual Sefiras HaOmer reminder");
     m_tooltip.AddTool(&m_cmbNotifySefirahMinute,L"Minute for a manual Sefiras HaOmer reminder");
     m_tooltip.AddTool(&m_cmbNotifySefirahAmPm,  L"AM or PM for a manual Sefiras HaOmer reminder");
-    m_tooltip.AddTool(&m_radNotifySefirahSunTzais, L"Base the Omer reminder on sunset or tzais");
-    m_tooltip.AddTool(&m_radNotifySefirahOther,    L"Base the Omer reminder on another zman of the day");
-    m_tooltip.AddTool(&m_radNotifySefirahManual,   L"Show the Omer reminder at a fixed clock time");
-    m_tooltip.AddTool(&m_editNotifySefirahOffset, L"Minutes before or after the selected zman for the Omer reminder");
-    m_tooltip.AddTool(&m_cmbNotifySefirahDir,    L"Whether the Omer reminder fires before or after the reference zman");
-    m_tooltip.AddTool(&m_cmbNotifySefirahBase,   L"Reference zman for the Omer reminder: sunset or tzais");
-    m_tooltip.AddTool(&m_cmbNotifySefirahOtherZman, L"The specific zman to use when 'other zman' mode is selected");
+    m_tooltip.AddTool(&m_radNotifySefirahSunTzais, L"Fire the Omer reminder relative to sunset or tzais — pick which one in the dropdown to the right");
+    m_tooltip.AddTool(&m_radNotifySefirahOther,    L"Fire the Omer reminder relative to another zman — pick the zman in the dropdown to the right");
+    m_tooltip.AddTool(&m_radNotifySefirahManual,   L"Fire the Omer reminder at a fixed clock time — set the time in the controls to the right");
+    m_tooltip.AddTool(&m_editNotifySefirahOffset, L"Offset in minutes from the chosen zman (ignored for manual time)");
+    m_tooltip.AddTool(&m_cmbNotifySefirahDir,    L"Whether the offset fires before or after the reference zman (ignored for manual time)");
+    m_tooltip.AddTool(&m_cmbNotifySefirahBase,   L"Choose sunset or tzais as the base for the Omer reminder");
+    m_tooltip.AddTool(&m_cmbNotifySefirahOtherZman, L"The specific zman to use as the base for the Omer reminder");
     m_tooltip.AddTool(&m_cmbNotifyZmanim,       L"Notification style for upcoming zmanim alerts");
     m_tooltip.AddTool(&m_cmbNotifyMoadim,       L"Notification style for upcoming holidays and Moadim");
     m_tooltip.AddTool(&m_editNotifyMoadimAmount, L"How far before a holiday or moed to remind you");
@@ -2511,6 +2690,7 @@ void COptionsDlg::HideAllZmanimSubPages()
     hide(m_subPagePlag);
     hide(m_subPageEndFast);
     hide(m_subPageTzais);
+    hide(m_subPageShaahZmanit);  // v0.8.83
 }
 
 // v0.8.1 - Show the requested Zmanim sub-page and ALSO raise each of its
@@ -2523,7 +2703,8 @@ void COptionsDlg::ShowZmanimSubPage(int sub)
         &m_subPageAlos, &m_subPageMisheyakir,
         &m_subPageSofMA, &m_subPageSofGRA,
         &m_subPageMinchaGedola, &m_subPageMinchaKetana,
-        &m_subPagePlag, &m_subPageEndFast, &m_subPageTzais
+        &m_subPagePlag, &m_subPageEndFast, &m_subPageTzais,
+        &m_subPageShaahZmanit   // v0.8.83 — index 9
     };
     const int count = (int)(sizeof(pages) / sizeof(pages[0]));
     for (int i = 0; i < count; ++i)
@@ -3034,6 +3215,15 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
         SetDirty(true);
         return TRUE;
     }
+    if (code == BN_CLICKED &&
+        (id == IDC_OPT_NOTIFY_SEFIRAH_MODE ||
+         id == IDC_OPT_NOTIFY_SEFIRAH_MODE + 1 ||
+         id == IDC_OPT_NOTIFY_SEFIRAH_MODE + 2))
+    {
+        UpdateSefirahControls();
+        SetDirty(true);
+        return TRUE;
+    }
     if (code == BN_CLICKED && (id == IDC_OPT_RAD_WINNOTIFY || id == IDC_OPT_RAD_WINLUACHTOAST))
     {
         bool wlToast = (id == IDC_OPT_RAD_WINLUACHTOAST);
@@ -3216,6 +3406,23 @@ void COptionsDlg::UpdateNotificationControls()
     for (auto& chk : m_chkNotifyZmanim)
         if (chk.GetSafeHwnd())
             chk.EnableWindow(enableZmanim ? TRUE : FALSE);
+    UpdateSefirahControls();
+}
+
+void COptionsDlg::UpdateSefirahControls()
+{
+    if (!m_radNotifySefirahSunTzais.GetSafeHwnd()) return;
+    bool isSunTzais = m_radNotifySefirahSunTzais.GetCheck() == BST_CHECKED;
+    bool isOther    = m_radNotifySefirahOther.GetCheck()    == BST_CHECKED;
+    bool isManual   = m_radNotifySefirahManual.GetCheck()   == BST_CHECKED;
+    bool isZman     = isSunTzais || isOther;
+    m_cmbNotifySefirahBase.EnableWindow(isSunTzais ? TRUE : FALSE);
+    m_cmbNotifySefirahOtherZman.EnableWindow(isOther ? TRUE : FALSE);
+    m_cmbNotifySefirahHour.EnableWindow(isManual ? TRUE : FALSE);
+    m_cmbNotifySefirahMinute.EnableWindow(isManual ? TRUE : FALSE);
+    m_cmbNotifySefirahAmPm.EnableWindow(isManual ? TRUE : FALSE);
+    m_editNotifySefirahOffset.EnableWindow(isZman ? TRUE : FALSE);
+    m_cmbNotifySefirahDir.EnableWindow(isZman ? TRUE : FALSE);
 }
 
 void COptionsDlg::ReadControlsIntoResult()
@@ -3442,6 +3649,10 @@ void COptionsDlg::ReadControlsIntoResult()
         else if (v == 4) { m_result.customTzeitMode = 0; m_result.customTzeitValue = 16.1; }
     }
 
+    // v0.8.83 — Sha'a Zmanit independent shita (GRA / MA72 / MA90)
+    if ((v = pickedIndex(m_radShaahZmanitPreset)) >= 0)
+        m_result.shaahZmanitShita = v;
+
     // v0.8.54 - Auto-update settings
     m_result.disableAutoUpdate = (m_chkDisableAutoUpdate.GetCheck() == BST_CHECKED);
     m_result.checkUpdatesAuto = (m_chkCheckUpdatesAuto.GetCheck() == BST_CHECKED);
@@ -3603,17 +3814,7 @@ void COptionsDlg::OnManageCals()
         SetDirty(true);
 }
 
-bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent)
-{
-    CWebCalDlg dlg(calendars, pParent);
-    if (dlg.DoModal() == IDOK)
-    {
-        calendars = dlg.calendars;
-        return true;
-    }
-    return false;
-}
-
+// OnAdvancedReminders — opens the advanced reminders manager dialog.
 void COptionsDlg::OnAdvancedReminders()
 {
     CAdvancedRemindersDlg dlg(m_result.advancedReminders, this);
@@ -3621,9 +3822,10 @@ void COptionsDlg::OnAdvancedReminders()
     SetDirty(true);
 }
 
+// OnPreviewNotification — fires a sample notification so the user can preview
+// how their selected style (toast/popup) will look.
 void COptionsDlg::OnPreviewNotification()
 {
-    // Pick the highest-priority style the user has enabled across both combos
     int styleP = max(0, m_cmbNotifyPersonal.GetCurSel());
     int styleW = max(0, m_cmbNotifyWebCal.GetCurSel());
     int style  = max(styleP, styleW);
@@ -3644,5 +3846,5 @@ void COptionsDlg::OnPreviewNotification()
         L"Yahrzeit: Rivka Cohen (eve)\n"
         L"Anniversary: Yitzchak & Sara";
 
-    pFrame->ShowEventNotification(L"Today's Events  —  Sample", body, style);
+    pFrame->ShowEventNotification(L"Today's Events — Sample", body, style);
 }

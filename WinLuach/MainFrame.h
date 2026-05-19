@@ -239,6 +239,7 @@ public:
     int           m_customMinchaGedolaPreset = 1;
     int           m_customMinchaKetanaPreset = 0;
     int           m_customPlagPreset = 0;
+    int           m_shaahZmanitShita = 0;           // v0.8.83: 0=GRA, 1=MA72, 2=MA90
     int           m_customEndFastPreset = 0;       // 0=R' Tukaccinsky, 1=R' Moshe Feinstein
     int           m_customEndFastMinuteMode = 0;   // v0.8.82: 0=fixed, 1=shaah zmanit
     double        m_customMinchaGedolaValue = 30.0;
