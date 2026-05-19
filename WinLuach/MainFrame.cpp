@@ -4201,7 +4201,7 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
     // Sha'a Zmanit is an independent setting so users can choose the halachic
     // clock regardless of which shita defines Sof Shema/Tefilla's start.
     double selectedShaah = z.shaahZmanit_GRA;
-    switch (max(0, min(3, m_shaahZmanitShita)))
+    switch (max(0, min(4, m_shaahZmanitShita)))
     {
     case 1:  selectedShaah = z.shaahZmanit_MA72; break;
     case 2:  selectedShaah = z.shaahZmanit_MA90; break;
@@ -4215,6 +4215,19 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
             TimeOfDaySeconds(customShaahEnd) > TimeOfDaySeconds(customShaahStart))
         {
             selectedShaah = CalculateShaahZmanit(customShaahStart, customShaahEnd);
+        }
+        break;
+    }
+    case 4:
+    {
+        TimeOfDay shaah16Start = CustomShaahMorningBoundary(g, m_location, isDst, z,
+            0, 0.0, 16.1);
+        TimeOfDay shaah16End = CustomShaahEveningBoundary(g, m_location, isDst, z,
+            0, 0.0, 16.1);
+        if (TimeOfDaySeconds(shaah16Start) >= 0 &&
+            TimeOfDaySeconds(shaah16End) > TimeOfDaySeconds(shaah16Start))
+        {
+            selectedShaah = CalculateShaahZmanit(shaah16Start, shaah16End);
         }
         break;
     }
@@ -4301,7 +4314,7 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_customMinchaGedolaPreset = max(0, min(3, s.customMinchaGedolaPreset));
     m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
     m_customPlagPreset = max(0, min(2, s.customPlagPreset));
-    m_shaahZmanitShita        = max(0, min(3, s.shaahZmanitShita));
+    m_shaahZmanitShita        = max(0, min(4, s.shaahZmanitShita));
     m_customShaahStartMode    = max(0, min(1, s.customShaahStartMode));
     m_customShaahStartValue   = s.customShaahStartValue > 0.0 ? s.customShaahStartValue : 72.0;
     m_customShaahStartDegreesValue = s.customShaahStartDegreesValue > 0.0 ? s.customShaahStartDegreesValue : 16.1;

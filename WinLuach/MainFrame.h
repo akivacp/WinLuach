@@ -239,7 +239,7 @@ public:
     int           m_customMinchaGedolaPreset = 1;
     int           m_customMinchaKetanaPreset = 0;
     int           m_customPlagPreset = 0;
-    int           m_shaahZmanitShita = 0;           // 0=GRA, 1=MA72, 2=MA90, 3=custom
+    int           m_shaahZmanitShita = 0;           // 0=GRA, 1=MA72, 2=MA90, 3=custom, 4=16.1 deg
     int           m_customShaahStartMode = 1;       // 0=degrees, 1=fixed minutes before hanetz
     double        m_customShaahStartValue = 72.0;
     double        m_customShaahStartDegreesValue = 16.1;
