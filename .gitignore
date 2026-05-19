@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd.claude/
 wiki/WinLuach.wiki/
+
+# Temporary project backups
+*.bak_*
