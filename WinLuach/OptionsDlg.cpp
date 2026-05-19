@@ -2374,15 +2374,18 @@ BOOL COptionsDlg::OnInitDialog()
 
         mkStatic(m_subPageShaahZmanit, L"Custom start boundary:", 40, yy, 160, 20);
         yy += 22;
-        m_chkShaahStartCustomDeg.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_DEG_CHK);
-        track(m_subPageShaahZmanit, &m_chkShaahStartCustomDeg);
-        m_chkShaahStartCustomDeg.SetCheck(m_current.customShaahStartMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        m_radShaahStartDegrees.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_DEG_RAD);
+        track(m_subPageShaahZmanit, &m_radShaahStartDegrees);
+        m_radShaahStartDegrees.SetCheck(m_current.customShaahStartMode == 0 ? BST_CHECKED : BST_UNCHECKED);
         setEdit(m_subPageShaahZmanit, m_editCustomShaahStartDeg, 184, yy - 1, 58,
             IDC_OPT_SHAAH_START_DEG_VAL, m_current.customShaahStartDegreesValue);
         mkStatic(m_subPageShaahZmanit, L"degrees before Hanetz", 248, yy, 160, 20);
         yy += 26;
-        mkStatic(m_subPageShaahZmanit, L"Or fixed offset:", 54, yy, 112, 20);
+        m_radShaahStartFixed.Create(L"Fixed offset:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_FIXED_RAD);
+        track(m_subPageShaahZmanit, &m_radShaahStartFixed);
+        m_radShaahStartFixed.SetCheck(m_current.customShaahStartMode == 1 ? BST_CHECKED : BST_UNCHECKED);
         setEdit(m_subPageShaahZmanit, m_editCustomShaahStart, 184, yy - 1, 58,
             IDC_OPT_SHAAH_START_VALUE, m_current.customShaahStartValue);
         mkStatic(m_subPageShaahZmanit, L"minutes before Hanetz", 248, yy, 160, 20);
@@ -2390,15 +2393,18 @@ BOOL COptionsDlg::OnInitDialog()
 
         mkStatic(m_subPageShaahZmanit, L"Custom end boundary:", 40, yy, 160, 20);
         yy += 22;
-        m_chkShaahEndCustomDeg.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_DEG_CHK);
-        track(m_subPageShaahZmanit, &m_chkShaahEndCustomDeg);
-        m_chkShaahEndCustomDeg.SetCheck(m_current.customShaahEndMode == 0 ? BST_CHECKED : BST_UNCHECKED);
+        m_radShaahEndDegrees.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_DEG_RAD);
+        track(m_subPageShaahZmanit, &m_radShaahEndDegrees);
+        m_radShaahEndDegrees.SetCheck(m_current.customShaahEndMode == 0 ? BST_CHECKED : BST_UNCHECKED);
         setEdit(m_subPageShaahZmanit, m_editCustomShaahEndDeg, 184, yy - 1, 58,
             IDC_OPT_SHAAH_END_DEG_VAL, m_current.customShaahEndDegreesValue);
         mkStatic(m_subPageShaahZmanit, L"degrees after Shkia", 248, yy, 150, 20);
         yy += 26;
-        mkStatic(m_subPageShaahZmanit, L"Or fixed offset:", 54, yy, 112, 20);
+        m_radShaahEndFixed.Create(L"Fixed offset:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_FIXED_RAD);
+        track(m_subPageShaahZmanit, &m_radShaahEndFixed);
+        m_radShaahEndFixed.SetCheck(m_current.customShaahEndMode == 1 ? BST_CHECKED : BST_UNCHECKED);
         setEdit(m_subPageShaahZmanit, m_editCustomShaahEnd, 184, yy - 1, 58,
             IDC_OPT_SHAAH_END_VALUE, m_current.customShaahEndValue);
         mkStatic(m_subPageShaahZmanit, L"minutes after Shkia", 248, yy, 150, 20);
@@ -3386,16 +3392,28 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
             setPresetRadio(m_radTzaisPreset, 5);
     };
     auto isShaahCustomControl = [](UINT ctlId) {
-        return ctlId == IDC_OPT_SHAAH_START_DEG_CHK ||
+        return ctlId == IDC_OPT_SHAAH_START_DEG_RAD ||
+               ctlId == IDC_OPT_SHAAH_START_FIXED_RAD ||
                ctlId == IDC_OPT_SHAAH_START_DEG_VAL ||
                ctlId == IDC_OPT_SHAAH_START_VALUE ||
-               ctlId == IDC_OPT_SHAAH_END_DEG_CHK ||
+               ctlId == IDC_OPT_SHAAH_END_DEG_RAD ||
+               ctlId == IDC_OPT_SHAAH_END_FIXED_RAD ||
                ctlId == IDC_OPT_SHAAH_END_DEG_VAL ||
                ctlId == IDC_OPT_SHAAH_END_VALUE;
     };
     if (m_initialized && (code == BN_CLICKED || code == EN_CHANGE) &&
         isShaahCustomControl(id))
     {
+        if (id == IDC_OPT_SHAAH_START_DEG_RAD || id == IDC_OPT_SHAAH_START_FIXED_RAD)
+        {
+            m_radShaahStartDegrees.SetCheck(id == IDC_OPT_SHAAH_START_DEG_RAD ? BST_CHECKED : BST_UNCHECKED);
+            m_radShaahStartFixed.SetCheck(id == IDC_OPT_SHAAH_START_FIXED_RAD ? BST_CHECKED : BST_UNCHECKED);
+        }
+        if (id == IDC_OPT_SHAAH_END_DEG_RAD || id == IDC_OPT_SHAAH_END_FIXED_RAD)
+        {
+            m_radShaahEndDegrees.SetCheck(id == IDC_OPT_SHAAH_END_DEG_RAD ? BST_CHECKED : BST_UNCHECKED);
+            m_radShaahEndFixed.SetCheck(id == IDC_OPT_SHAAH_END_FIXED_RAD ? BST_CHECKED : BST_UNCHECKED);
+        }
         setPresetRadio(m_radShaahZmanitPreset, 3);
         SetDirty(true);
         return TRUE;
@@ -3658,16 +3676,16 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.customTzeitDegreesValue = GetEditValue(m_editCustomTzeitDeg, 8.5);
     m_result.customTzeitValue = GetEditValue(m_editCustomTzeit, 42.0);
 
-    if (m_chkShaahStartCustomDeg.GetSafeHwnd() &&
-        m_chkShaahStartCustomDeg.GetCheck() == BST_CHECKED)
+    if (m_radShaahStartDegrees.GetSafeHwnd() &&
+        m_radShaahStartDegrees.GetCheck() == BST_CHECKED)
         m_result.customShaahStartMode = 0;
     else
         m_result.customShaahStartMode = 1;
     m_result.customShaahStartDegreesValue = GetEditValue(m_editCustomShaahStartDeg, 16.1);
     m_result.customShaahStartValue = GetEditValue(m_editCustomShaahStart, 72.0);
 
-    if (m_chkShaahEndCustomDeg.GetSafeHwnd() &&
-        m_chkShaahEndCustomDeg.GetCheck() == BST_CHECKED)
+    if (m_radShaahEndDegrees.GetSafeHwnd() &&
+        m_radShaahEndDegrees.GetCheck() == BST_CHECKED)
         m_result.customShaahEndMode = 0;
     else
         m_result.customShaahEndMode = 1;
