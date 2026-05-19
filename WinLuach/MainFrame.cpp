@@ -401,6 +401,29 @@ static TimeOfDay CustomEveningBoundary(const GregorianDate& g, const Location& l
     return AddShaot(z.shkia, z.shaahZmanit_GRA, max(0.0, value) / 60.0);
 }
 
+static TimeOfDay CustomShaahMorningBoundary(const GregorianDate& g, const Location& loc, bool isDst,
+    const ZmanimResult& z, int mode, double minutesValue, double degreesValue)
+{
+    mode = max(0, min(1, mode));
+    if (mode == 0)
+        return CustomMorningBoundary(g, loc, isDst, z, 0, degreesValue, 16.1);
+    return CustomMorningBoundary(g, loc, isDst, z, 1, minutesValue, 16.1);
+}
+
+static TimeOfDay CustomShaahEveningBoundary(const GregorianDate& g, const Location& loc, bool isDst,
+    const ZmanimResult& z, int mode, double minutesValue, double degreesValue)
+{
+    mode = max(0, min(1, mode));
+    if (mode == 0)
+        return CustomEveningBoundary(g, loc, isDst, z, 0, degreesValue, 8.5);
+    return CustomEveningBoundary(g, loc, isDst, z, 1, minutesValue, 8.5);
+}
+
+static int TimeOfDaySeconds(const TimeOfDay& t)
+{
+    return t.IsValid() ? (t.hour * 3600 + t.minute * 60 + t.second) : -1;
+}
+
 static std::wstring BoundaryLabel(const wchar_t* base, int mode, double value, bool allowGra)
 {
     CString s;
@@ -4175,14 +4198,26 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
     TimeOfDay sofStart = CustomMorningBoundary(g, m_location, isDst, z,
         m_customSofZmanMode, m_customSofZmanValue, 16.1);
 
-    // v0.8.83 — Sha'a Zmanit is now an independent setting (m_shaahZmanitShita)
-    // so users can choose GRA/MA72/MA90 for the halachic clock regardless of
-    // which shita defines the start-of-day for Sof Shema/Tefilla.
-    double selectedShaah;
-    switch (max(0, min(2, m_shaahZmanitShita)))
+    // Sha'a Zmanit is an independent setting so users can choose the halachic
+    // clock regardless of which shita defines Sof Shema/Tefilla's start.
+    double selectedShaah = z.shaahZmanit_GRA;
+    switch (max(0, min(3, m_shaahZmanitShita)))
     {
     case 1:  selectedShaah = z.shaahZmanit_MA72; break;
     case 2:  selectedShaah = z.shaahZmanit_MA90; break;
+    case 3:
+    {
+        TimeOfDay customShaahStart = CustomShaahMorningBoundary(g, m_location, isDst, z,
+            m_customShaahStartMode, m_customShaahStartValue, m_customShaahStartDegreesValue);
+        TimeOfDay customShaahEnd = CustomShaahEveningBoundary(g, m_location, isDst, z,
+            m_customShaahEndMode, m_customShaahEndValue, m_customShaahEndDegreesValue);
+        if (TimeOfDaySeconds(customShaahStart) >= 0 &&
+            TimeOfDaySeconds(customShaahEnd) > TimeOfDaySeconds(customShaahStart))
+        {
+            selectedShaah = CalculateShaahZmanit(customShaahStart, customShaahEnd);
+        }
+        break;
+    }
     default: selectedShaah = z.shaahZmanit_GRA;  break;
     }
     out.shaahZmanit = selectedShaah > 0.0 ? selectedShaah : z.shaahZmanit_GRA;
@@ -4266,7 +4301,13 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_customMinchaGedolaPreset = max(0, min(3, s.customMinchaGedolaPreset));
     m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
     m_customPlagPreset = max(0, min(2, s.customPlagPreset));
-    m_shaahZmanitShita        = max(0, min(2, s.shaahZmanitShita));         // v0.8.83
+    m_shaahZmanitShita        = max(0, min(3, s.shaahZmanitShita));
+    m_customShaahStartMode    = max(0, min(1, s.customShaahStartMode));
+    m_customShaahStartValue   = s.customShaahStartValue > 0.0 ? s.customShaahStartValue : 72.0;
+    m_customShaahStartDegreesValue = s.customShaahStartDegreesValue > 0.0 ? s.customShaahStartDegreesValue : 16.1;
+    m_customShaahEndMode      = max(0, min(1, s.customShaahEndMode));
+    m_customShaahEndValue     = s.customShaahEndValue > 0.0 ? s.customShaahEndValue : 72.0;
+    m_customShaahEndDegreesValue = s.customShaahEndDegreesValue > 0.0 ? s.customShaahEndDegreesValue : 8.5;
     m_customEndFastPreset     = max(0, min(2, s.customEndFastPreset));
     m_customEndFastMinuteMode = max(0, min(1, s.customEndFastMinuteMode)); // v0.8.82
     m_customMinchaGedolaValue = s.customMinchaGedolaValue > 0.0 ? s.customMinchaGedolaValue : 30.0;

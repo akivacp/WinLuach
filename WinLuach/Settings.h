@@ -183,10 +183,16 @@ struct AppSettings
     // --- Zmanim shita ---
     // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90 (default)
     int          zmanimShita = 2;
-    // shaahZmanitShita (v0.8.83): which shaah zmanit to display and use as the
+    // shaahZmanitShita: which shaah zmanit to display and use as the
     // time-unit for all shaah-based calculations (independent of zmanimShita).
-    // 0=GRA (hanetz→shkia÷12), 1=MA72, 2=MA90
+    // 0=GRA (hanetz->shkia)/12, 1=MA72, 2=MA90, 3=custom boundaries
     int          shaahZmanitShita = 0;
+    int          customShaahStartMode = 1; // 0=degrees before hanetz, 1=fixed minutes before hanetz
+    double       customShaahStartValue = 72.0;
+    double       customShaahStartDegreesValue = 16.1;
+    int          customShaahEndMode = 1;   // 0=degrees after shkia, 1=fixed minutes after shkia
+    double       customShaahEndValue = 72.0;
+    double       customShaahEndDegreesValue = 8.5;
     // alotShita: 0=16.1deg(GRA), 1=72min, 2=90min
     int          alotShita   = 0;
     // tzeitShita: 0=8.5deg(GRA), 1=72min, 2=90min, 3=72min-prop, 4=90min-prop
