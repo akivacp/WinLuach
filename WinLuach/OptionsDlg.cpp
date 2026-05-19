@@ -175,6 +175,7 @@
 #define IDC_OPT_REMIND_DAILY_HOUR  530
 #define IDC_OPT_REMIND_DAILY_MIN   531
 #define IDC_OPT_REMIND_DAILY_AMPM  532
+#define IDC_OPT_NOTIFY_SUBTAB      541
 
 enum ColorPreviewKind
 {
@@ -1170,6 +1171,7 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_CONTROL_RANGE(BN_CLICKED, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + 6, OnTrayTipZmanClicked)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
+    ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_NOTIFY_SUBTAB, &COptionsDlg::OnNotifySubTabChanged)
     ON_WM_SIZE()
 END_MESSAGE_MAP()
 
@@ -1422,6 +1424,9 @@ BOOL COptionsDlg::OnInitDialog()
     m_subPageEndFast.clear();
     m_subPageTzais.clear();
     m_subPageShaahZmanit.clear();      // v0.8.83
+    m_pageNotifyGeneral.clear();
+    m_pageNotifyZmanim.clear();
+    m_pageNotifyReminders.clear();
     m_zmanimBarChecks.clear();
     m_radAlosPreset.clear();
     m_radMisheyakirPreset.clear();
@@ -1808,205 +1813,227 @@ BOOL COptionsDlg::OnInitDialog()
     m_radMisheyakirZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         CRect(175, y + 24, W - 28, y + 44), this, IDC_OPT_MISHEYAKIR_ZMANIS); track(m_pageZmanShitos, &m_radMisheyakirZmanis);
 
-    // Notifications tab
-    y = 38;
-    mkGroup(m_pageNotifications, L"Toast notification type", 14, y, W - 28, 76); y += 22;
-    m_radUseWindowsNotify.Create(L"Windows built-in notifications",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(28, y, 230, y + 20), this, IDC_OPT_RAD_WINNOTIFY);
-    track(m_pageNotifications, &m_radUseWindowsNotify);
-    m_radUseWinLuachToast.Create(L"WinLuach Toast",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(236, y, 380, y + 20), this, IDC_OPT_RAD_WINLUACHTOAST);
-    track(m_pageNotifications, &m_radUseWinLuachToast);
-    bool isWLToast = m_current.useWinLuachToast;
-    m_radUseWindowsNotify.SetCheck(!isWLToast ? BST_CHECKED : BST_UNCHECKED);
-    m_radUseWinLuachToast.SetCheck(isWLToast ? BST_CHECKED : BST_UNCHECKED);
-    y += 26;
-    mkStatic(m_pageNotifications, L"Display for:", 28, y, 80, 22);
-    m_editToastDuration.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(110, y, 152, y + 22), this, IDC_OPT_TOAST_DURATION);
-    track(m_pageNotifications, &m_editToastDuration);
-    { CString dur; dur.Format(L"%d", max(1, m_current.winLuachToastDuration)); m_editToastDuration.SetWindowText(dur); }
-    initCombo(m_pageNotifications, m_cmbToastDurationUnit, 158, y - 1, 100, IDC_OPT_TOAST_UNIT,
-        { L"minutes", L"hours", L"days", L"weeks", L"months" },
-        max(0, min(4, m_current.winLuachToastDurationUnit)));
-    m_editToastDuration.EnableWindow(isWLToast ? TRUE : FALSE);
-    m_cmbToastDurationUnit.EnableWindow(isWLToast ? TRUE : FALSE);
-    y += 30;
-    mkGroup(m_pageNotifications, L"Notification Style", 14, y, W - 28, 212); y += 22;
-    mkStatic(m_pageNotifications, L"Personal events:", 28, y, 112, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyPersonal, 145, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyPersonalEvents)));
-    m_btnPreviewNotify.Create(L"Test", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(288, y, 340, y + 24), this, IDC_OPT_PREVIEW_NOTIFY); track(m_pageNotifications, &m_btnPreviewNotify); y += 28;
-    mkStatic(m_pageNotifications, L"Web calendars:", 28, y, 112, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyWebCal, 145, y - 1, 126, IDC_OPT_NOTIFY_WEBCAL,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyWebCalEvents)));
-    y += 28;
-    // Sefiras HaOmer — redesigned layout: each mode is self-contained on its own row
-    mkStatic(m_pageNotifications, L"Sefiras HaOmer:", 28, y, 112, 22);
-    initCombo(m_pageNotifications, m_cmbNotifySefirah, 145, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifySefirahStyle)));
-    y += 28;
-    bool isManualOmer = (m_current.notifySefirahMode == 0);
-    bool isOtherOmer  = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
-    // Row 1: relative to sunset / tzais
-    m_radNotifySefirahSunTzais.Create(L"relative to:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
-    track(m_pageNotifications, &m_radNotifySefirahSunTzais);
-    m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
-    initCombo(m_pageNotifications, m_cmbNotifySefirahBase, 128, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
-        { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
-    y += 26;
-    // Row 2: other zman
-    m_radNotifySefirahOther.Create(L"other zman:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
-    track(m_pageNotifications, &m_radNotifySefirahOther);
-    m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
-    m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        CRect(128, y - 1, W - 28, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
-    track(m_pageNotifications, &m_cmbNotifySefirahOtherZman);
-    for (const wchar_t* label : kZmanCheckboxLabels)
-        m_cmbNotifySefirahOtherZman.AddString(label);
-    m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
-    y += 26;
-    // Row 3: manual time
-    m_radNotifySefirahManual.Create(L"manual time:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-        CRect(28, y, 124, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
-    track(m_pageNotifications, &m_radNotifySefirahManual);
-    m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
-    mkStatic(m_pageNotifications, L"at:", 130, y, 24, 22);
-    m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(158, y - 1, 198, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
-    track(m_pageNotifications, &m_cmbNotifySefirahHour);
-    m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(202, y - 1, 242, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
-    track(m_pageNotifications, &m_cmbNotifySefirahMinute);
-    m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(246, y - 1, 290, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
-    track(m_pageNotifications, &m_cmbNotifySefirahAmPm);
-    FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
-    SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
-        m_current.notifySefirahTime, 21, 0);
-    y += 26;
-    // Row 4: offset (applies to rows 1 and 2; grayed when manual time is selected)
-    mkStatic(m_pageNotifications, L"offset:", 28, y, 48, 22);
-    m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(78, y, 118, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
-    track(m_pageNotifications, &m_editNotifySefirahOffset);
+    // Notifications tab — 3 sub-tabs: General | Zmanim | Reminders
     {
-        CString off;
-        off.Format(L"%d", max(0, m_current.notifySefirahOffsetMinutes));
-        m_editNotifySefirahOffset.SetWindowText(off);
-    }
-    mkStatic(m_pageNotifications, L"minutes", 122, y, 55, 22);
-    initCombo(m_pageNotifications, m_cmbNotifySefirahDir, 180, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
-        { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
-    y += 30;
+        int notifyPageTop = 64;
+        int notifyPageBottom = H - 56;
+        m_notifySubTab.Create(
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
+            CRect(20, 38, W - 20, notifyPageBottom), this, IDC_OPT_NOTIFY_SUBTAB);
+        m_notifySubTab.SetFont(pFont);
+        {
+            TCITEM sti = {};
+            sti.mask = TCIF_TEXT;
+            const wchar_t* subNames[] = { L"General", L"Zmanim", L"Reminders" };
+            for (int i = 0; i < 3; ++i) {
+                sti.pszText = const_cast<LPWSTR>(subNames[i]);
+                m_notifySubTab.InsertItem(i, &sti);
+            }
+        }
 
-    mkGroup(m_pageNotifications, L"Zmanim Notifications", 14, y, W - 28, 168); y += 22;
-    mkStatic(m_pageNotifications, L"Zmanim:", 28, y, 70, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyZmanim, 100, y - 1, 126, IDC_OPT_NOTIFY_ZMAN_STYLE,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyZmanimStyle)));
-    y += 28;
-    for (int i = 0; i < kZmanCheckboxCount; ++i)
-    {
-        int col = i / 9;
-        int row = i % 9;
-        int x0 = 28 + col * 190;
-        int yy = y + row * 20;
-        m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + 170, yy + 18), this, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
-        track(m_pageNotifications, &m_chkNotifyZmanim[i]);
-        m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
-    }
-    y += 188;
+        // ── General sub-page ──────────────────────────────────────────────
+        y = notifyPageTop;
+        mkGroup(m_pageNotifyGeneral, L"Toast notification type", 28, y, W - 56, 76); y += 22;
+        m_radUseWindowsNotify.Create(L"Windows built-in notifications",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+            CRect(42, y, 242, y + 20), this, IDC_OPT_RAD_WINNOTIFY);
+        track(m_pageNotifyGeneral, &m_radUseWindowsNotify);
+        m_radUseWinLuachToast.Create(L"WinLuach Toast",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(248, y, 400, y + 20), this, IDC_OPT_RAD_WINLUACHTOAST);
+        track(m_pageNotifyGeneral, &m_radUseWinLuachToast);
+        bool isWLToast = m_current.useWinLuachToast;
+        m_radUseWindowsNotify.SetCheck(!isWLToast ? BST_CHECKED : BST_UNCHECKED);
+        m_radUseWinLuachToast.SetCheck( isWLToast ? BST_CHECKED : BST_UNCHECKED);
+        y += 26;
+        mkStatic(m_pageNotifyGeneral, L"Display for:", 42, y, 80, 22);
+        m_editToastDuration.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(124, y, 166, y + 22), this, IDC_OPT_TOAST_DURATION);
+        track(m_pageNotifyGeneral, &m_editToastDuration);
+        { CString dur; dur.Format(L"%d", max(1, m_current.winLuachToastDuration)); m_editToastDuration.SetWindowText(dur); }
+        initCombo(m_pageNotifyGeneral, m_cmbToastDurationUnit, 172, y - 1, 100, IDC_OPT_TOAST_UNIT,
+            { L"minutes", L"hours", L"days", L"weeks", L"months" },
+            max(0, min(4, m_current.winLuachToastDurationUnit)));
+        m_editToastDuration.EnableWindow(isWLToast ? TRUE : FALSE);
+        m_cmbToastDurationUnit.EnableWindow(isWLToast ? TRUE : FALSE);
+        y += 30;
 
-    mkGroup(m_pageNotifications, L"Advance Reminders", 14, y, W - 28, 112); y += 22;
-    mkStatic(m_pageNotifications, L"Moadim:", 28, y, 70, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyMoadim, 100, y - 1, 126, IDC_OPT_NOTIFY_MOADIM_STYLE,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyMoadimStyle)));
-    mkStatic(m_pageNotifications, L"before:", 238, y, 50, 22);
-    m_editNotifyMoadimAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(290, y, 332, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyMoadimAmount);
-    initCombo(m_pageNotifications, m_cmbNotifyMoadimUnit, 338, y - 1, 84, IDC_OPT_NOTIFY_MOADIM_UNIT,
-        { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 2);
-    SetOffsetControls(m_current.notifyMoadimOffsets, m_editNotifyMoadimAmount, m_cmbNotifyMoadimUnit);
-    y += 28;
-    mkStatic(m_pageNotifications, L"Parsha:", 28, y, 70, 22);
-    initCombo(m_pageNotifications, m_cmbNotifyParsha, 100, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_NAME,
-        { L"Any", L"Bereshis", L"Noach", L"Lech Lecha", L"Vayera", L"Chayei Sarah",
-          L"Toldos", L"Vayetzei", L"Vayishlach", L"Vayeshev", L"Miketz", L"Vayigash",
-          L"Vayechi", L"Shemos", L"Vaera", L"Bo", L"Beshalach", L"Yisro", L"Mishpatim",
-          L"Terumah", L"Tetzaveh", L"Ki Sisa", L"Vayakhel", L"Pekudei", L"Vayikra",
-          L"Tzav", L"Shemini", L"Tazria", L"Metzora", L"Acharei Mos", L"Kedoshim",
-          L"Emor", L"Behar", L"Bechukosai", L"Bamidbar", L"Naso", L"Behaaloscha",
-          L"Shelach", L"Korach", L"Chukas", L"Balak", L"Pinchas", L"Matos", L"Masei",
-          L"Devarim", L"Vaeschanan", L"Eikev", L"Reeh", L"Shoftim", L"Ki Seitzei",
-          L"Ki Savo", L"Nitzavim", L"Vayelech", L"Haazinu", L"Vezos Haberacha" },
-        0);
-    int parSel = 0;
-    for (int i = 0; i < m_cmbNotifyParsha.GetCount(); ++i)
-    {
-        CString val; m_cmbNotifyParsha.GetLBText(i, val);
-        if (std::wstring((LPCWSTR)val) == m_current.notifyParshaName) { parSel = i; break; }
-    }
-    m_cmbNotifyParsha.SetCurSel(parSel);
-    initCombo(m_pageNotifications, m_cmbNotifyParshaStyle, 238, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_STYLE,
-        { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
-        max(0, min(3, m_current.notifyParshaStyle)));
-    y += 28;
-    mkStatic(m_pageNotifications, L"Parsha before:", 28, y, 100, 22);
-    m_editNotifyParshaAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(130, y, 170, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyParshaAmount);
-    initCombo(m_pageNotifications, m_cmbNotifyParshaUnit, 176, y - 1, 56, IDC_OPT_NOTIFY_PARSHA_UNIT,
-        { L"minutes", L"hours", L"days", L"weeks", L"months" }, 3);
-    SetOffsetControls(m_current.notifyParshaOffsets, m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
-    mkStatic(m_pageNotifications, L"Personal before:", 236, y, 96, 22);
-    m_editNotifyPersonalAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-        CRect(328, y, 362, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
-    track(m_pageNotifications, &m_editNotifyPersonalAmount);
-    initCombo(m_pageNotifications, m_cmbNotifyPersonalUnit, 366, y - 1, 76, IDC_OPT_NOTIFY_PERSONAL_UNIT,
-        { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 0);
-    SetOffsetControls(m_current.notifyPersonalOffsets, m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
-    y += 32;
-    m_btnAdvancedReminders.Create(L"Manage Advanced Reminders...",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, y, 240, y + 26), this, IDC_OPT_ADV_REMINDERS);
-    track(m_pageNotifications, &m_btnAdvancedReminders);
+        mkGroup(m_pageNotifyGeneral, L"Notification Style", 28, y, W - 56, 212); y += 22;
+        mkStatic(m_pageNotifyGeneral, L"Personal events:", 42, y, 112, 22);
+        initCombo(m_pageNotifyGeneral, m_cmbNotifyPersonal, 158, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifyPersonalEvents)));
+        m_btnPreviewNotify.Create(L"Test", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(300, y, 352, y + 24), this, IDC_OPT_PREVIEW_NOTIFY);
+        track(m_pageNotifyGeneral, &m_btnPreviewNotify);
+        y += 28;
+        mkStatic(m_pageNotifyGeneral, L"Web calendars:", 42, y, 112, 22);
+        initCombo(m_pageNotifyGeneral, m_cmbNotifyWebCal, 158, y - 1, 126, IDC_OPT_NOTIFY_WEBCAL,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifyWebCalEvents)));
+        y += 28;
+        // Sefiras HaOmer — redesigned layout: each mode is self-contained on its own row
+        mkStatic(m_pageNotifyGeneral, L"Sefiras HaOmer:", 42, y, 112, 22);
+        initCombo(m_pageNotifyGeneral, m_cmbNotifySefirah, 158, y - 1, 126, IDC_OPT_NOTIFY_SEFIRAH_STYLE,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifySefirahStyle)));
+        y += 28;
+        bool isManualOmer = (m_current.notifySefirahMode == 0);
+        bool isOtherOmer  = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
+        // Row 1: relative to sunset / tzais
+        m_radNotifySefirahSunTzais.Create(L"relative to:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
+            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
+        track(m_pageNotifyGeneral, &m_radNotifySefirahSunTzais);
+        m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+        initCombo(m_pageNotifyGeneral, m_cmbNotifySefirahBase, 142, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
+            { L"sunset", L"tzais" }, max(0, min(1, m_current.notifySefirahBase)));
+        y += 26;
+        // Row 2: other zman
+        m_radNotifySefirahOther.Create(L"other zman:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
+        track(m_pageNotifyGeneral, &m_radNotifySefirahOther);
+        m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
+        m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+            CRect(142, y - 1, W - 42, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
+        track(m_pageNotifyGeneral, &m_cmbNotifySefirahOtherZman);
+        for (const wchar_t* label : kZmanCheckboxLabels)
+            m_cmbNotifySefirahOtherZman.AddString(label);
+        m_cmbNotifySefirahOtherZman.SetCurSel(max(0, min(kZmanCheckboxCount - 1, m_current.notifySefirahOtherZman)));
+        y += 26;
+        // Row 3: manual time
+        m_radNotifySefirahManual.Create(L"manual time:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
+        track(m_pageNotifyGeneral, &m_radNotifySefirahManual);
+        m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
+        mkStatic(m_pageNotifyGeneral, L"at:", 144, y, 24, 22);
+        m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(172, y - 1, 212, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
+        track(m_pageNotifyGeneral, &m_cmbNotifySefirahHour);
+        m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(216, y - 1, 256, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
+        track(m_pageNotifyGeneral, &m_cmbNotifySefirahMinute);
+        m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(260, y - 1, 304, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
+        track(m_pageNotifyGeneral, &m_cmbNotifySefirahAmPm);
+        FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
+        SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
+            m_current.notifySefirahTime, 21, 0);
+        y += 26;
+        // Row 4: offset
+        mkStatic(m_pageNotifyGeneral, L"offset:", 42, y, 48, 22);
+        m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(92, y, 132, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
+        track(m_pageNotifyGeneral, &m_editNotifySefirahOffset);
+        {
+            CString off;
+            off.Format(L"%d", max(0, m_current.notifySefirahOffsetMinutes));
+            m_editNotifySefirahOffset.SetWindowText(off);
+        }
+        mkStatic(m_pageNotifyGeneral, L"minutes", 136, y, 55, 22);
+        initCombo(m_pageNotifyGeneral, m_cmbNotifySefirahDir, 194, y - 1, 72, IDC_OPT_NOTIFY_SEFIRAH_DIR,
+            { L"before", L"after" }, max(0, min(1, m_current.notifySefirahOffsetDir)));
+        y += 30;
 
-    // Daily reminder time — fires when an offset rule uses day/week/month units (v0.8.71)
-    y += 34;
-    mkStatic(m_pageNotifications, L"Daily reminder time:", 28, y + 3, 140, 22);
-    m_cmbReminderDailyHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(170, y, 210, y + 140), this, IDC_OPT_REMIND_DAILY_HOUR);
-    m_cmbReminderDailyMin.Create( WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(216, y, 256, y + 140), this, IDC_OPT_REMIND_DAILY_MIN);
-    m_cmbReminderDailyAmpm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-        CRect(262, y, 302, y + 140), this, IDC_OPT_REMIND_DAILY_AMPM);
-    FillClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm);
-    // Convert stored integer hour/minute to "H:MM AM/PM" string for SetClockCombos
-    {
-        int h = m_current.reminderDailyHour;
-        int m = m_current.reminderDailyMinute;
-        bool pm = (h >= 12);
-        wchar_t buf[16];
-        _snwprintf_s(buf, _TRUNCATE, L"%d:%02d %s", (h % 12 == 0 ? 12 : h % 12), m, pm ? L"PM" : L"AM");
-        SetClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm,
-            buf, h, m);
+        // ── Zmanim sub-page ───────────────────────────────────────────────
+        y = notifyPageTop;
+        mkGroup(m_pageNotifyZmanim, L"Zmanim Notifications", 28, y, W - 56, 168); y += 22;
+        mkStatic(m_pageNotifyZmanim, L"Zmanim:", 42, y, 70, 22);
+        initCombo(m_pageNotifyZmanim, m_cmbNotifyZmanim, 114, y - 1, 126, IDC_OPT_NOTIFY_ZMAN_STYLE,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifyZmanimStyle)));
+        y += 28;
+        for (int i = 0; i < kZmanCheckboxCount; ++i) {
+            int col = i / 9;
+            int row = i % 9;
+            int x0 = 42 + col * 190;
+            int yy = y + row * 20;
+            m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(x0, yy, x0 + 170, yy + 18), this, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
+            track(m_pageNotifyZmanim, &m_chkNotifyZmanim[i]);
+            m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
+        }
+        y += 188;
+
+        // ── Reminders sub-page ────────────────────────────────────────────
+        y = notifyPageTop;
+        mkGroup(m_pageNotifyReminders, L"Advance Reminders", 28, y, W - 56, 112); y += 22;
+        mkStatic(m_pageNotifyReminders, L"Moadim:", 42, y, 70, 22);
+        initCombo(m_pageNotifyReminders, m_cmbNotifyMoadim, 114, y - 1, 126, IDC_OPT_NOTIFY_MOADIM_STYLE,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifyMoadimStyle)));
+        mkStatic(m_pageNotifyReminders, L"before:", 252, y, 50, 22);
+        m_editNotifyMoadimAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(304, y, 346, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
+        track(m_pageNotifyReminders, &m_editNotifyMoadimAmount);
+        initCombo(m_pageNotifyReminders, m_cmbNotifyMoadimUnit, 352, y - 1, 84, IDC_OPT_NOTIFY_MOADIM_UNIT,
+            { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 2);
+        SetOffsetControls(m_current.notifyMoadimOffsets, m_editNotifyMoadimAmount, m_cmbNotifyMoadimUnit);
+        y += 28;
+        mkStatic(m_pageNotifyReminders, L"Parsha:", 42, y, 70, 22);
+        initCombo(m_pageNotifyReminders, m_cmbNotifyParsha, 114, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_NAME,
+            { L"Any", L"Bereshis", L"Noach", L"Lech Lecha", L"Vayera", L"Chayei Sarah",
+              L"Toldos", L"Vayetzei", L"Vayishlach", L"Vayeshev", L"Miketz", L"Vayigash",
+              L"Vayechi", L"Shemos", L"Vaera", L"Bo", L"Beshalach", L"Yisro", L"Mishpatim",
+              L"Terumah", L"Tetzaveh", L"Ki Sisa", L"Vayakhel", L"Pekudei", L"Vayikra",
+              L"Tzav", L"Shemini", L"Tazria", L"Metzora", L"Acharei Mos", L"Kedoshim",
+              L"Emor", L"Behar", L"Bechukosai", L"Bamidbar", L"Naso", L"Behaaloscha",
+              L"Shelach", L"Korach", L"Chukas", L"Balak", L"Pinchas", L"Matos", L"Masei",
+              L"Devarim", L"Vaeschanan", L"Eikev", L"Reeh", L"Shoftim", L"Ki Seitzei",
+              L"Ki Savo", L"Nitzavim", L"Vayelech", L"Haazinu", L"Vezos Haberacha" },
+            0);
+        {
+            int parSel = 0;
+            for (int i = 0; i < m_cmbNotifyParsha.GetCount(); ++i) {
+                CString val; m_cmbNotifyParsha.GetLBText(i, val);
+                if (std::wstring((LPCWSTR)val) == m_current.notifyParshaName) { parSel = i; break; }
+            }
+            m_cmbNotifyParsha.SetCurSel(parSel);
+        }
+        initCombo(m_pageNotifyReminders, m_cmbNotifyParshaStyle, 252, y - 1, 126, IDC_OPT_NOTIFY_PARSHA_STYLE,
+            { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
+            max(0, min(3, m_current.notifyParshaStyle)));
+        y += 28;
+        mkStatic(m_pageNotifyReminders, L"Parsha before:", 42, y, 100, 22);
+        m_editNotifyParshaAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(144, y, 184, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
+        track(m_pageNotifyReminders, &m_editNotifyParshaAmount);
+        initCombo(m_pageNotifyReminders, m_cmbNotifyParshaUnit, 190, y - 1, 56, IDC_OPT_NOTIFY_PARSHA_UNIT,
+            { L"minutes", L"hours", L"days", L"weeks", L"months" }, 3);
+        SetOffsetControls(m_current.notifyParshaOffsets, m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
+        mkStatic(m_pageNotifyReminders, L"Personal before:", 250, y, 96, 22);
+        m_editNotifyPersonalAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(342, y, 376, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
+        track(m_pageNotifyReminders, &m_editNotifyPersonalAmount);
+        initCombo(m_pageNotifyReminders, m_cmbNotifyPersonalUnit, 380, y - 1, 60, IDC_OPT_NOTIFY_PERSONAL_UNIT,
+            { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 0);
+        SetOffsetControls(m_current.notifyPersonalOffsets, m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
+        y += 32;
+        m_btnAdvancedReminders.Create(L"Manage Advanced Reminders...",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(42, y, 254, y + 26), this, IDC_OPT_ADV_REMINDERS);
+        track(m_pageNotifyReminders, &m_btnAdvancedReminders);
+        y += 34;
+        mkStatic(m_pageNotifyReminders, L"Daily reminder time:", 42, y + 3, 140, 22);
+        m_cmbReminderDailyHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(184, y, 224, y + 140), this, IDC_OPT_REMIND_DAILY_HOUR);
+        m_cmbReminderDailyMin.Create( WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(230, y, 270, y + 140), this, IDC_OPT_REMIND_DAILY_MIN);
+        m_cmbReminderDailyAmpm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+            CRect(276, y, 316, y + 140), this, IDC_OPT_REMIND_DAILY_AMPM);
+        FillClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm);
+        {
+            int h = m_current.reminderDailyHour;
+            int m = m_current.reminderDailyMinute;
+            bool pm = (h >= 12);
+            wchar_t buf[16];
+            _snwprintf_s(buf, _TRUNCATE, L"%d:%02d %s", (h % 12 == 0 ? 12 : h % 12), m, pm ? L"PM" : L"AM");
+            SetClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm, buf, h, m);
+        }
+        track(m_pageNotifyReminders, &m_cmbReminderDailyHour);
+        track(m_pageNotifyReminders, &m_cmbReminderDailyMin);
+        track(m_pageNotifyReminders, &m_cmbReminderDailyAmpm);
     }
-    track(m_pageNotifications, &m_cmbReminderDailyHour);
-    track(m_pageNotifications, &m_cmbReminderDailyMin);
-    track(m_pageNotifications, &m_cmbReminderDailyAmpm);
 
     // =========================================================================
     // v0.8.0 - Zmanim Bar tab: one checkbox per kZmanimBarLabels entry,
@@ -2667,10 +2694,25 @@ void COptionsDlg::ShowOptionsPage(int page)
             m_zmanimSubTab.UpdateWindow();
         }
         ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
+        HideAllNotifySubPages();
+    }
+    else if (page == 7)
+    {
+        if (m_notifySubTab.GetSafeHwnd())
+        {
+            m_notifySubTab.ShowWindow(SW_SHOW);
+            m_notifySubTab.SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            m_notifySubTab.Invalidate();
+            m_notifySubTab.UpdateWindow();
+        }
+        ShowNotifySubPage(max(0, m_notifySubTab.GetCurSel()));
+        HideAllZmanimSubPages();
     }
     else
     {
         HideAllZmanimSubPages();
+        HideAllNotifySubPages();
     }
 }
 
@@ -2737,6 +2779,45 @@ void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
 void COptionsDlg::OnZmanimSubTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
 {
     ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
+    *pResult = 0;
+}
+
+void COptionsDlg::HideAllNotifySubPages()
+{
+    if (m_notifySubTab.GetSafeHwnd())
+        m_notifySubTab.ShowWindow(SW_HIDE);
+    auto hide = [](std::vector<CWnd*>& v) {
+        for (CWnd* c : v) if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
+    };
+    hide(m_pageNotifyGeneral);
+    hide(m_pageNotifyZmanim);
+    hide(m_pageNotifyReminders);
+}
+
+void COptionsDlg::ShowNotifySubPage(int sub)
+{
+    std::vector<CWnd*>* pages[] = {
+        &m_pageNotifyGeneral, &m_pageNotifyZmanim, &m_pageNotifyReminders
+    };
+    const int count = 3;
+    for (int i = 0; i < count; ++i)
+        for (CWnd* c : *pages[i])
+            if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
+    if (sub < 0 || sub >= count) return;
+    for (CWnd* c : *pages[sub]) {
+        if (!c || !c->GetSafeHwnd()) continue;
+        c->ShowWindow(SW_SHOW);
+        c->SetWindowPos(&CWnd::wndTop, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        c->Invalidate();
+    }
+    if (sub == 0) UpdateSefirahControls();
+    if (sub == 1) UpdateNotificationControls();
+}
+
+void COptionsDlg::OnNotifySubTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
+{
+    ShowNotifySubPage(max(0, m_notifySubTab.GetCurSel()));
     *pResult = 0;
 }
 

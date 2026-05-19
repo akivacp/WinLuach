@@ -71,6 +71,7 @@ protected:
     afx_msg void OnTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     // v0.8.0 - Notification handler for the Zmanim sub-tab control.
     afx_msg void OnZmanimSubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnNotifySubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnSize(UINT nType, int cx, int cy);
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
     afx_msg void OnDisableAutoUpdate();
@@ -183,6 +184,10 @@ private:
     std::vector<CWnd*> m_subPageTzais;
     std::vector<CWnd*> m_subPageShaahZmanit;  // v0.8.83
     CTabCtrl m_zmanimSubTab;
+    CTabCtrl m_notifySubTab;
+    std::vector<CWnd*> m_pageNotifyGeneral;
+    std::vector<CWnd*> m_pageNotifyZmanim;
+    std::vector<CWnd*> m_pageNotifyReminders;
     std::vector<CButton*> m_zmanimBarChecks;     // one per kZmanimBarLabels entry
     // Sub-tab preset radio groups (created dynamically). We keep pointers so
     // ReadControlsIntoResult can ask "which radio is checked" on each tab.
@@ -223,6 +228,8 @@ private:
     void ShowZmanimSubPage(int sub);
     // v0.8.0 - Helper that hides every Zmanim sub-page + the sub-tab.
     void HideAllZmanimSubPages();
+    void ShowNotifySubPage(int sub);
+    void HideAllNotifySubPages();
     void UpdateColorButtons();
     bool ChooseCalendarColor(UINT id);
     void RestoreDefaultCalendarColors();
