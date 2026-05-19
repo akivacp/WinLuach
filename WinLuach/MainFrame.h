@@ -239,7 +239,13 @@ public:
     int           m_customMinchaGedolaPreset = 1;
     int           m_customMinchaKetanaPreset = 0;
     int           m_customPlagPreset = 0;
-    int           m_shaahZmanitShita = 0;           // v0.8.83: 0=GRA, 1=MA72, 2=MA90
+    int           m_shaahZmanitShita = 0;           // 0=GRA, 1=MA72, 2=MA90, 3=custom
+    int           m_customShaahStartMode = 1;       // 0=degrees, 1=fixed minutes before hanetz
+    double        m_customShaahStartValue = 72.0;
+    double        m_customShaahStartDegreesValue = 16.1;
+    int           m_customShaahEndMode = 1;         // 0=degrees, 1=fixed minutes after shkia
+    double        m_customShaahEndValue = 72.0;
+    double        m_customShaahEndDegreesValue = 8.5;
     int           m_customEndFastPreset = 0;       // 0=R' Tukaccinsky, 1=R' Moshe Feinstein
     int           m_customEndFastMinuteMode = 0;   // v0.8.82: 0=fixed, 1=shaah zmanit
     double        m_customMinchaGedolaValue = 30.0;
