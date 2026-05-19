@@ -854,9 +854,10 @@ protected:
         m_enabled.SetFont(pF);
         m_enabled.SetCheck(rule.enabled ? BST_CHECKED : BST_UNCHECKED);
 
-        // Anchor row (v0.8.71) — only meaningful for Holiday and Parsha kinds;
-        // shown for all kinds to keep the UI simple.
-        label(L"Anchor:", 10, 140, 70);
+        // Anchor row (v0.8.71) — currently used only by Holiday reminders.
+        m_anchorLabel.Create(L"Anchor:", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            CRect(10, 140, 80, 162), this, 6109);
+        m_anchorLabel.SetFont(pF);
         m_anchor.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
             CRect(82, 140, W - 10, 260), this, 6108);
         m_anchor.SetFont(pF);
@@ -864,6 +865,7 @@ protected:
         m_anchor.AddString(L"Shkia");             // 1
         m_anchor.AddString(L"Civil midnight");    // 2
         m_anchor.SetCurSel(max(0, min(2, rule.anchor)));
+        UpdateAnchorEnabled();
 
         CButton* ok = new CButton;
         ok->Create(L"OK", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
@@ -891,6 +893,7 @@ protected:
                 m_target.SetWindowText(L"Birchas Hachama (April 8)");
             else if (kind == L"Holiday")
                 m_target.SetWindowText(L"Rosh Hashana");
+            UpdateAnchorEnabled();
             return TRUE;
         }
         return CDialog::OnCommand(wParam, lParam);
@@ -1000,6 +1003,23 @@ private:
         if (!cur.IsEmpty()) m_target.SetWindowText(cur);
     }
 
+    bool CurrentSelectionUsesAnchor() const
+    {
+        CString kind;
+        if (m_kind.GetSafeHwnd())
+            m_kind.GetWindowText(kind);
+        return kind == L"Holiday";
+    }
+
+    void UpdateAnchorEnabled()
+    {
+        const BOOL enabled = CurrentSelectionUsesAnchor() ? TRUE : FALSE;
+        if (m_anchorLabel.GetSafeHwnd())
+            m_anchorLabel.EnableWindow(enabled);
+        if (m_anchor.GetSafeHwnd())
+            m_anchor.EnableWindow(enabled);
+    }
+
     int m_nextId = 0;
     CComboBox m_kind, m_target, m_style;
     CComboBox m_offsetUnit;
@@ -1007,6 +1027,7 @@ private:
     CComboBox m_anchor;     // Tzais / Shkia / Civil midnight (v0.8.71)
     CEdit m_offsetAmount;
     CButton m_enabled;
+    CStatic m_anchorLabel;
 };
 
 class CAdvancedRemindersDlg : public CDialog
