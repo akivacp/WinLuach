@@ -4235,10 +4235,22 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
     }
     out.shaahZmanit = selectedShaah > 0.0 ? selectedShaah : z.shaahZmanit_GRA;
 
-    // Sof Shema/Tefilla: start-of-day comes from the Sof Zman shita (sofStart),
-    // but the shaah length comes from the independent Sha'a Zmanit setting.
-    out.sofShema   = AddShaot(sofStart, out.shaahZmanit, 3.0);
-    out.sofTefilla = AddShaot(sofStart, out.shaahZmanit, 4.0);
+    // Sof Shema/Tefilla: start-of-day comes from the Sof Zman shita. The hour
+    // length can either follow the displayed Sha'a Zmanit or the Sof Zman
+    // method's own matching evening boundary.
+    double sofZmanShaah = out.shaahZmanit;
+    if (m_sofZmanShaahMode == 1)
+    {
+        TimeOfDay sofEnd = CustomEveningBoundary(g, m_location, isDst, z,
+            m_customSofZmanMode, m_customSofZmanValue, 16.1);
+        if (TimeOfDaySeconds(sofStart) >= 0 &&
+            TimeOfDaySeconds(sofEnd) > TimeOfDaySeconds(sofStart))
+        {
+            sofZmanShaah = CalculateShaahZmanit(sofStart, sofEnd);
+        }
+    }
+    out.sofShema   = AddShaot(sofStart, sofZmanShaah, 3.0);
+    out.sofTefilla = AddShaot(sofStart, sofZmanShaah, 4.0);
 
     switch (max(0, min(3, m_customMinchaGedolaPreset)))
     {
@@ -4315,6 +4327,7 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_customMinchaKetanaPreset = max(0, min(2, s.customMinchaKetanaPreset));
     m_customPlagPreset = max(0, min(2, s.customPlagPreset));
     m_shaahZmanitShita        = max(0, min(4, s.shaahZmanitShita));
+    m_sofZmanShaahMode        = max(0, min(1, s.sofZmanShaahMode));
     m_customShaahStartMode    = max(0, min(1, s.customShaahStartMode));
     m_customShaahStartValue   = s.customShaahStartValue > 0.0 ? s.customShaahStartValue : 72.0;
     m_customShaahStartDegreesValue = s.customShaahStartDegreesValue > 0.0 ? s.customShaahStartDegreesValue : 16.1;
