@@ -1,3 +1,7 @@
+This is **vibe coded software**.
+
+---
+
 # WinLuach — Hebrew Calendar for Windows
 
 A Hebrew/Gregorian calendar application for Windows, built in C++ (Win32).
