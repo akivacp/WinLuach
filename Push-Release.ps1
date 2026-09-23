@@ -79,7 +79,7 @@ if ($pendingChanges) {
     if ($LASTEXITCODE -ne 0) { Write-Error "git commit failed." }
 }
 Write-Host "Pushing source to origin ..." -ForegroundColor Yellow
-git push origin
+git push -u origin HEAD
 if ($LASTEXITCODE -ne 0) { Write-Error "git push failed." }
 
 # --- 7. Create and push git tag ---
