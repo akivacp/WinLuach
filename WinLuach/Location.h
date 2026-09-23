@@ -31,6 +31,7 @@
 #include "Zmanim.h"
 #include <vector>
 #include <string>
+#include <iosfwd>
 
 // =============================================================================
 // LOCATION ENTRY
@@ -162,3 +163,7 @@ std::vector<LocationEntry> GetBuiltInCities();
 // Converts a LocationEntry to a single-line display string.
 // e.g. "New York City, New York, United States"
 std::wstring LocationDisplayString(const LocationEntry& entry);
+
+// Parses locations.json text into entries (all marked custom). Used by
+// LocationDB and by the backup viewer.
+std::vector<LocationEntry> ParseCustomLocations(std::wistream& in);

@@ -415,6 +415,24 @@ enum class BackupRestoreResult
 // Saves s to disk, then writes a master backup of all user data to path.
 bool WriteMasterBackup(const AppSettings& s, const std::wstring& path);
 
+// Contents of a backup file, read without touching the live data files.
+struct BackupContents
+{
+    bool         isMaster = false;   // false = legacy settings-only backup
+    std::wstring created;            // "YYYY-MM-DD HH:MM:SS" (master backups only)
+    // settings.json members in file order; string values are unescaped,
+    // other values are the raw JSON token (e.g. true, 42, 0.5)
+    std::vector<std::pair<std::wstring, std::wstring>> settings;
+    bool         hasEvents = false;
+    std::vector<UserEventEntry> events;
+    bool         hasLocations = false;
+    std::vector<LocationEntry>  locations;
+};
+
+// Reads a backup (master or legacy) for display. Returns false if the file
+// is not a WinLuach backup.
+bool ReadBackupContents(const std::wstring& path, BackupContents& out);
+
 // Restores a backup file into the WinLuach data folder. The caller must then
 // reload settings (LoadSettings) and custom locations
 // (LocationDB::ReloadCustomLocations) and apply them.

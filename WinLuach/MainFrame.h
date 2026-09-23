@@ -123,6 +123,7 @@ struct CalendarEventLine
 #define ID_VIEW_PANE_YEAR    1040
 #define ID_VIEW_PANE_MOLAD   1041
 #define ID_CAL_MANAGE_CALS  1042
+#define ID_FILE_VIEW_BACKUP 1043
 #define IDC_MONTH_COMBO     2002
 #define IDC_YEAR_EDIT       2003
 #define IDC_YEAR_SPIN       2004
@@ -342,6 +343,8 @@ protected:
     afx_msg void OnCalPreview();
     afx_msg void OnFileBackup();
     afx_msg void OnFileRestore();
+    afx_msg void OnFileViewBackup();
+    void ShowBackupContents(const std::wstring& path);
     afx_msg void OnViewZoomIn();
     afx_msg void OnViewZoomOut();
     afx_msg void OnViewZoomReset();

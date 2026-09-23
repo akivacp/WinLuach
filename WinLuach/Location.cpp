@@ -446,6 +446,22 @@ bool LocationDB::LoadCustomLocations(const std::wstring& filePath)
     std::wifstream f(filePath);
     if (!f.is_open()) return false;
 
+    for (const auto& entry : ParseCustomLocations(f))
+        if (!FindByName(entry.loc.name))
+            m_entries.push_back(entry);
+
+    // Re-sort after loading custom entries
+    std::sort(m_entries.begin(), m_entries.end(),
+        [](const LocationEntry& a, const LocationEntry& b)
+        { return a.loc.name < b.loc.name; });
+
+    return true;
+}
+
+// Parses locations.json text into entries (all marked custom).
+std::vector<LocationEntry> ParseCustomLocations(std::wistream& f)
+{
+    std::vector<LocationEntry> result;
     LocationEntry current;
     bool inObject = false;
 
@@ -465,10 +481,9 @@ bool LocationDB::LoadCustomLocations(const std::wstring& filePath)
         }
         else if (line[0] == L'}' && inObject)
         {
-            // End of object — add to database if not already there
+            // End of object
             current.isCustom = true;
-            if (!FindByName(current.loc.name))
-                m_entries.push_back(current);
+            result.push_back(current);
             inObject = false;
         }
         else if (inObject)
@@ -485,12 +500,7 @@ bool LocationDB::LoadCustomLocations(const std::wstring& filePath)
         }
     }
 
-    // Re-sort after loading custom entries
-    std::sort(m_entries.begin(), m_entries.end(),
-        [](const LocationEntry& a, const LocationEntry& b)
-        { return a.loc.name < b.loc.name; });
-
-    return true;
+    return result;
 }
 
 // =============================================================================
