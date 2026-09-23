@@ -1,3 +1,7 @@
+This is **vibe coded software**.
+
+---
+
 # WinLuach — Hebrew Calendar for Windows
 
 ![WinLuach Screenshot](WinLuachScreenShot.png)
