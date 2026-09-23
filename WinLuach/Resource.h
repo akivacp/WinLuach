@@ -14,6 +14,7 @@
 #define IDC_WINLUACH			109
 #define IDC_MYICON				2
 #define IDC_ABOUT_TITLE			1001
+#define IDC_ABOUT_BUILD			1002
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif

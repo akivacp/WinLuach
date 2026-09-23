@@ -41,6 +41,9 @@ Set-Content -LiteralPath $buildPath -Value $build -Encoding ASCII
 
 $version = "$major.$minor.$build"
 
+# Build date/time (local), shown in About and in GitHub release notes
+$buildDate = Get-Date -Format 'yyyy-MM-dd HH:mm'
+
 $content = @"
 #pragma once
 
@@ -48,6 +51,7 @@ $content = @"
 #define WINLUACH_VERSION_MINOR $minor
 #define WINLUACH_VERSION_BUILD $build
 #define WINLUACH_VERSION_TEXT L"$version"
+#define WINLUACH_BUILD_DATE_TEXT L"$buildDate"
 "@
 
 Set-Content -LiteralPath $headerPath -Value $content -Encoding ASCII

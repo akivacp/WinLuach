@@ -21,7 +21,10 @@ $minor = (Select-String '#define WINLUACH_VERSION_MINOR\s+(\d+)' $versionHeader)
 $build = (Select-String '#define WINLUACH_VERSION_BUILD\s+(\d+)' $versionHeader).Matches[0].Groups[1].Value
 $version = "$major.$minor.$build"
 $tag     = "v$version"
-Write-Host "Version: $tag" -ForegroundColor Cyan
+$dateMatch = Select-String '#define WINLUACH_BUILD_DATE_TEXT\s+L"([^"]+)"' $versionHeader
+$buildDate = if ($dateMatch) { $dateMatch.Matches[0].Groups[1].Value } else { "unknown" }
+$releaseNotes = "Release $version`nBuilt $buildDate"
+Write-Host "Version: $tag (built $buildDate)" -ForegroundColor Cyan
 
 # --- 3. Find the existing release binary ---
 $exeOut = Join-Path $PSScriptRoot "x64\Release\WinLuach.exe"
@@ -102,12 +105,12 @@ if ($exeOut) {
     Write-Host "Creating GitHub release $tag and uploading WinLuach.exe ..." -ForegroundColor Yellow
     gh release create $tag $exeOut `
         --title "WinLuach $version" `
-        --notes "Release $version"
+        --notes $releaseNotes
 } else {
     Write-Host "Creating GitHub release $tag (no asset) ..." -ForegroundColor Yellow
     gh release create $tag `
         --title "WinLuach $version" `
-        --notes "Release $version"
+        --notes $releaseNotes
 }
 
 if ($LASTEXITCODE -ne 0) { Write-Error "gh release create failed." }
