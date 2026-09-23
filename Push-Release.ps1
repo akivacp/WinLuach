@@ -47,11 +47,6 @@ if (-not $Publish) {
     return
 }
 
-# --- 5. Require gh CLI ---
-if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    Write-Error "gh CLI not found. Install it with: winget install GitHub.cli - then run: gh auth login"
-}
-
 # --- 6. Commit and push any pending source changes ---
 $pendingChanges = git status --porcelain
 if ($pendingChanges) {
@@ -100,22 +95,36 @@ Write-Host "Pushing tag $tag ..." -ForegroundColor Yellow
 git push origin $tag
 if ($LASTEXITCODE -ne 0) { Write-Error "Failed to push tag $tag to origin." }
 
-# --- 8. Create GitHub release and upload asset ---
-if ($exeOut) {
-    Write-Host "Creating GitHub release $tag and uploading WinLuach.exe ..." -ForegroundColor Yellow
-    gh release create $tag $exeOut `
-        --title "WinLuach $version" `
-        --notes $releaseNotes
+# --- 8. Create the GitHub release (gh CLI if installed, otherwise the browser) ---
+if (Get-Command gh -ErrorAction SilentlyContinue) {
+    if ($exeOut) {
+        Write-Host "Creating GitHub release $tag and uploading WinLuach.exe ..." -ForegroundColor Yellow
+        gh release create $tag $exeOut `
+            --title "WinLuach $version" `
+            --notes $releaseNotes
+    } else {
+        Write-Host "Creating GitHub release $tag (no asset) ..." -ForegroundColor Yellow
+        gh release create $tag `
+            --title "WinLuach $version" `
+            --notes $releaseNotes
+    }
+
+    if ($LASTEXITCODE -ne 0) { Write-Error "gh release create failed." }
+
+    Write-Host "Published: https://github.com/akivacp/WinLuach/releases/tag/$tag" -ForegroundColor Green
 } else {
-    Write-Host "Creating GitHub release $tag (no asset) ..." -ForegroundColor Yellow
-    gh release create $tag `
-        --title "WinLuach $version" `
-        --notes $releaseNotes
+    # Code and tag are pushed; the release (with the exe the updater downloads)
+    # is finished on the GitHub page, pre-filled with tag, title and notes.
+    $query = "tag=$tag&title=" + [uri]::EscapeDataString("WinLuach $version") +
+             "&body=" + [uri]::EscapeDataString($releaseNotes)
+    $newReleaseUrl = "https://github.com/akivacp/WinLuach/releases/new?$query"
+    Write-Host "Code and tag pushed. gh CLI not found, so finish the release in the browser:" -ForegroundColor Yellow
+    if ($exeOut) { Write-Host "  1. Drag WinLuach.exe (selected in the Explorer window) onto the page" }
+    Write-Host "  2. Click 'Publish release'"
+    Write-Host "  $newReleaseUrl"
+    Start-Process $newReleaseUrl
+    if ($exeOut) { Start-Process explorer.exe "/select,`"$exeOut`"" }
 }
-
-if ($LASTEXITCODE -ne 0) { Write-Error "gh release create failed." }
-
-Write-Host "Published: https://github.com/akivacp/WinLuach/releases/tag/$tag" -ForegroundColor Green
 
 Write-Host "`nPress any key to exit..."
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
