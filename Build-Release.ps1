@@ -80,9 +80,19 @@ $buildDate = if ($dateMatch) { $dateMatch.Matches[0].Groups[1].Value } else { "u
 $releaseNotes = "Release $version`nBuilt $buildDate"
 Write-Host "Version: $tag (built $buildDate)" -ForegroundColor Cyan
 
+# --- Stop if this version is somehow already released ---
+try {
+    $null = Invoke-RestMethod "https://api.github.com/repos/akivacp/WinLuach/releases/tags/$tag" -ErrorAction Stop
+    Write-Host "$tag is already released on GitHub - rebuild to get a new version number. Nothing was published." -ForegroundColor Red
+    $Publish = $false
+    $alreadyReleased = $true
+} catch {
+    # 404 = not released yet
+}
+
 # --- 6. Ask whether to publish ---
 Write-Host ""
-if (-not $Publish) {
+if (-not $Publish -and -not $alreadyReleased) {
     $answer = Read-Host "Publish $tag to GitHub Releases? [Y/N]"
     $Publish = $answer -match '^[Yy]'
 }
