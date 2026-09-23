@@ -2,18 +2,22 @@
 // WinLuach - Hebrew Calendar Application
 // File:    Settings.cpp
 // Purpose: Saves and loads user preferences to/from
-//          %APPDATA%\WinLuach\settings.json.
+//          the user's OneDrive Documents\WinLuach folder when available.
 //          Hand-rolled JSON — no external library needed.
 // =============================================================================
 //
 // CHANGELOG:
 // v0.1.0 - Initial implementation. Saves/loads all AppSettings fields.
-//          Creates %APPDATA%\WinLuach\ directory if it doesn't exist.
+//          Creates the WinLuach data directory if it doesn't exist.
 // v0.8.0 - Save/load zmanim bar mask + per-sub-tab preset fields.
+// v0.8.129 - Master backup: WriteMasterBackup bundles settings.json,
+//            events.json and locations.json into one file; RestoreBackup
+//            restores it (and still accepts old settings-only backups).
 // =============================================================================
 
 #include "pch.h"
 #include "Settings.h"
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <Windows.h>
@@ -24,17 +28,213 @@
 // FILE PATH
 // =============================================================================
 
-// Returns %APPDATA%\WinLuach\settings.json
-std::wstring GetSettingsFilePath()
+static bool FileExists(const std::wstring& path)
+{
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool DirectoryExists(const std::wstring& path)
+{
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool EnsureDirectory(const std::wstring& dir)
+{
+    if (dir.empty() || dir == L".")
+        return true;
+
+    int rc = SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+    return rc == ERROR_SUCCESS || rc == ERROR_ALREADY_EXISTS || DirectoryExists(dir);
+}
+
+static bool SamePath(const std::wstring& a, const std::wstring& b)
+{
+    return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
+static std::wstring AppendPath(const std::wstring& dir, const wchar_t* fileName)
+{
+    if (dir.empty() || dir == L".")
+        return fileName;
+
+    wchar_t last = dir.back();
+    if (last == L'\\' || last == L'/')
+        return dir + fileName;
+
+    return dir + L"\\" + fileName;
+}
+
+static std::wstring GetEnvironmentVariableString(const wchar_t* name)
+{
+    DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
+    if (needed == 0)
+        return L"";
+
+    std::wstring value(needed, L'\0');
+    DWORD written = GetEnvironmentVariableW(name, value.data(), needed);
+    if (written == 0 || written >= needed)
+        return L"";
+
+    value.resize(written);
+    return value;
+}
+
+static std::wstring TrimTrailingSlashes(std::wstring path)
+{
+    while (path.size() > 3 && (path.back() == L'\\' || path.back() == L'/'))
+        path.pop_back();
+    return path;
+}
+
+static bool IsSubPathOf(const std::wstring& path, const std::wstring& dir)
+{
+    std::wstring cleanPath = TrimTrailingSlashes(path);
+    std::wstring cleanDir = TrimTrailingSlashes(dir);
+    if (cleanPath.size() < cleanDir.size() || cleanDir.empty())
+        return false;
+
+    int len = (int)cleanDir.size();
+    if (CompareStringOrdinal(cleanPath.c_str(), len, cleanDir.c_str(), len, TRUE) != CSTR_EQUAL)
+        return false;
+
+    return cleanPath.size() == cleanDir.size() ||
+        cleanPath[cleanDir.size()] == L'\\' ||
+        cleanPath[cleanDir.size()] == L'/';
+}
+
+static std::vector<std::wstring> GetOneDriveRoots()
+{
+    const wchar_t* vars[] = { L"OneDrive", L"OneDriveCommercial", L"OneDriveConsumer" };
+    std::vector<std::wstring> roots;
+
+    for (const wchar_t* var : vars)
+    {
+        std::wstring root = TrimTrailingSlashes(GetEnvironmentVariableString(var));
+        if (root.empty() || !DirectoryExists(root))
+            continue;
+
+        bool seen = false;
+        for (const auto& existing : roots)
+        {
+            if (SamePath(root, existing))
+            {
+                seen = true;
+                break;
+            }
+        }
+        if (!seen)
+            roots.push_back(root);
+    }
+
+    return roots;
+}
+
+static std::wstring GetKnownFolderPathString(REFKNOWNFOLDERID folderId)
+{
+    PWSTR raw = nullptr;
+    if (FAILED(SHGetKnownFolderPath(folderId, 0, nullptr, &raw)) || !raw)
+        return L"";
+
+    std::wstring path = raw;
+    CoTaskMemFree(raw);
+    return path;
+}
+
+static std::wstring GetWindowsDocumentsDirectory()
+{
+    std::wstring docs = GetKnownFolderPathString(FOLDERID_Documents);
+    if (!docs.empty())
+        return docs;
+
+    wchar_t path[MAX_PATH] = {};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, 0, path)))
+        return path;
+
+    return L"";
+}
+
+static std::wstring GetOneDriveDocumentsDirectory(const std::wstring& windowsDocuments)
+{
+    std::vector<std::wstring> roots = GetOneDriveRoots();
+
+    for (const auto& root : roots)
+    {
+        if (!windowsDocuments.empty() && IsSubPathOf(windowsDocuments, root))
+            return windowsDocuments;
+    }
+
+    if (!roots.empty())
+        return AppendPath(roots.front(), L"Documents");
+
+    return L"";
+}
+
+static std::wstring GetDocumentsDirectory()
+{
+    std::wstring windowsDocuments = GetWindowsDocumentsDirectory();
+    std::wstring oneDriveDocuments = GetOneDriveDocumentsDirectory(windowsDocuments);
+    return !oneDriveDocuments.empty() ? oneDriveDocuments : windowsDocuments;
+}
+
+static std::wstring GetLegacyWinLuachAppDataDirectory(bool create)
 {
     wchar_t path[MAX_PATH] = {};
-    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
+    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
+        return L"";
+
+    std::wstring dir = std::wstring(path) + L"\\WinLuach";
+    if (!create || EnsureDirectory(dir))
+        return dir;
+
+    return L"";
+}
+
+std::wstring GetWinLuachDataDirectory()
+{
+    std::wstring docs = GetDocumentsDirectory();
+    if (!docs.empty())
     {
-        std::wstring dir = std::wstring(path) + L"\\WinLuach";
-        CreateDirectoryW(dir.c_str(), nullptr);
-        return dir + L"\\settings.json";
+        std::wstring dir = AppendPath(docs, L"WinLuach");
+        if (EnsureDirectory(dir))
+            return dir;
     }
-    return L"settings.json";
+
+    std::wstring appData = GetLegacyWinLuachAppDataDirectory(true);
+    if (!appData.empty())
+        return appData;
+
+    return L".";
+}
+
+static void MigrateLegacyDataFile(const wchar_t* fileName, const std::wstring& targetPath)
+{
+    if (FileExists(targetPath))
+        return;
+
+    std::wstring legacyDir = GetLegacyWinLuachAppDataDirectory(false);
+    if (legacyDir.empty())
+        return;
+
+    std::wstring legacyPath = AppendPath(legacyDir, fileName);
+    if (SamePath(legacyPath, targetPath) || !FileExists(legacyPath))
+        return;
+
+    CopyFileW(legacyPath.c_str(), targetPath.c_str(), TRUE);
+}
+
+std::wstring GetWinLuachDataFilePath(const wchar_t* fileName)
+{
+    std::wstring path = AppendPath(GetWinLuachDataDirectory(), fileName);
+    MigrateLegacyDataFile(fileName, path);
+    return path;
+}
+
+// Returns OneDrive\Documents\WinLuach\settings.json when OneDrive is available.
+std::wstring GetSettingsFilePath()
+{
+    return GetWinLuachDataFilePath(L"settings.json");
 }
 
 // =============================================================================
@@ -61,10 +261,15 @@ static std::wstring ParseJsonString(const std::wstring& line)
     if (colon == std::wstring::npos) return L"";
     size_t first = line.find(L'"', colon);
     if (first == std::wstring::npos) return L"";
-    first++;
-    size_t last = line.find(L'"', first);
-    if (last == std::wstring::npos) return L"";
-    return line.substr(first, last - first);
+    // Read up to the closing quote, undoing JsonEscape (\" and \\)
+    std::wstring out;
+    for (size_t i = first + 1; i < line.size(); ++i)
+    {
+        if (line[i] == L'\\' && i + 1 < line.size()) out += line[++i];
+        else if (line[i] == L'"') return out;
+        else out += line[i];
+    }
+    return L"";
 }
 
 // Reads a numeric JSON value from a line like: "key": 42
@@ -89,7 +294,7 @@ static bool ParseJsonBool(const std::wstring& line)
 // SAVE
 // =============================================================================
 
-// Saves all settings to %APPDATA%\WinLuach\settings.json.
+// Saves all settings to the WinLuach data directory.
 bool SaveSettings(const AppSettings& s)
 {
     std::wstring path = GetSettingsFilePath();
@@ -118,6 +323,8 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"haftarahShita\": " << s.haftarahShita << L",\n";
     f << L"  \"fontSize\": " << s.fontSize << L",\n";
     f << L"  \"language\": " << s.language << L",\n";
+    f << L"  \"useHebrewScript\": " << (s.useHebrewScript ? L"true" : L"false") << L",\n";
+    f << L"  \"useHebrewNumerals\": " << (s.useHebrewNumerals ? L"true" : L"false") << L",\n";
     f << L"  \"showTrayIcon\": "   << (s.showTrayIcon   ? L"true" : L"false") << L",\n";
     f << L"  \"minimizeToTray\": " << (s.minimizeToTray ? L"true" : L"false") << L",\n";
     f << L"  \"minimizeTrayWhen\": " << s.minimizeTrayWhen << L",\n";
@@ -155,6 +362,9 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printDayZmanimMask\": " << (unsigned long long)s.printDayZmanimMask << L",\n";
     f << L"  \"printShowFooter\": " << (s.printShowFooter ? L"true" : L"false") << L",\n";
     f << L"  \"printTwoColumns\": " << (s.printTwoColumns ? L"true" : L"false") << L",\n";
+    f << L"  \"printHebrewMode\": " << (s.printHebrewMode ? L"true" : L"false") << L",\n";
+    f << L"  \"printRtlMode\": "    << (s.printRtlMode    ? L"true" : L"false") << L",\n";
+    f << L"  \"printHebrewNumerals\": " << (s.printHebrewNumerals ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnFasts\": "  << (s.showChatzosOnFasts  ? L"true" : L"false") << L",\n";
     f << L"  \"showBeHaB\": "           << (s.showBeHaB           ? L"true" : L"false") << L",\n";
     f << L"  \"showChatzosOnBeHaB\": "  << (s.showChatzosOnBeHaB  ? L"true" : L"false") << L",\n";
@@ -281,6 +491,8 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"countdownShowClock\": " << (s.countdownShowClock ? L"true" : L"false") << L",\n";
     f << L"  \"countdownShowZmanTime\": " << (s.countdownShowZmanTime ? L"true" : L"false") << L",\n";
     f << L"  \"countdownShowLive\": " << (s.countdownShowLive ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownOpenOnStartup\": " << (s.countdownOpenOnStartup ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownAlwaysOnTop\": " << (s.countdownAlwaysOnTop ? L"true" : L"false") << L",\n";
     f << L"  \"dayDetailLandscape\": " << (s.dayDetailLandscape ? L"true" : L"false") << L",\n";
     f << L"  \"dayDetailShowFooter\": " << (s.dayDetailShowFooter ? L"true" : L"false") << L",\n";
     f << L"  \"dayDetailMarginTop\": " << s.dayDetailMarginTop << L",\n";
@@ -291,6 +503,11 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"printEventCategoryMask\": " << (int)s.printEventCategoryMask << L",\n";
     f << L"  \"printEventSeparateCategories\": " << (s.printEventSeparateCategories ? L"true" : L"false") << L",\n";
     f << L"  \"trayTooltipCustomZmanimMask\": " << s.trayTooltipCustomZmanimMask << L",\n";
+    f << L"  \"disableAutoUpdate\": " << (s.disableAutoUpdate ? L"true" : L"false") << L",\n";
+    f << L"  \"checkUpdatesAuto\": " << (s.checkUpdatesAuto ? L"true" : L"false") << L",\n";
+    f << L"  \"updateCheckFrequency\": " << s.updateCheckFrequency << L",\n";
+    f << L"  \"checkUpdatesOnLaunch\": " << (s.checkUpdatesOnLaunch ? L"true" : L"false") << L",\n";
+    f << L"  \"lastUpdateCheckTime\": " << s.lastUpdateCheckTime << L",\n";
     f << L"  \"windowX\": " << s.windowX << L",\n";
     f << L"  \"windowY\": " << s.windowY << L",\n";
     f << L"  \"windowW\": " << s.windowW << L",\n";
@@ -307,7 +524,7 @@ bool SaveSettings(const AppSettings& s)
 // LOAD
 // =============================================================================
 
-// Loads settings from %APPDATA%\WinLuach\settings.json.
+// Loads settings from the WinLuach data directory.
 // Returns false if file doesn't exist; s is filled with defaults.
 bool LoadSettings(AppSettings& s)
 {
@@ -342,6 +559,8 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"haftarahShita\"") != std::wstring::npos) s.haftarahShita = (int)ParseJsonNumber(line);
         if (line.find(L"\"fontSize\"") != std::wstring::npos) s.fontSize = (int)ParseJsonNumber(line);
         if (line.find(L"\"language\"") != std::wstring::npos) s.language = (int)ParseJsonNumber(line);
+        if (line.find(L"\"useHebrewScript\"")   != std::wstring::npos) s.useHebrewScript   = ParseJsonBool(line);
+        if (line.find(L"\"useHebrewNumerals\"") != std::wstring::npos) s.useHebrewNumerals = ParseJsonBool(line);
         if (line.find(L"\"showTrayIcon\"")   != std::wstring::npos) s.showTrayIcon   = ParseJsonBool(line);
         if (line.find(L"\"minimizeToTray\"") != std::wstring::npos) s.minimizeToTray = ParseJsonBool(line);
         if (line.find(L"\"minimizeTrayWhen\"") != std::wstring::npos) s.minimizeTrayWhen = (int)ParseJsonNumber(line);
@@ -438,6 +657,9 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"printDayZmanimMask\"")!= std::wstring::npos) s.printDayZmanimMask = (uint64_t)ParseJsonNumber(line);
         if (line.find(L"\"printShowFooter\"")   != std::wstring::npos) s.printShowFooter   = ParseJsonBool(line);
         if (line.find(L"\"printTwoColumns\"")   != std::wstring::npos) s.printTwoColumns   = ParseJsonBool(line);
+        if (line.find(L"\"printHebrewMode\"")   != std::wstring::npos) s.printHebrewMode   = ParseJsonBool(line);
+        if (line.find(L"\"printRtlMode\"")      != std::wstring::npos) s.printRtlMode      = ParseJsonBool(line);
+        if (line.find(L"\"printHebrewNumerals\"") != std::wstring::npos) s.printHebrewNumerals = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnFasts\"")  != std::wstring::npos) s.showChatzosOnFasts  = ParseJsonBool(line);
         if (line.find(L"\"showBeHaB\"")           != std::wstring::npos) s.showBeHaB           = ParseJsonBool(line);
         if (line.find(L"\"showChatzosOnBeHaB\"")  != std::wstring::npos) s.showChatzosOnBeHaB  = ParseJsonBool(line);
@@ -531,6 +753,8 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"countdownShowClock\"") != std::wstring::npos) s.countdownShowClock = ParseJsonBool(line);
         if (line.find(L"\"countdownShowZmanTime\"") != std::wstring::npos) s.countdownShowZmanTime = ParseJsonBool(line);
         if (line.find(L"\"countdownShowLive\"") != std::wstring::npos) s.countdownShowLive = ParseJsonBool(line);
+        if (line.find(L"\"countdownOpenOnStartup\"") != std::wstring::npos) s.countdownOpenOnStartup = ParseJsonBool(line);
+        if (line.find(L"\"countdownAlwaysOnTop\"") != std::wstring::npos) s.countdownAlwaysOnTop = ParseJsonBool(line);
         if (line.find(L"\"dayDetailLandscape\"") != std::wstring::npos) s.dayDetailLandscape = ParseJsonBool(line);
         if (line.find(L"\"dayDetailShowFooter\"") != std::wstring::npos) s.dayDetailShowFooter = ParseJsonBool(line);
         if (line.find(L"\"dayDetailMarginTop\"") != std::wstring::npos) s.dayDetailMarginTop = (float)ParseJsonNumber(line);
@@ -541,6 +765,11 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"printEventCategoryMask\"") != std::wstring::npos) s.printEventCategoryMask = (uint8_t)ParseJsonNumber(line);
         if (line.find(L"\"printEventSeparateCategories\"") != std::wstring::npos) s.printEventSeparateCategories = ParseJsonBool(line);
         if (line.find(L"\"trayTooltipCustomZmanimMask\"") != std::wstring::npos) s.trayTooltipCustomZmanimMask = (uint32_t)ParseJsonNumber(line);
+        if (line.find(L"\"disableAutoUpdate\"") != std::wstring::npos) s.disableAutoUpdate = ParseJsonBool(line);
+        if (line.find(L"\"checkUpdatesAuto\"") != std::wstring::npos) s.checkUpdatesAuto = ParseJsonBool(line);
+        if (line.find(L"\"updateCheckFrequency\"") != std::wstring::npos) s.updateCheckFrequency = (int)ParseJsonNumber(line);
+        if (line.find(L"\"checkUpdatesOnLaunch\"") != std::wstring::npos) s.checkUpdatesOnLaunch = ParseJsonBool(line);
+        if (line.find(L"\"lastUpdateCheckTime\"") != std::wstring::npos) s.lastUpdateCheckTime = (int64_t)ParseJsonNumber(line);
         if (line.find(L"\"windowX\"")         != std::wstring::npos) s.windowX         = (int)ParseJsonNumber(line);
         if (line.find(L"\"windowY\"") != std::wstring::npos) s.windowY = (int)ParseJsonNumber(line);
         if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
@@ -575,14 +804,7 @@ bool LoadSettings(AppSettings& s)
 
 std::wstring GetEventsFilePath()
 {
-    wchar_t path[MAX_PATH] = {};
-    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
-    {
-        std::wstring dir = std::wstring(path) + L"\\WinLuach";
-        CreateDirectoryW(dir.c_str(), nullptr);
-        return dir + L"\\events.json";
-    }
-    return L"events.json";
+    return GetWinLuachDataFilePath(L"events.json");
 }
 
 // =============================================================================
@@ -689,4 +911,212 @@ std::vector<UserEventEntry> ParseEventsFromFile(const std::wstring& path)
     std::vector<UserEventEntry> result;
     ParseEventsFromStream(f, result);
     return result;
+}
+
+// =============================================================================
+// MASTER BACKUP / RESTORE
+// Works on raw bytes so the embedded files round-trip exactly, whatever their
+// encoding. Only JSON structure characters (all ASCII) are inspected.
+// =============================================================================
+
+static bool ReadFileBytes(const std::wstring& path, std::string& out)
+{
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) return false;
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    out = ss.str();
+    return true;
+}
+
+// Writes to a temp file first, then swaps it in, so a failed write never
+// leaves a half-written data file behind.
+static bool WriteFileBytesAtomic(const std::wstring& path, const std::string& data)
+{
+    std::wstring tmp = path + L".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f.is_open()) return false;
+        f.write(data.data(), (std::streamsize)data.size());
+        if (!f) { f.close(); DeleteFileW(tmp.c_str()); return false; }
+    }
+    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+static void StripBomAndTrim(std::string& s)
+{
+    if (s.size() >= 3 && (unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF)
+        s.erase(0, 3);
+    size_t b = s.find_first_not_of(" \t\r\n");
+    size_t e = s.find_last_not_of(" \t\r\n");
+    s = (b == std::string::npos) ? std::string() : s.substr(b, e - b + 1);
+}
+
+static size_t SkipJsonWs(const std::string& s, size_t i)
+{
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) ++i;
+    return i;
+}
+
+// s[i] must be '"'. Returns the index just past the closing quote, or npos.
+static size_t SkipJsonStringBytes(const std::string& s, size_t i)
+{
+    for (++i; i < s.size(); ++i)
+    {
+        if (s[i] == '\\') ++i;
+        else if (s[i] == '"') return i + 1;
+    }
+    return std::string::npos;
+}
+
+// Returns the index just past the JSON value starting at s[i], or npos.
+static size_t SkipJsonValueBytes(const std::string& s, size_t i)
+{
+    if (i >= s.size()) return std::string::npos;
+    if (s[i] == '"') return SkipJsonStringBytes(s, i);
+    if (s[i] == '{' || s[i] == '[')
+    {
+        int depth = 0;
+        while (i < s.size())
+        {
+            char c = s[i];
+            if (c == '"')
+            {
+                i = SkipJsonStringBytes(s, i);
+                if (i == std::string::npos) return i;
+                continue;
+            }
+            if (c == '{' || c == '[') ++depth;
+            else if (c == '}' || c == ']')
+            {
+                if (--depth == 0) return i + 1;
+            }
+            ++i;
+        }
+        return std::string::npos;
+    }
+    // Bare token: number, true, false, null
+    size_t start = i;
+    while (i < s.size() && s[i] != ',' && s[i] != '}' && s[i] != ']' &&
+           s[i] != ' ' && s[i] != '\t' && s[i] != '\r' && s[i] != '\n') ++i;
+    return i > start ? i : std::string::npos;
+}
+
+// Splits a top-level JSON object into (key, raw value) pairs.
+static bool ParseTopLevelMembers(const std::string& s, std::vector<std::pair<std::string, std::string>>& members)
+{
+    members.clear();
+    size_t i = SkipJsonWs(s, 0);
+    if (i >= s.size() || s[i] != '{') return false;
+    i = SkipJsonWs(s, i + 1);
+    if (i < s.size() && s[i] == '}') return SkipJsonWs(s, i + 1) == s.size();
+
+    while (i < s.size())
+    {
+        if (s[i] != '"') return false;
+        size_t keyEnd = SkipJsonStringBytes(s, i);
+        if (keyEnd == std::string::npos) return false;
+        std::string key = s.substr(i + 1, keyEnd - i - 2);
+
+        i = SkipJsonWs(s, keyEnd);
+        if (i >= s.size() || s[i] != ':') return false;
+        i = SkipJsonWs(s, i + 1);
+
+        size_t valEnd = SkipJsonValueBytes(s, i);
+        if (valEnd == std::string::npos) return false;
+        members.emplace_back(key, s.substr(i, valEnd - i));
+
+        i = SkipJsonWs(s, valEnd);
+        if (i >= s.size()) return false;
+        if (s[i] == '}') return SkipJsonWs(s, i + 1) == s.size();
+        if (s[i] != ',') return false;
+        i = SkipJsonWs(s, i + 1);
+    }
+    return false;
+}
+
+static const std::string* FindMember(const std::vector<std::pair<std::string, std::string>>& members, const char* key)
+{
+    for (const auto& m : members)
+        if (m.first == key) return &m.second;
+    return nullptr;
+}
+
+// Reads a data file for embedding; falls back to emptyValue if it is missing.
+static std::string ReadDataFileForBackup(const std::wstring& path, const char* emptyValue)
+{
+    std::string data;
+    if (!ReadFileBytes(path, data)) return emptyValue;
+    StripBomAndTrim(data);
+    return data.empty() ? std::string(emptyValue) : data;
+}
+
+bool WriteMasterBackup(const AppSettings& s, const std::wstring& path)
+{
+    // Make sure the files on disk reflect the current in-memory state
+    // (SaveSettings also writes events.json).
+    if (!SaveSettings(s)) return false;
+
+    std::string settings  = ReadDataFileForBackup(GetSettingsFilePath(), "");
+    std::string events    = ReadDataFileForBackup(GetEventsFilePath(), "{\"eventCount\": 0, \"_end\": 0}");
+    std::string locations = ReadDataFileForBackup(LocationDB::GetLocationsFilePath(), "[]");
+    if (settings.empty()) return false;
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char created[32];
+    sprintf_s(created, "%04d-%02d-%02d %02d:%02d:%02d",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+    std::string bundle;
+    bundle += "{\n";
+    bundle += "  \"winluachBackup\": 1,\n";
+    bundle += "  \"created\": \""; bundle += created; bundle += "\",\n";
+    bundle += "  \"settings\": ";  bundle += settings;  bundle += ",\n";
+    bundle += "  \"events\": ";    bundle += events;    bundle += ",\n";
+    bundle += "  \"locations\": "; bundle += locations; bundle += "\n";
+    bundle += "}\n";
+
+    // Refuse to write a backup we would not be able to restore
+    std::vector<std::pair<std::string, std::string>> check;
+    if (!ParseTopLevelMembers(bundle, check) || !FindMember(check, "settings"))
+        return false;
+
+    return WriteFileBytesAtomic(path, bundle);
+}
+
+BackupRestoreResult RestoreBackup(const std::wstring& path)
+{
+    std::string data;
+    if (!ReadFileBytes(path, data)) return BackupRestoreResult::Failed;
+    StripBomAndTrim(data);
+
+    std::vector<std::pair<std::string, std::string>> members;
+    if (!ParseTopLevelMembers(data, members)) return BackupRestoreResult::Failed;
+
+    if (!FindMember(members, "winluachBackup"))
+    {
+        // Legacy backup: a plain copy of settings.json
+        if (!FindMember(members, "locationName")) return BackupRestoreResult::Failed;
+        return WriteFileBytesAtomic(GetSettingsFilePath(), data + "\r\n")
+            ? BackupRestoreResult::LegacySettingsOnly : BackupRestoreResult::Failed;
+    }
+
+    const std::string* settings  = FindMember(members, "settings");
+    const std::string* events    = FindMember(members, "events");
+    const std::string* locations = FindMember(members, "locations");
+    if (!settings || settings->empty() || (*settings)[0] != '{') return BackupRestoreResult::Failed;
+    if (events    && (events->empty()    || (*events)[0] != '{'))    return BackupRestoreResult::Failed;
+    if (locations && (locations->empty() || (*locations)[0] != '[')) return BackupRestoreResult::Failed;
+
+    // The loaders are line-based; the embedded text keeps its original lines.
+    if (!WriteFileBytesAtomic(GetSettingsFilePath(), *settings + "\r\n")) return BackupRestoreResult::Failed;
+    if (events    && !WriteFileBytesAtomic(GetEventsFilePath(), *events + "\r\n")) return BackupRestoreResult::Failed;
+    if (locations && !WriteFileBytesAtomic(LocationDB::GetLocationsFilePath(), *locations + "\r\n")) return BackupRestoreResult::Failed;
+    return BackupRestoreResult::Master;
 }

@@ -128,6 +128,8 @@ private:
     CComboBox m_cmbTzeitShita;
     CButton   m_chkChatzosOnFasts;   // now on Month View tab
     CButton   m_chkShowBeHaB;        // v0.8.78
+    CButton   m_chkHebrewScript;     // Hebrew lettering
+    CButton   m_chkHebrewNumerals;   // Hebrew numerals
     CButton   m_chkChatzosOnBeHaB;   // v0.8.78 — enabled only when showBeHaB
     CEdit     m_editCustomAlot;
     CButton   m_radAlotDegrees;

@@ -360,36 +360,34 @@ MigrationBackup/
 .ionide/
 
 # Fody - auto-generated XML schema
-FodyWeavers.xsd.claude/
+FodyWeavers.xsd
+
+# ==============================================================================
+# WinLuach local-only files (never published)
+# ==============================================================================
+
+# Claude Code worktrees and local settings
+.claude/
+
+# Scratch clones of this repo
+temp-clone/
+
+# Local wiki checkout (published separately to the GitHub wiki)
 wiki/WinLuach.wiki/
 
-# Temporary project backups
-*.bak_*
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
+# Personal app data and backups (settings.json, events.json, locations.json
+# live in Documents\WinLuach, but never let a copy slip into the repo)
+settings.json
+events.json
+locations.json
+WinLuach_backup_*.json
+WinLuach_settings_backup*.json
+
+# Temporary project backups and build logs
 *.bak_*
 Build-Release_*.log
 BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
-# Temporary backup and build log files
-*.bak_*
-Build-Release_*.log
-BuildSettingUpdate_WIN32_WINNT_*.log
+
+# Source artwork kept locally (not needed to build)
+Icon.jpg
+ShinLuach.png

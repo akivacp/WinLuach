@@ -695,7 +695,7 @@ std::vector<HolidayInfo> GetHolidays(const HebrewDate& h, bool isIsrael)
         if (h.day == 30)
         {
             // First day of Rosh Chodesh — name is the next month
-            int nm = (h.month % MonthsInHebrewYear(h.year)) + 1;
+            int nm = NextHebrewMonth(h.month, h.year);
             nextMonth = HebrewMonthName(nm, leap);
             result.push_back({ L"Rosh Chodesh " + nextMonth, L"Day 1", HOLIDAY_ROSH_CHODESH });
         }

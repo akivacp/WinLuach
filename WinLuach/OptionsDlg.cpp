@@ -68,6 +68,7 @@
 #include "UpdateChecker.h"
 #include "Resource.h"
 #include "ZmanimPanel.h"
+#include "WinLuachApp.h"
 #include <cmath>
 #include <cwctype>
 #include <fstream>
@@ -110,6 +111,8 @@
 #define IDC_OPT_CHATZOS_FASTS   340
 #define IDC_OPT_SHOW_BEHAB      411   // v0.8.78
 #define IDC_OPT_CHATZOS_BEHAB   412   // v0.8.78
+#define IDC_OPT_HEBREW_SCRIPT   413
+#define IDC_OPT_HEBREW_NUMERALS 414
 #define IDC_OPT_TAB             341
 #define IDC_OPT_COLOR_RESTORE   342
 #define IDC_OPT_ALOT_VALUE      343
@@ -1429,6 +1432,10 @@ BOOL COptionsDlg::OnInitDialog()
     CDialog::OnInitDialog();
     SetWindowText(L"Options and Preferences");
 
+    HICON hIcon = AfxGetApp()->LoadIcon(IDI_WINLUACH);
+    SetIcon(hIcon, TRUE);
+    SetIcon(hIcon, FALSE);
+
     CRect rcClient;
     GetClientRect(&rcClient);
     int W = rcClient.Width();
@@ -1619,6 +1626,19 @@ BOOL COptionsDlg::OnInitDialog()
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
         CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_BEHAB);
     track(m_pageMonth, &m_chkChatzosOnBeHaB);
+
+    // ── Display: Hebrew text options ──────────────────────────────────────
+    y = 268;
+    mkGroup(m_pageMonth, L"Hebrew Display", 14, y, W - 28, 70); y += 22;
+    m_chkHebrewScript.Create(L"Use Hebrew lettering  (ראשון, תשרי...)",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 20), this, IDC_OPT_HEBREW_SCRIPT);
+    track(m_pageMonth, &m_chkHebrewScript);
+    y += 24;
+    m_chkHebrewNumerals.Create(L"Use Hebrew numerals for day numbers  (א, ב, ג...)",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 20), this, IDC_OPT_HEBREW_NUMERALS);
+    track(m_pageMonth, &m_chkHebrewNumerals);
 
     // v0.8.82 — moved Holiday Schedule below the Updates group (y=330)
     // to fix overlap with Reset group (both were at y=138 previously).
@@ -2496,6 +2516,8 @@ BOOL COptionsDlg::OnInitDialog()
         m_chkChatzosOnBeHaB.SetCheck(m_current.showChatzosOnBeHaB ? BST_CHECKED : BST_UNCHECKED);
         m_chkChatzosOnBeHaB.EnableWindow(m_current.showBeHaB);
     }
+    m_chkHebrewScript.SetCheck(m_current.useHebrewScript ? BST_CHECKED : BST_UNCHECKED);
+    m_chkHebrewNumerals.SetCheck(m_current.useHebrewNumerals ? BST_CHECKED : BST_UNCHECKED);
     m_chkShowTrayIcon.SetCheck(m_current.showTrayIcon ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeToTray.SetCheck(m_current.minimizeToTray ? BST_CHECKED : BST_UNCHECKED);
     m_chkMinimizeOnStartup.SetCheck(m_current.minimizeOnStartup ? BST_CHECKED : BST_UNCHECKED);
@@ -2627,6 +2649,8 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_chkHalacha,        L"Show the Halacha Yomit daily halacha study");
     m_tooltip.AddTool(&m_chkMishna,         L"Show the Mishna Yomit daily Mishna study");
     m_tooltip.AddTool(&m_chkTanach,         L"Show the Tanach Yomi daily Tanach study");
+    m_tooltip.AddTool(&m_chkHebrewScript,   L"Display day-of-week and month names in Hebrew script");
+    m_tooltip.AddTool(&m_chkHebrewNumerals, L"Display Hebrew day numbers as Hebrew letters (א, ב, ג...) instead of digits");
 
     // Interface tab
     m_tooltip.AddTool(&m_chkShowTrayIcon,   L"Keep the WinLuach icon pinned in the system tray while the app is open");
@@ -3265,22 +3289,27 @@ void COptionsDlg::ConvertTzeitMode(int newMode)
 
 static bool BackupCurrentSettingsFromOptions(CWnd* owner)
 {
-    wchar_t file[MAX_PATH] = L"WinLuach_settings_backup.json";
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    wchar_t file[MAX_PATH] = {};
+    swprintf_s(file, L"WinLuach_backup_%04d-%02d-%02d.json", st.wYear, st.wMonth, st.wDay);
+
     OPENFILENAMEW ofn = { sizeof(ofn) };
     ofn.hwndOwner = owner ? owner->GetSafeHwnd() : nullptr;
     ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"Backup Settings & Data";
     ofn.lpstrDefExt = L"json";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (!GetSaveFileNameW(&ofn))
         return false;
 
-    std::wstring src = GetSettingsFilePath();
-    if (CopyFileW(src.c_str(), file, FALSE))
+    // Same master backup as File > Backup: preferences, personal events, custom locations
+    if (WriteMasterBackup(theApp.m_settings, file))
     {
         if (owner)
-            owner->MessageBox(L"Settings backed up successfully.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+            owner->MessageBox(L"Backup saved.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
         return true;
     }
 
@@ -3292,8 +3321,9 @@ static bool BackupCurrentSettingsFromOptions(CWnd* owner)
 void COptionsDlg::OnResetCalendarSettings()
 {
     int choice = MessageBox(
-        L"This will reset all calendar settings to their defaults and clear the board.\n\n"
-        L"Back up all current settings before continuing?",
+        L"This will reset all calendar settings to their defaults and clear the board.\n"
+        L"Your personal events and custom locations will be kept.\n\n"
+        L"Back up all current settings and data before continuing?",
         L"Reset Calendar Settings",
         MB_YESNOCANCEL | MB_ICONWARNING | MB_DEFBUTTON1);
 
@@ -3308,6 +3338,9 @@ void COptionsDlg::OnResetCalendarSettings()
         return;
 
     AppSettings defaults;
+    // Personal events are user data, not settings. Keep them, since saving
+    // settings also rewrites events.json.
+    defaults.userEvents = theApp.m_settings.userEvents;
     CMainFrame* frame = (CMainFrame*)AfxGetMainWnd();
     if (frame)
         frame->ApplyAndSaveSettings(defaults);
@@ -3659,6 +3692,8 @@ void COptionsDlg::ReadControlsIntoResult()
     m_result.showHalachaYomit = (m_chkHalacha.GetCheck() == BST_CHECKED);
     m_result.showMishnaYomit = (m_chkMishna.GetCheck() == BST_CHECKED);
     m_result.showTanachYomi = (m_chkTanach.GetCheck() == BST_CHECKED);
+    m_result.useHebrewScript   = (m_chkHebrewScript.GetCheck()   == BST_CHECKED);
+    m_result.useHebrewNumerals = (m_chkHebrewNumerals.GetCheck() == BST_CHECKED);
     m_result.haftarahShita = m_current.haftarahShita;
     m_result.fontSize = max(0, min(6, m_cmbFontSize.GetCurSel()));
     m_result.language = 0;

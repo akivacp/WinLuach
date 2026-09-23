@@ -162,6 +162,28 @@ int DaysInHebrewYear(int hebrewYear)
     return (int)(HebrewElapsedDays(hebrewYear + 1) - HebrewElapsedDays(hebrewYear));
 }
 
+// Returns the next Hebrew month (1-13), skipping month 7 in non-leap years.
+int NextHebrewMonth(int month, int hebrewYear)
+{
+    int next = month + 1;
+    if (next > 13)
+        next = 1;
+    else if (!IsHebrewLeapYear(hebrewYear) && next == 7)
+        next = 8;
+    return next;
+}
+
+// Returns the previous Hebrew month (1-13), skipping month 7 in non-leap years.
+int PrevHebrewMonth(int month, int hebrewYear)
+{
+    int prev = month - 1;
+    if (prev < 1)
+        prev = 13;
+    else if (!IsHebrewLeapYear(hebrewYear) && prev == 7)
+        prev = 6;
+    return prev;
+}
+
 // Returns the number of days in a given Hebrew month.
 int DaysInHebrewMonth(int month, int hebrewYear)
 {
@@ -382,4 +404,67 @@ bool IsBeHaBDay(const HebrewDate& h)
 
     long hjdn = GregorianToJDN(HebrewToGregorian(h));
     return (hjdn == behab1 || hjdn == behab2 || hjdn == behab3);
+}
+
+// =============================================================================
+// HEBREW SCRIPT NAMES AND NUMBER STRINGS
+// =============================================================================
+
+const wchar_t* g_kHebrewDays[7] = {
+    L"\u05E8\u05D0\u05E9\u05D5\u05DF",   // Rishon
+    L"\u05E9\u05E0\u05D9",               // Sheni
+    L"\u05E9\u05DC\u05D9\u05E9\u05D9",   // Shlishi
+    L"\u05E8\u05D1\u05D9\u05E2\u05D9",   // Revi'i
+    L"\u05D7\u05DE\u05D9\u05E9\u05D9",   // Chamishi
+    L"\u05E9\u05D9\u05E9\u05D9",         // Shishi
+    L"\u05E9\u05D1\u05EA"                // Shabbat
+};
+
+const wchar_t* g_kHebrewMonthNames[13] = {
+    L"\u05EA\u05E9\u05E8\u05D9",         // Tishrei
+    L"\u05D7\u05E9\u05D5\u05DF",         // Cheshvan
+    L"\u05DB\u05E1\u05DC\u05D5",         // Kislev
+    L"\u05D8\u05D1\u05EA",               // Tevet
+    L"\u05E9\u05D1\u05D8",               // Shvat
+    L"\u05D0\u05D3\u05E8",               // Adar / Adar I
+    L"\u05D0\u05D3\u05E8 \u05D1",        // Adar II
+    L"\u05E0\u05D9\u05E1\u05DF",         // Nissan
+    L"\u05D0\u05D9\u05D9\u05E8",         // Iyar
+    L"\u05E1\u05D9\u05D5\u05DF",         // Sivan
+    L"\u05EA\u05DE\u05D5\u05D6",         // Tammuz
+    L"\u05D0\u05D1",                     // Av
+    L"\u05D0\u05DC\u05D5\u05DC"          // Elul
+};
+
+std::wstring HebrewNumberString(int n)
+{
+    // Hebrew numeral letters: 1-9
+    static const wchar_t* kUnits[9] = {
+        L"\u05D0", L"\u05D1", L"\u05D2", L"\u05D3", L"\u05D4",
+        L"\u05D5", L"\u05D6", L"\u05D7", L"\u05D8"
+    };
+    // Hebrew numeral letters: 10-90
+    static const wchar_t* kTens[9] = {
+        L"\u05D9", L"\u05DB", L"\u05DC", L"\u05DE",
+        L"\u05E0", L"\u05E1", L"\u05E2", L"\u05E4", L"\u05E6"
+    };
+
+    if (n < 1 || n > 30) return std::to_wstring(n);
+
+    // Special cases: 15 = Tet-Vav (not Yod-He), 16 = Tet-Zayin (not Yod-Vav)
+    if (n == 15) return L"\u05D8\u05F4\u05D5";
+    if (n == 16) return L"\u05D8\u05F4\u05D6";
+
+    int units = n % 10;
+    int tens  = n / 10;
+
+    std::wstring result;
+    if (tens > 0)
+        result = kTens[tens - 1];
+    if (units > 0)
+    {
+        if (!result.empty()) result += L"\u05F4";
+        result += kUnits[units - 1];
+    }
+    return result;
 }

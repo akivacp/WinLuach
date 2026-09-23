@@ -3,12 +3,14 @@
 // File:    Settings.h
 // Purpose: Declares the application settings manager.
 //          Saves and loads user preferences to/from
-//          %APPDATA%\WinLuach\settings.json.
+//          OneDrive Documents\WinLuach when available.
 //          Settings include: last location, clock format,
 //          Israel/Diaspora mode, window size/position.
 // =============================================================================
 //
 // CHANGELOG:
+// v0.8.129 - Added WriteMasterBackup / RestoreBackup: one backup file now
+//            holds settings, personal events and custom locations.
 // v0.8.71 - Added anchor (int) to ReminderRule: 0=custom Tzeit, 1=Shkia,
 //           2=Civil midnight. Added lastFiredDate (wstring "YYYY-MM-DD") for
 //           deduplication. Added reminderDailyHour / reminderDailyMinute to
@@ -113,6 +115,8 @@ struct AppSettings
     int          haftarahShita = 0;   // 0=Ashkenazi, 1=Eidot Mizrach, 2=Italian, 3=Yemenite
     int          fontSize = 1;        // 0=Small, 1=Medium, 2=Big
     int          language = 0;        // 0=English, future use
+    bool         useHebrewScript = false;
+    bool         useHebrewNumerals = false;
 
     // --- Interface ---
     bool         showTrayIcon   = false;   // always show tray icon
@@ -179,6 +183,9 @@ struct AppSettings
     uint64_t     printDayZmanimMask = 0xFFFFFFFFFull; // bitmask of day-detail zmanim rows
     bool         printShowFooter   = true;
     bool         printTwoColumns   = false;
+    bool         printHebrewMode   = false;
+    bool         printRtlMode      = false;
+    bool         printHebrewNumerals = false;
 
     // --- Zmanim shita ---
     // zmanimShita: global shita for shema/tefilla/mincha. 0=GRA, 1=MA72, 2=MA90 (default)
@@ -303,6 +310,10 @@ struct AppSettings
     bool         countdownShowClock    = true;
     bool         countdownShowZmanTime = true;  // "zman time" area (actual time of upcoming zman)
     bool         countdownShowLive     = true;  // live time + date area
+    // Open the countdown clock automatically when the app starts
+    bool         countdownOpenOnStartup = false;
+    // Remember the clock's Always-on-Top state across launches
+    bool         countdownAlwaysOnTop   = false;
 
     // --- Day-detail print options (persisted separately from monthly print) ---
     bool         dayDetailLandscape   = false;
@@ -347,7 +358,14 @@ struct AppSettings
 // FUNCTIONS
 // =============================================================================
 
-// Returns the path to the settings file: %APPDATA%\WinLuach\settings.json
+// Returns the directory for WinLuach user data:
+// OneDrive\Documents\WinLuach when available, otherwise Documents\WinLuach.
+std::wstring GetWinLuachDataDirectory();
+
+// Returns a file path inside the WinLuach user data directory.
+std::wstring GetWinLuachDataFilePath(const wchar_t* fileName);
+
+// Returns the path to the settings file in the WinLuach data directory.
 std::wstring GetSettingsFilePath();
 
 // Saves settings to disk. Returns true on success.
@@ -357,7 +375,7 @@ bool SaveSettings(const AppSettings& s);
 // If the file doesn't exist, fills s with defaults and returns false.
 bool LoadSettings(AppSettings& s);
 
-// Returns the path to the events file: %APPDATA%\WinLuach\events.json
+// Returns the path to the events file in the WinLuach data directory.
 std::wstring GetEventsFilePath();
 
 // Saves user events to events.json. Returns true on success.
@@ -374,3 +392,30 @@ int  ImportEvents(std::vector<UserEventEntry>& events, const std::wstring& path)
 
 // Parses user events from a file without appending to any list. Returns parsed events.
 std::vector<UserEventEntry> ParseEventsFromFile(const std::wstring& path);
+
+// =============================================================================
+// MASTER BACKUP
+// One JSON file bundling settings.json, events.json and locations.json:
+// {
+//   "winluachBackup": 1,
+//   "created": "...",
+//   "settings":  { ...settings.json... },
+//   "events":    { ...events.json... },
+//   "locations": [ ...locations.json... ]
+// }
+// =============================================================================
+
+enum class BackupRestoreResult
+{
+    Failed,              // unreadable / not a WinLuach backup; nothing was changed
+    Master,              // settings, personal events and custom locations restored
+    LegacySettingsOnly   // pre-v0.8.129 settings-only backup; events/locations untouched
+};
+
+// Saves s to disk, then writes a master backup of all user data to path.
+bool WriteMasterBackup(const AppSettings& s, const std::wstring& path);
+
+// Restores a backup file into the WinLuach data folder. The caller must then
+// reload settings (LoadSettings) and custom locations
+// (LocationDB::ReloadCustomLocations) and apply them.
+BackupRestoreResult RestoreBackup(const std::wstring& path);

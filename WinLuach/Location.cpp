@@ -3,7 +3,7 @@
 // File:    Location.cpp
 // Purpose: Full implementation of the location database.
 //          Built-in city list covers major Jewish communities worldwide.
-//          Custom locations saved/loaded as simple JSON in %APPDATA%\WinLuach.
+//          Custom locations saved/loaded as simple JSON in the WinLuach data folder.
 //          No UI dependencies. Pure data layer.
 // =============================================================================
 //
@@ -16,6 +16,7 @@
 
 #include "pch.h"
 #include "Location.h"
+#include "Settings.h"
 #include <fstream>
 #include <sstream>
 #include <ShlObj.h>
@@ -221,6 +222,13 @@ LocationDB::LocationDB()
     LoadCustomLocations(m_filePath);
 }
 
+// Drops all custom locations and re-reads locations.json from disk.
+void LocationDB::ReloadCustomLocations()
+{
+    LoadBuiltIn();
+    LoadCustomLocations(m_filePath);
+}
+
 // Returns the singleton instance.
 LocationDB& LocationDB::Get()
 {
@@ -328,17 +336,10 @@ bool LocationDB::DeleteCustom(const std::wstring& name)
 // FILE PATH
 // =============================================================================
 
-// Returns %APPDATA%\WinLuach\locations.json
+// Returns locations.json in the WinLuach data folder.
 std::wstring LocationDB::GetLocationsFilePath()
 {
-    wchar_t path[MAX_PATH] = {};
-    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
-    {
-        std::wstring dir = std::wstring(path) + L"\\WinLuach";
-        CreateDirectoryW(dir.c_str(), nullptr); // creates if not exists
-        return dir + L"\\locations.json";
-    }
-    return L"locations.json"; // fallback to current directory
+    return GetWinLuachDataFilePath(L"locations.json");
 }
 
 // =============================================================================
@@ -410,10 +411,15 @@ static std::wstring ParseJsonString(const std::wstring& line)
 {
     size_t first = line.find(L'"', line.find(L':'));
     if (first == std::wstring::npos) return L"";
-    first++;
-    size_t last = line.find(L'"', first);
-    if (last == std::wstring::npos) return L"";
-    return line.substr(first, last - first);
+    // Read up to the closing quote, undoing JsonEscape (\" and \\)
+    std::wstring out;
+    for (size_t i = first + 1; i < line.size(); ++i)
+    {
+        if (line[i] == L'\\' && i + 1 < line.size()) out += line[++i];
+        else if (line[i] == L'"') return out;
+        else out += line[i];
+    }
+    return L"";
 }
 
 // Reads a numeric JSON value from a line like: "key": 42

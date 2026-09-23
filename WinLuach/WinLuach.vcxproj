@@ -88,6 +88,9 @@
     <PreBuildEvent>
       <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)UpdateVersion.ps1"</Command>
     </PreBuildEvent>
+    <PreBuildEvent>
+      <Command>if exist "$(SolutionDir).vs\$(SolutionName)\v18\ipch" rmdir /s /q "$(SolutionDir).vs\$(SolutionName)\v18\ipch"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -106,6 +109,9 @@
     </Link>
     <PreBuildEvent>
       <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)UpdateVersion.ps1"</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Command>if exist "$(SolutionDir).vs\$(SolutionName)\v18\ipch" rmdir /s /q "$(SolutionDir).vs\$(SolutionName)\v18\ipch"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -126,6 +132,9 @@
     </Link>
     <PreBuildEvent>
       <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectDir)UpdateVersion.ps1"</Command>
+    </PreBuildEvent>
+    <PreBuildEvent>
+      <Command>if exist "$(SolutionDir).vs\$(SolutionName)\v18\ipch" rmdir /s /q "$(SolutionDir).vs\$(SolutionName)\v18\ipch"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

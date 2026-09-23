@@ -240,8 +240,8 @@ Printing
 Options
 - Options > Location sets the calculation location and Israel/Diaspora mode.
 - Options > Preferences controls display, zmanim, learning, parsha/holiday visibility, printing defaults, tray behavior, and notifications.
-- File > Backup Settings saves your settings.
-- File > Restore Settings restores a saved settings backup.
+- File > Backup Settings & Data saves one backup file with all preferences, personal events and custom locations.
+- File > Restore Settings & Data restores that backup (older settings-only backups are still accepted).
 
 Tray And Notifications
 - WinLuach can show a tray icon and daily event notifications depending on Preferences.
@@ -282,6 +282,10 @@ protected:
         CDialog::OnInitDialog();
         SetWindowText(L"WinLuach Help Contents");
 
+        HICON hIcon = AfxGetApp()->LoadIcon(IDI_WINLUACH);
+        SetIcon(hIcon, TRUE);
+        SetIcon(hIcon, FALSE);
+
         HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         CFont* pF = CFont::FromHandle(hF);
 
@@ -319,6 +323,28 @@ protected:
 BEGIN_MESSAGE_MAP(CHelpContentsDlg, CDialog)
     ON_WM_SIZE()
 END_MESSAGE_MAP()
+
+class CAboutDlg : public CDialog
+{
+public:
+    CAboutDlg(CWnd* pParent = nullptr)
+        : CDialog(IDD_ABOUTBOX, pParent)
+    {
+    }
+
+protected:
+    BOOL OnInitDialog() override
+    {
+        CDialog::OnInitDialog();
+        HICON hIcon = AfxGetApp()->LoadIcon(IDI_WINLUACH);
+        SetIcon(hIcon, TRUE);
+        SetIcon(hIcon, FALSE);
+        CString title;
+        title.Format(L"WinLuach %s - Hebrew Calendar", WINLUACH_VERSION_TEXT);
+        SetDlgItemText(IDC_ABOUT_TITLE, title);
+        return TRUE;
+    }
+};
 
 static CTime DateTimeForZman(const GregorianDate& g, const TimeOfDay& t)
 {
@@ -501,7 +527,7 @@ public:
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
         b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 270; b.t.cy = 305;
+        b.t.cx = 270; b.t.cy = 350;
         wcscpy_s(b.title, L"Countdown Options");
         if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
         return CDialog::DoModal();
@@ -629,6 +655,22 @@ protected:
         m_btnRestoreColors.SetFont(pF);
         m_page1.push_back(&m_btnRestoreColors);
         m_tooltip.AddTool(&m_btnRestoreColors, L"Restore all countdown clock fonts and colors to their default values");
+
+        m_chkOpenOnStartup.Create(L"Open countdown clock when WinLuach starts",
+            WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(10, 256, W - 10, 274), this, 5950);
+        m_chkOpenOnStartup.SetFont(pF);
+        m_chkOpenOnStartup.SetCheck(m_settings.countdownOpenOnStartup ? BST_CHECKED : BST_UNCHECKED);
+        m_page1.push_back(&m_chkOpenOnStartup);
+        m_tooltip.AddTool(&m_chkOpenOnStartup, L"Automatically open the countdown clock every time WinLuach launches");
+
+        m_chkAlwaysOnTop.Create(L"Remember Always on Top state",
+            WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(10, 278, W - 10, 296), this, 5951);
+        m_chkAlwaysOnTop.SetFont(pF);
+        m_chkAlwaysOnTop.SetCheck(m_settings.countdownAlwaysOnTop ? BST_CHECKED : BST_UNCHECKED);
+        m_page1.push_back(&m_chkAlwaysOnTop);
+        m_tooltip.AddTool(&m_chkAlwaysOnTop, L"Keep the clock Always on Top when it reopens, matching its last state");
 
         // ── Zmanim page ───────────────────────────────────────────────
         {
@@ -799,6 +841,11 @@ protected:
             if (m_chkZmanim[i].GetSafeHwnd() && m_chkZmanim[i].GetCheck() == BST_CHECKED)
                 mask |= (1u << i);
         m_settings.countdownZmanimMask = mask;
+
+        if (m_chkOpenOnStartup.GetSafeHwnd())
+            m_settings.countdownOpenOnStartup = (m_chkOpenOnStartup.GetCheck() == BST_CHECKED);
+        if (m_chkAlwaysOnTop.GetSafeHwnd())
+            m_settings.countdownAlwaysOnTop = (m_chkAlwaysOnTop.GetCheck() == BST_CHECKED);
     }
 
     void Apply()
@@ -873,6 +920,9 @@ private:
     // Zmanim tab
     CButton m_chkZmanim[32];
 
+    // Startup / window-state options
+    CButton m_chkOpenOnStartup, m_chkAlwaysOnTop;
+
     // Dialog buttons
     CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
 };
@@ -886,7 +936,7 @@ public:
     {
         LPCTSTR cls = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW,
             ::LoadCursor(nullptr, IDC_ARROW), (HBRUSH)(COLOR_WINDOW + 1),
-            ::LoadIcon(nullptr, IDI_APPLICATION));
+            AfxGetApp()->LoadIcon(IDI_WINLUACH));
         return CFrameWnd::CreateEx(WS_EX_APPWINDOW, cls, L"WinLuach Countdown Clock",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
                 WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
@@ -897,8 +947,11 @@ protected:
     afx_msg int OnCreate(LPCREATESTRUCT lp)
     {
         if (CFrameWnd::OnCreate(lp) == -1) return -1;
+        m_alwaysOnTop = theApp.m_settings.countdownAlwaysOnTop;
         RebuildMenuBar();
         UpdateTopmostUi(false);
+        if (m_alwaysOnTop)
+            SetWindowPos(&wndTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         SetTimer(1, 1000, nullptr);
         return 0;
     }
@@ -946,6 +999,8 @@ protected:
             0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         RebuildMenuBar();
         UpdateTopmostUi(true);
+        theApp.m_settings.countdownAlwaysOnTop = m_alwaysOnTop;
+        SaveSettings(theApp.m_settings);
     }
 
     afx_msg void OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
@@ -3269,7 +3324,7 @@ BOOL CMainFrame::Create()
         CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
         ::LoadCursor(nullptr, IDC_ARROW),
         (HBRUSH)(COLOR_WINDOW + 1),
-        ::LoadIcon(nullptr, IDI_APPLICATION));
+        AfxGetApp()->LoadIcon(IDI_WINLUACH));
 
     if (!CFrameWnd::Create(cls,
         L"WinLuach - Hebrew Calendar",
@@ -3300,8 +3355,8 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     fileMenu.AppendMenu(MF_STRING, ID_CAL_PRINT,    L"&Print...\tCtrl+P");
     fileMenu.AppendMenu(MF_STRING, ID_CAL_PREVIEW,  L"Print Pre&view...");
     fileMenu.AppendMenu(MF_SEPARATOR);
-    fileMenu.AppendMenu(MF_STRING, ID_FILE_BACKUP,      L"&Backup Settings...");
-    fileMenu.AppendMenu(MF_STRING, ID_FILE_RESTORE,     L"&Restore Settings...");
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_BACKUP,      L"&Backup Settings && Data...");
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_RESTORE,     L"&Restore Settings && Data...");
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_EXPORT_EVT,  L"Export &Events...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_IMPORT_EVT,  L"&Import Events...");
@@ -3827,19 +3882,9 @@ void CMainFrame::OnViewPaneMolad()
 
 void CMainFrame::OnCalPrintMonth()
 {
-    // v0.8.75 — When in Hebrew calendar mode, sync the civil view to the first
-    // civil day of the current Hebrew month so DoPrint prints the right month.
-    // DoPrint reads m_viewYear/m_viewMonth directly from the frame.
-    if (m_hebrewMonthView)
-    {
-        HebrewDate    hFirst(m_viewHebrewYear, m_viewHebrewMonth, 1);
-        GregorianDate gFirst = HebrewToGregorian(hFirst);
-        m_viewYear  = gFirst.year;
-        m_viewMonth = gFirst.month;
-    }
-
     CalPrintOptions opts;
     opts.range         = CalPrintOptions::RANGE_MONTH;
+    opts.hebrewPrint   = m_hebrewMonthView;
     opts.landscape     = theApp.m_settings.printLandscape;
     opts.mTop          = theApp.m_settings.printMarginTop;
     opts.mBot          = theApp.m_settings.printMarginBot;
@@ -3849,15 +3894,18 @@ void CMainFrame::OnCalPrintMonth()
     opts.zmanimColumns = theApp.m_settings.printZmanimColMask;
     opts.showFooter    = theApp.m_settings.printShowFooter;
     opts.use24hr       = theApp.m_settings.use24Hour;
-    opts.twoColumns    = theApp.m_settings.printTwoColumns;
+    opts.twoColumns    = false;   // always one month per sheet
+    opts.rtlPrint      = m_hebrewMonthView && theApp.m_settings.printRtlMode;
     DoPrint(opts, this);
 }
 
 void CMainFrame::OnCalPrintZmanim()
 {
-    // v0.8.75 — Same Hebrew mode sync for the Zmanim print dialog
-    int printYear  = m_viewYear;
-    int printMonth = m_viewMonth;
+    int printYear  = m_hebrewMonthView ? m_viewHebrewYear  : m_viewYear;
+    int printMonth = m_hebrewMonthView ? m_viewHebrewMonth : m_viewMonth;
+    // Zmanim print shows a table of daily zmanim for the month.
+    // We pass the Gregorian year/month since the zmanim engine
+    // iterates over Gregorian dates and annotates Hebrew dates.
     if (m_hebrewMonthView)
     {
         HebrewDate    hFirst(m_viewHebrewYear, m_viewHebrewMonth, 1);
@@ -3925,8 +3973,9 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
         last  = HebrewToGregorian(hLast);
 
         hebFull.Format(L"%s  %d",
-            HebrewMonthName(m_viewHebrewMonth,
-                IsHebrewLeapYear(m_viewHebrewYear)).c_str(),
+            (m_useHebrewScript
+                ? g_kHebrewMonthNames[m_viewHebrewMonth - 1]
+                : HebrewMonthName(m_viewHebrewMonth, IsHebrewLeapYear(m_viewHebrewYear))).c_str(),
             m_viewHebrewYear);
 
         std::wstring gregRange = GregorianMonthName(first.month);
@@ -3949,9 +3998,14 @@ void CMainFrame::DrawHeader(CDC* pDC, const CRect& rc)
     HebrewDate hFirst = GregorianToHebrew(first);
     HebrewDate hLast  = GregorianToHebrew(last);
 
-    std::wstring hebStr = HebrewMonthName(hFirst.month, IsHebrewLeapYear(hFirst.year));
+    auto hebName = [&](int m, int y) {
+        return m_useHebrewScript
+            ? g_kHebrewMonthNames[m - 1]
+            : HebrewMonthName(m, IsHebrewLeapYear(y));
+    };
+    std::wstring hebStr = hebName(hFirst.month, hFirst.year);
     if (hFirst.month != hLast.month)
-        hebStr += L" - " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
+        hebStr += L" - " + hebName(hLast.month, hLast.year);
 
     if (!m_hebrewMonthView)
     {
@@ -3981,10 +4035,11 @@ void CMainFrame::DrawDayHeaders(CDC* pDC, const CRect& rc)
 {
     pDC->FillSolidRect(rc, RGB(70, 100, 160));
 
-    static const wchar_t* days[] = {
+    static const wchar_t* kDays[] = {
         L"Sunday", L"Monday", L"Tuesday", L"Wednesday",
         L"Thursday", L"Friday", L"Shabbos"
     };
+    const wchar_t** days = m_useHebrewScript ? g_kHebrewDays : kDays;
 
     int colW = rc.Width() / 7;
     pDC->SelectObject(&m_fontBold);
@@ -4024,16 +4079,22 @@ void CMainFrame::ChangeMonth(int deltaMonths)
     if (m_hebrewMonthView)
     {
         int year = m_viewHebrewYear;
-        int month = m_viewHebrewMonth + deltaMonths;
-        while (month < 1)
+        int month = m_viewHebrewMonth;
+        if (deltaMonths > 0)
         {
-            year--;
-            month += MonthsInHebrewYear(year);
+            for (int i = 0; i < deltaMonths; i++)
+            {
+                month = NextHebrewMonth(month, year);
+                if (month == TISHREI) year++;
+            }
         }
-        while (month > MonthsInHebrewYear(year))
+        else
         {
-            month -= MonthsInHebrewYear(year);
-            year++;
+            for (int i = 0; i > deltaMonths; i--)
+            {
+                month = PrevHebrewMonth(month, year);
+                if (month == ELUL) year--;
+            }
         }
         m_viewHebrewYear = year;
         m_viewHebrewMonth = month;
@@ -4062,8 +4123,7 @@ void CMainFrame::ChangeYear(int deltaYears)
     if (m_hebrewMonthView)
     {
         m_viewHebrewYear += deltaYears;
-        int months = MonthsInHebrewYear(m_viewHebrewYear);
-        if (m_viewHebrewMonth > months) m_viewHebrewMonth = months;
+        if (m_viewHebrewMonth > 13) m_viewHebrewMonth = 13;
     }
     else
     {
@@ -4380,6 +4440,8 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     m_paneYearDetailsVisible  = s.paneYearDetailsVisible;
     m_paneMoladVisible        = s.paneMoladVisible;
     m_hebrewMonthView = s.defaultHebrewMonth;
+    m_useHebrewScript   = s.useHebrewScript;
+    m_useHebrewNumerals = s.useHebrewNumerals;
     RefreshZmanim();
     RecreateFonts();
     // Reassign fonts to header controls — their HFONT handle becomes stale after RecreateFonts.
@@ -4396,6 +4458,7 @@ void CMainFrame::ApplySettings(const AppSettings& s)
     if (m_pCalView) { m_pCalView->RebuildCells(); m_pCalView->Invalidate(FALSE); }
     if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
     if (m_pZmanim)  m_pZmanim->Invalidate(FALSE);
+    Invalidate(FALSE);
 }
 
 void CMainFrame::RecreateFonts()
@@ -5948,14 +6011,8 @@ void CMainFrame::CheckForUpdates()
 
 void CMainFrame::OnHelpAbout()
 {
-    MessageBoxW(
-        L"2026 WinLuach - Hebrew Calendar\n\n"
-        L"Version " WINLUACH_VERSION_TEXT L"\n\n"
-        L"A modern Hebrew/Gregorian calendar\n"
-        L"with halachic times (zmanim).\n\n"
-        L"Built with C++ and MFC.",
-        L"About WinLuach",
-        MB_OK | MB_ICONINFORMATION);
+    CAboutDlg dlg(this);
+    dlg.DoModal();
 }
 
 void CMainFrame::OnHelpContents()
@@ -5975,10 +6032,12 @@ void CMainFrame::PopulateMonthCombo()
     m_comboMonth.ResetContent();
     if (m_hebrewMonthView)
     {
-        int months = MonthsInHebrewYear(m_viewHebrewYear);
         bool leap  = IsHebrewLeapYear(m_viewHebrewYear);
-        for (int m = 1; m <= months; m++)
+        for (int m = 1; m <= 13; m++)
+        {
+            if (!leap && m == 7) continue;
             m_comboMonth.AddString(HebrewMonthName(m, leap).c_str());
+        }
     }
     else
     {
@@ -6008,7 +6067,11 @@ void CMainFrame::UpdateMonthYearControls()
         }
     }
 
-    m_comboMonth.SetCurSel(month - 1);  // 0-based index
+    // Convert month number to combo index (skip month 7 in non-leap years)
+    int comboIdx = month - 1;
+    if (m_hebrewMonthView && !IsHebrewLeapYear(m_viewHebrewYear) && month > 7)
+        comboIdx--;
+    m_comboMonth.SetCurSel(comboIdx);
 
     CString yearStr;
     yearStr.Format(L"%d", year);
@@ -6023,9 +6086,12 @@ void CMainFrame::OnMonthComboChange()
     int sel = m_comboMonth.GetCurSel();
     if (sel == CB_ERR) return;
 
-    int newMonth = sel + 1;  // 1-based
+    int newMonth = sel + 1;  // 1-based combo index
     if (m_hebrewMonthView)
     {
+        // Convert combo index to actual month number (skip month 7 in non-leap years)
+        if (!IsHebrewLeapYear(m_viewHebrewYear) && newMonth >= 7)
+            newMonth++;
         if (newMonth == m_viewHebrewMonth) return;
         m_viewHebrewMonth = newMonth;
     }
@@ -6229,6 +6295,8 @@ void CMainFrame::OnCalPreview()
     opts.showFooter    = ps.printShowFooter;
     opts.use24hr       = ps.use24Hour;
     opts.twoColumns    = ps.printTwoColumns;
+    opts.hebrewPrint   = ps.printHebrewMode;
+    opts.rtlPrint      = ps.printRtlMode;
     CCalPreviewDlg dlg(opts, this, nullptr);
     dlg.DoModal();
 }
@@ -6243,21 +6311,27 @@ BOOL CMainFrame::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
     return CFrameWnd::OnMouseWheel(nFlags, zDelta, pt);
 }
 
+// Master backup: settings, personal events and custom locations in one file.
 void CMainFrame::OnFileBackup()
 {
-    wchar_t file[MAX_PATH] = L"WinLuach_settings_backup.json";
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    wchar_t file[MAX_PATH] = {};
+    swprintf_s(file, L"WinLuach_backup_%04d-%02d-%02d.json", st.wYear, st.wMonth, st.wDay);
+
     OPENFILENAMEW ofn = { sizeof(ofn) };
     ofn.hwndOwner = GetSafeHwnd();
     ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"Backup Settings & Data";
     ofn.lpstrDefExt = L"json";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (!GetSaveFileNameW(&ofn)) return;
 
-    std::wstring src = GetSettingsFilePath();
-    if (CopyFileW(src.c_str(), file, FALSE))
-        MessageBox(L"Settings backed up successfully.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+    if (WriteMasterBackup(theApp.m_settings, file))
+        MessageBox(L"Backup saved.\n\nIt includes all preferences, personal events and custom locations.",
+            L"WinLuach", MB_OK | MB_ICONINFORMATION);
     else
         MessageBox(L"Backup failed.", L"WinLuach", MB_OK | MB_ICONERROR);
 }
@@ -6322,7 +6396,8 @@ void CMainFrame::OpenDayViewForDate(const GregorianDate& g)
 
 void CMainFrame::OnFileRestore()
 {
-    if (MessageBox(L"Restore settings from a backup file? Current settings will be overwritten.",
+    if (MessageBox(L"Restore from a backup file?\n\n"
+        L"Your current preferences, personal events and custom locations will be replaced.",
         L"WinLuach", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
 
     wchar_t file[MAX_PATH] = {};
@@ -6331,20 +6406,36 @@ void CMainFrame::OnFileRestore()
     ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"Restore Settings & Data";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (!GetOpenFileNameW(&ofn)) return;
 
-    std::wstring dst = GetSettingsFilePath();
-    if (CopyFileW(file, dst.c_str(), FALSE))
+    // Close Options first so it cannot write stale values over the restore
+    if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
+        m_pOptionsDlg->DestroyWindow();
+
+    BackupRestoreResult result = RestoreBackup(file);
+    if (result == BackupRestoreResult::Failed)
     {
-        LoadSettings(theApp.m_settings);
-        ApplySettings(theApp.m_settings);
-        PopulateMonthCombo();
-        UpdateMonthYearControls();
-        MessageBox(L"Settings restored. Restart recommended.", L"WinLuach", MB_OK | MB_ICONINFORMATION);
+        MessageBox(L"Restore failed. The file is not a WinLuach backup, or it could not be read.\n\n"
+            L"Nothing was changed.", L"WinLuach", MB_OK | MB_ICONERROR);
+        return;
     }
+
+    AppSettings restored;
+    LoadSettings(restored);   // also loads personal events
+    LocationDB::Get().ReloadCustomLocations();
+    // Applies everything, including Windows startup / desktop shortcuts and the tray icon
+    ApplyAndSaveSettings(restored);
+
+    if (result == BackupRestoreResult::LegacySettingsOnly)
+        MessageBox(L"Preferences restored.\n\n"
+            L"This is an older settings-only backup, so your current personal events and "
+            L"custom locations were kept unchanged.\n\nRestart recommended.",
+            L"WinLuach", MB_OK | MB_ICONINFORMATION);
     else
-        MessageBox(L"Restore failed.", L"WinLuach", MB_OK | MB_ICONERROR);
+        MessageBox(L"Preferences, personal events and custom locations restored.\n\nRestart recommended.",
+            L"WinLuach", MB_OK | MB_ICONINFORMATION);
 }
 
 // Handles commands forwarded from a second instance via the Jump List.

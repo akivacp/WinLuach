@@ -218,6 +218,8 @@ public:
     bool          m_showHalachaYomit = false;
     bool          m_showMishnaYomit = false;
     bool          m_showTanachYomi = false;
+    bool          m_useHebrewScript = false;
+    bool          m_useHebrewNumerals = false;
     bool          m_showTrayIcon   = false;
     bool          m_minimizeToTray = false;
     int           m_minimizeTrayWhen = 0;

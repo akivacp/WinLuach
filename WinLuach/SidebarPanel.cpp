@@ -532,12 +532,9 @@ void CSidebarPanel::OnPaint()
         };
 
         int nextYear = hm.year;
-        int nextMonth = hm.month + 1;
-        if (nextMonth > MonthsInHebrewYear(hm.year))
-        {
-            nextMonth = TISHREI;
+        int nextMonth = NextHebrewMonth(hm.month, hm.year);
+        if (nextMonth == TISHREI)
             nextYear++;
-        }
 
         DrawSep(&memDC, x, yOff, w);
         drawPaneHeader(L"Molad", yOff, m_rcMoladClose, m_rcMoladDrag);

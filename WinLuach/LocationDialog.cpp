@@ -339,10 +339,12 @@ void LocationDialog::OnAdd(HWND hwnd)
     // We'll use a simple approach: show a message asking the user to
     // use the built-in cities for now, or add via the data file
     // A proper Add dialog will be added in a future version
+    std::wstring msg =
+        L"To add a custom location, edit the file:\r\n\r\n" +
+        LocationDB::GetLocationsFilePath() +
+        L"\r\n\r\nA full Add Location dialog will be available in the next version.";
     MessageBoxW(hwnd,
-        L"To add a custom location, edit the file:\r\n\r\n"
-        L"%APPDATA%\\WinLuach\\locations.json\r\n\r\n"
-        L"A full Add Location dialog will be available in the next version.",
+        msg.c_str(),
         L"Add Location",
         MB_OK | MB_ICONINFORMATION);
 }

@@ -12,7 +12,7 @@
 // v0.1.0 - Initial file. Declares LocationDB class, built-in city list,
 //          and custom location save/load functions.
 //          Ships with ~120 built-in cities across all continents.
-//          Custom locations stored in locations.json in app data folder.
+//          Custom locations stored in locations.json in WinLuach data folder.
 // =============================================================================
 //
 // VERSION GUIDE:
@@ -108,10 +108,16 @@ public:
     bool DeleteCustom(const std::wstring& name);
 
     // -------------------------------------------------------------------------
-    // Loads custom locations from locations.json in the app data folder.
+    // Loads custom locations from locations.json in the WinLuach data folder.
     // Called automatically on first access.
     // -------------------------------------------------------------------------
     bool LoadCustomLocations(const std::wstring& filePath);
+
+    // -------------------------------------------------------------------------
+    // Drops all custom locations and re-reads locations.json from disk.
+    // Used after restoring a backup.
+    // -------------------------------------------------------------------------
+    void ReloadCustomLocations();
 
     // -------------------------------------------------------------------------
     // Saves all custom locations to locations.json.
@@ -121,7 +127,7 @@ public:
 
     // -------------------------------------------------------------------------
     // Returns the path to the locations.json file.
-    // Stored in %APPDATA%\WinLuach\locations.json
+    // Stored in the WinLuach data folder.
     // -------------------------------------------------------------------------
     static std::wstring GetLocationsFilePath();
 
