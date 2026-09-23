@@ -33,6 +33,7 @@ private:
 
     std::wstring   m_path;
     BackupContents m_contents;
+    CStatic        m_file;
     CStatic        m_header;
     CListCtrl      m_list;
     CButton        m_close;
