@@ -1,7 +1,7 @@
 # ==============================================================================
 # Push-Release.ps1
 # Commits pending changes, pushes to GitHub, tags, and creates a release.
-# Does NOT build — use Build-Release.ps1 for a full build+publish cycle.
+# Does NOT build - use Build-Release.ps1 for a full build+publish cycle.
 # Run from the WinLuach project root.
 # ==============================================================================
 
@@ -49,7 +49,7 @@ if (-not $Publish) {
 
 # --- 5. Require gh CLI ---
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    Write-Error "gh CLI not found. Install it with: winget install GitHub.cli — then run: gh auth login"
+    Write-Error "gh CLI not found. Install it with: winget install GitHub.cli - then run: gh auth login"
 }
 
 # --- 6. Commit and push any pending source changes ---
@@ -90,7 +90,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "git push failed." }
 # --- 7. Create and push git tag ---
 $existingTag = git tag -l $tag
 if ($existingTag) {
-    Write-Host "Tag $tag already exists locally — skipping tag creation." -ForegroundColor Yellow
+    Write-Host "Tag $tag already exists locally - skipping tag creation." -ForegroundColor Yellow
 } else {
     git tag $tag
     if ($LASTEXITCODE -ne 0) { Write-Error "Failed to create git tag $tag." }
