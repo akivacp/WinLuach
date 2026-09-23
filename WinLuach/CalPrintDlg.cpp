@@ -149,30 +149,75 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
     CRect rcTitle(x0, y0, x0 + W, y0 + titleH);
     pDC->FillSolidRect(rcTitle, RGB(50, 80, 140));
 
-    GregorianDate gFirst(year, month, 1);
-    GregorianDate gLast(year, month, DaysInGregorianMonth(month, year));
-    HebrewDate hFirst = GregorianToHebrew(gFirst);
-    HebrewDate hLast  = GregorianToHebrew(gLast);
+    GregorianDate gFirst, gLast;
+    HebrewDate hFirst, hLast;
+    CString leftTitle, rightTitle;
 
-    CString gregStr;
-    gregStr.Format(L"%s  %d", GregorianMonthName(month).c_str(), year);
+    if (opts.hebrewPrint)
+    {
+        // year,month are Hebrew — compute Gregorian boundaries from the Hebrew month
+        hFirst = HebrewDate(year, month, 1);
+        int dim = DaysInHebrewMonth(month, year);
+        hLast  = HebrewDate(year, month, dim);
+        gFirst = HebrewToGregorian(hFirst);
+        gLast  = HebrewToGregorian(hLast);
 
-    std::wstring hs = HebrewMonthName(hFirst.month, IsHebrewLeapYear(hFirst.year));
-    if (hFirst.month != hLast.month)
-        hs += L" - " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
-    CString hebStr;
-    hebStr.Format(L"%s  %d", hs.c_str(), hFirst.year);
-    if (hFirst.year != hLast.year)
-        hebStr.AppendFormat(L" - %d", hLast.year);
+        // Hebrew title (left — primary)
+        bool hebScript = opts.rtlPrint;
+        std::wstring hs = hebScript
+            ? g_kHebrewMonthNames[month - 1]
+            : HebrewMonthName(month, IsHebrewLeapYear(year));
+        leftTitle.Format(L"%s  %d", hs.c_str(), year);
+
+        // Gregorian title (right — secondary)
+        CString gs;
+        gs.Format(L"%s %d", GregorianMonthName(gFirst.month).c_str(), gFirst.day);
+        rightTitle = gs;
+        if (gFirst.month != gLast.month || gFirst.year != gLast.year)
+        {
+            CString gs2;
+            gs2.Format(L" - %s %d", GregorianMonthName(gLast.month).c_str(), gLast.day);
+            rightTitle += gs2;
+        }
+        rightTitle.AppendFormat(L", %d", gFirst.year);
+        if (gFirst.year != gLast.year)
+            rightTitle.AppendFormat(L" - %d", gLast.year);
+    }
+    else
+    {
+        gFirst = GregorianDate(year, month, 1);
+        gLast  = GregorianDate(year, month, DaysInGregorianMonth(month, year));
+        hFirst = GregorianToHebrew(gFirst);
+        hLast  = GregorianToHebrew(gLast);
+
+        leftTitle.Format(L"%s  %d", GregorianMonthName(month).c_str(), year);
+
+        std::wstring hs = HebrewMonthName(hFirst.month, IsHebrewLeapYear(hFirst.year));
+        if (hFirst.month != hLast.month)
+            hs += L" - " + HebrewMonthName(hLast.month, IsHebrewLeapYear(hLast.year));
+        rightTitle.Format(L"%s  %d", hs.c_str(), hFirst.year);
+        if (hFirst.year != hLast.year)
+            rightTitle.AppendFormat(L" - %d", hLast.year);
+    }
 
     pDC->SetBkMode(TRANSPARENT);
     pDC->SetTextColor(RGB(255, 255, 255));
     pDC->SelectObject(&fontTitle);
 
-    CRect rcG(x0 + W/20, y0, x0 + W * 45/100, y0 + titleH);
-    CRect rcH(x0 + W * 55/100, y0, x0 + W - W/20, y0 + titleH);
-    DrawTextFit(pDC, gregStr, rcG, DT_LEFT  | DT_VCENTER | DT_SINGLELINE);
-    DrawTextFit(pDC, hebStr,  rcH, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    CRect rcL(x0 + W/20, y0, x0 + W * 45/100, y0 + titleH);
+    CRect rcR(x0 + W * 55/100, y0, x0 + W - W/20, y0 + titleH);
+    bool rtl = opts.hebrewPrint && opts.rtlPrint;
+    if (rtl)
+    {
+        // Hebrew (primary) on the right, Gregorian (secondary) on the left
+        DrawTextFit(pDC, leftTitle,  rcR, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        DrawTextFit(pDC, rightTitle, rcL, DT_LEFT  | DT_VCENTER | DT_SINGLELINE);
+    }
+    else
+    {
+        DrawTextFit(pDC, leftTitle,  rcL, DT_LEFT  | DT_VCENTER | DT_SINGLELINE);
+        DrawTextFit(pDC, rightTitle, rcR, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
 
     // === Day-of-week header row (5% of height) ==============================
     int dayHdrH = H * 5 / 100;
@@ -192,12 +237,14 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         L"Sunday", L"Monday", L"Tuesday", L"Wednesday",
         L"Thursday", L"Friday", L"Shabbos"
     };
+    const wchar_t** dayNames = (opts.hebrewPrint && opts.rtlPrint) ? g_kHebrewDays : kDays;
     pDC->SelectObject(&fontHdr);
     pDC->SetTextColor(RGB(255, 255, 255));
     for (int c = 0; c < 7; c++)
     {
+        int dayIdx = (opts.hebrewPrint && opts.rtlPrint) ? (6 - c) : c;
         CRect rDN(colX[c], dayHdrY, colX[c + 1], dayHdrY + dayHdrH);
-        DrawTextFit(pDC, kDays[c], rDN, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        DrawTextFit(pDC, dayNames[dayIdx], rDN, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // === Footer height (computed early so cells don't overlap it) ===========
@@ -212,7 +259,7 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
 
     DayOfWeek dow0     = GetDayOfWeek(gFirst);
     long      jdn0     = GregorianToJDN(gFirst) - (int)dow0;
-    int       daysInMo = DaysInGregorianMonth(month, year);
+    int       daysInMo = opts.hebrewPrint ? DaysInHebrewMonth(month, year) : DaysInGregorianMonth(month, year);
     int       numRows  = ((int)dow0 + daysInMo - 1) / 7 + 1;  // 4, 5, or 6
     int       cellH    = gridH / numRows;
     int       lineH    = -fSmall + 2;
@@ -228,11 +275,14 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
         long         jdn = jdn0 + cell;
         GregorianDate g  = JDNToGregorian(jdn);
         HebrewDate    h  = JDNToHebrew(jdn);
-        bool cur = (g.month == month && g.year == year);
+        bool cur = opts.hebrewPrint
+            ? (h.month == month && h.year == year)
+            : (g.month == month && g.year == year);
 
         int row = cell / 7, col = cell % 7;
-        CRect rCell(colX[col],     gridTop + row * cellH,
-                    colX[col + 1], gridTop + (row + 1) * cellH);
+        int renderCol = (opts.hebrewPrint && opts.rtlPrint) ? (6 - col) : col;
+        CRect rCell(colX[renderCol],     gridTop + row * cellH,
+                    colX[renderCol + 1], gridTop + (row + 1) * cellH);
 
         // --- Background ---
         COLORREF bg = cur ? RGB(255, 255, 255) : RGB(245, 245, 245);
@@ -259,23 +309,56 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
 
         pDC->SetBkMode(TRANSPARENT);
 
-        // --- Gregorian day number (top-left, bold) ---
-        pDC->SelectObject(&fontDay);
-        pDC->SetTextColor(cur ? CLR_GREG_TXT : RGB(180, 180, 180));
-        CString dn; dn.Format(L"%d", g.day);
-        CRect rGD(rCell.left + mg, rCell.top + mg,
-                  rCell.left + mg + cellH / 3, rCell.top + mg - fDay + 2);
-        DrawTextFit(pDC, dn, rGD, DT_LEFT | DT_TOP | DT_SINGLELINE);
+        if (opts.hebrewPrint)
+        {
+            // --- Hebrew date (top-left, bold) ---
+            bool leap = IsHebrewLeapYear(h.year);
+            bool hebScript = opts.rtlPrint;
+            std::wstring hDay = (opts.useHebrewNumerals
+                ? HebrewNumberString(h.day) + L" "
+                : std::to_wstring(h.day) + L" ")
+                + (hebScript ? g_kHebrewMonthNames[h.month - 1] : HebrewMonthName(h.month, leap));
+            int splitX = rCell.left + rCell.Width() * 55 / 100;
+            pDC->SelectObject(&fontDay);
+            pDC->SetTextColor(cur ? CLR_HEBREW_TXT : RGB(180, 180, 200));
+            CRect rHD(rCell.left + mg, rCell.top + mg,
+                      splitX, rCell.top + mg - fDay + 2);
+            DrawTextFit(pDC, hDay, rHD, DT_LEFT | DT_TOP | DT_SINGLELINE);
 
-        // --- Hebrew date (top-right, small blue) ---
-        bool leap = IsHebrewLeapYear(h.year);
-        std::wstring hDay = std::to_wstring(h.day) + L" "
-                          + HebrewMonthName(h.month, leap);
-        pDC->SelectObject(&fontSmall);
-        pDC->SetTextColor(cur ? CLR_HEBREW_TXT : RGB(180, 180, 200));
-        CRect rHD(rCell.left + mg, rCell.top + mg,
-                  rCell.right - mg, rCell.top + mg + lineH);
-        DrawTextFit(pDC, hDay, rHD, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+            // --- Gregorian day number (top-right, small) ---
+            pDC->SelectObject(&fontSmall);
+            pDC->SetTextColor(cur ? CLR_GREG_TXT : RGB(180, 180, 180));
+            CString dn = opts.useHebrewNumerals
+                ? HebrewNumberString(g.day).c_str()
+                : (std::to_wstring(g.day)).c_str();
+            CRect rGD(splitX + mg / 2, rCell.top + mg,
+                      rCell.right - mg, rCell.top + mg + lineH);
+            DrawTextFit(pDC, dn, rGD, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+        }
+        else
+        {
+            // --- Gregorian day number (top-left, bold) ---
+            pDC->SelectObject(&fontDay);
+            pDC->SetTextColor(cur ? CLR_GREG_TXT : RGB(180, 180, 180));
+            CString dn = opts.useHebrewNumerals
+                ? HebrewNumberString(g.day).c_str()
+                : (std::to_wstring(g.day)).c_str();
+            CRect rGD(rCell.left + mg, rCell.top + mg,
+                      rCell.left + mg + cellH / 3, rCell.top + mg - fDay + 2);
+            DrawTextFit(pDC, dn, rGD, DT_LEFT | DT_TOP | DT_SINGLELINE);
+
+            // --- Hebrew date (top-right, small blue) ---
+            bool leap = IsHebrewLeapYear(h.year);
+            std::wstring hDay = (opts.useHebrewNumerals
+                ? HebrewNumberString(h.day) + L" "
+                : std::to_wstring(h.day) + L" ")
+                              + HebrewMonthName(h.month, leap);
+            pDC->SelectObject(&fontSmall);
+            pDC->SetTextColor(cur ? CLR_HEBREW_TXT : RGB(180, 180, 200));
+            CRect rHD(rCell.left + mg, rCell.top + mg,
+                      rCell.right - mg, rCell.top + mg + lineH);
+            DrawTextFit(pDC, hDay, rHD, DT_RIGHT | DT_TOP | DT_SINGLELINE);
+        }
 
         // --- Holidays, parasha, omer ---
         if (cur)
@@ -455,8 +538,17 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             // Count shabboses in this month to size rows
             int numShabRows = 0;
             for (int w = 0; w < numRows; w++) {
-                GregorianDate ts = JDNToGregorian(jdn0 + w * 7 + 6);
-                if (ts.year == year && ts.month == month) numShabRows++;
+                long shabJDN = jdn0 + w * 7 + 6;
+                if (opts.hebrewPrint)
+                {
+                    HebrewDate hTest = JDNToHebrew(shabJDN);
+                    if (hTest.year == year && hTest.month == month) numShabRows++;
+                }
+                else
+                {
+                    GregorianDate ts = JDNToGregorian(shabJDN);
+                    if (ts.year == year && ts.month == month) numShabRows++;
+                }
             }
             int dataRowH = max(4, (contentBottom - dataY) / max(1, numShabRows));
 
@@ -465,7 +557,13 @@ void DrawCalMonthPage(CDC* pDC, const CRect& rcPage,
             {
                 long         shabJDN = jdn0 + w * 7 + 6;
                 GregorianDate shab   = JDNToGregorian(shabJDN);
-                if (shab.year != year || shab.month != month) continue;  // skip out-of-month shabbos
+                if (opts.hebrewPrint)
+                {
+                    HebrewDate hTest = JDNToHebrew(shabJDN);
+                    if (hTest.year != year || hTest.month != month) continue;
+                }
+                else if (shab.year != year || shab.month != month)
+                    continue;  // skip out-of-month shabbos
                 int ry = dataY + drawnRows * dataRowH;
                 drawnRows++;
                 COLORREF rowBg = (drawnRows % 2 == 0) ? RGB(248,250,255) : RGB(235,242,255);
@@ -582,15 +680,38 @@ std::vector<std::pair<int, int>> BuildPageList(
         pages.push_back({ viewYear, viewMonth });
         break;
     case CalPrintOptions::RANGE_YEAR:
-        for (int m = 1; m <= 12; m++)
-            pages.push_back({ viewYear, m });
+        if (opts.hebrewPrint)
+        {
+            int numMonths = MonthsInHebrewYear(viewYear);
+            for (int m = 1; m <= numMonths; m++)
+                pages.push_back({ viewYear, m });
+        }
+        else
+        {
+            for (int m = 1; m <= 12; m++)
+                pages.push_back({ viewYear, m });
+        }
         break;
     case CalPrintOptions::RANGE_12:
-        for (int i = 0; i < 12; i++)
+        if (opts.hebrewPrint)
         {
-            int m = viewMonth + i, y = viewYear;
-            while (m > 12) { m -= 12; y++; }
-            pages.push_back({ y, m });
+            int y = viewYear, m = viewMonth;
+            for (int i = 0; i < 12; i++)
+            {
+                pages.push_back({ y, m });
+                int next = NextHebrewMonth(m, y);
+                if (next == 1) y++;
+                m = next;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 12; i++)
+            {
+                int m = viewMonth + i, y = viewYear;
+                while (m > 12) { m -= 12; y++; }
+                pages.push_back({ y, m });
+            }
         }
         break;
     }
@@ -729,7 +850,8 @@ bool DoPrint(const CalPrintOptions& opts, CMainFrame* pFrame)
     di.lpszDocName = L"WinLuach Calendar";
 
     auto pages = BuildPageList(opts,
-        pFrame->m_viewYear, pFrame->m_viewMonth);
+        opts.hebrewPrint ? pFrame->m_viewHebrewYear  : pFrame->m_viewYear,
+        opts.hebrewPrint ? pFrame->m_viewHebrewMonth : pFrame->m_viewMonth);
     int sheetCount = CalendarPrintSheetCount(opts, pages);
 
     dc.StartDoc(&di);
@@ -2943,6 +3065,9 @@ BOOL CCalPrintDlg::OnInitDialog()
         m_opts.showFooter     = ps.printShowFooter;
         m_opts.use24hr        = ps.use24Hour;
         m_opts.twoColumns     = ps.printTwoColumns;
+        m_opts.hebrewPrint    = ps.printHebrewMode;
+        m_opts.rtlPrint       = ps.printRtlMode;
+        m_opts.useHebrewNumerals = ps.printHebrewNumerals;
     }
 
     CRect rcClient;
@@ -3014,11 +3139,36 @@ BOOL CCalPrintDlg::OnInitDialog()
     mkRadio(m_rad12, L"Next 12 months", IDC_PD_RAD_12, 20, y, W - 30, false,
             m_opts.range == CalPrintOptions::RANGE_12);     y += 28;
 
+    // ── Calendar type: Civil / Hebrew ──────────────────────────────────────
+    mkStatic(L"Calendar type", 8, y, 200, 16); y += 20;
+    {
+        bool hebChecked = m_opts.hebrewPrint;
+        mkRadio(m_radCivil,  L"Civil month/year",  IDC_PD_RAD_CIVIL,  20, y, 140, true,  !hebChecked);
+        mkRadio(m_radHebrew, L"Hebrew month/year", IDC_PD_RAD_HEBREW, 160, y, 140, false,  hebChecked);
+        y += 28;
+    }
+
+    // ── RTL layout checkbox (only meaningful for Hebrew) ────────────────────
+    m_chkRtl.Create(L"Right-to-left layout",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_RTL);
+    m_chkRtl.SetFont(pF);
+    m_chkRtl.SetCheck(m_opts.rtlPrint ? BST_CHECKED : BST_UNCHECKED);
+    y += 24;
+
     m_chkTwoColumns.Create(L"Use 2 columns for multi-month prints",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
         CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_2COL);
     m_chkTwoColumns.SetFont(pF);
     m_chkTwoColumns.SetCheck(m_opts.twoColumns ? BST_CHECKED : BST_UNCHECKED);
+    y += 24;
+
+    // ── Hebrew numerals checkbox ─────────────────────────────────────────────
+    m_chkHebrewNumerals.Create(L"Use Hebrew numerals for day numbers  (א, ב, ג...)",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(20, y, W - 10, y + 18), this, IDC_PD_CHK_HEB_NUM);
+    m_chkHebrewNumerals.SetFont(pF);
+    m_chkHebrewNumerals.SetCheck(m_opts.useHebrewNumerals ? BST_CHECKED : BST_UNCHECKED);
     y += 24;
 
     // ── Orientation ──────────────────────────────────────────────────────────
@@ -3141,6 +3291,7 @@ void CCalPrintDlg::ReadControls()
     else if (m_radYear.GetCheck()) m_opts.range = CalPrintOptions::RANGE_YEAR;
     else m_opts.range = CalPrintOptions::RANGE_12;
 
+    m_opts.hebrewPrint   = (m_radHebrew.GetCheck() == BST_CHECKED);
     m_opts.landscape     = (m_radLandscape.GetCheck() == BST_CHECKED);
     m_opts.includeZmanim = (m_chkZmanim.GetCheck()    == BST_CHECKED);
 
@@ -3152,6 +3303,8 @@ void CCalPrintDlg::ReadControls()
     m_opts.showFooter = (m_chkShowFooter.GetCheck() == BST_CHECKED);
     m_opts.use24hr    = (m_chk24hr.GetCheck() == BST_CHECKED);
     m_opts.twoColumns = (m_chkTwoColumns.GetCheck() == BST_CHECKED);
+    m_opts.rtlPrint   = (m_chkRtl.GetCheck() == BST_CHECKED);
+    m_opts.useHebrewNumerals = (m_chkHebrewNumerals.GetCheck() == BST_CHECKED);
 
     auto getFloat = [](CEdit& e, float def) {
         CString s; e.GetWindowText(s);
@@ -3182,6 +3335,9 @@ static void SavePrintOptsToSettings(const CalPrintOptions& opts)
     ps.printShowFooter    = opts.showFooter;
     ps.use24Hour          = opts.use24hr;
     ps.printTwoColumns    = opts.twoColumns;
+    ps.printHebrewMode    = opts.hebrewPrint;
+    ps.printRtlMode       = opts.rtlPrint;
+    ps.printHebrewNumerals = opts.useHebrewNumerals;
     SaveSettings(ps);
 }
 
@@ -3237,7 +3393,11 @@ CCalPreviewDlg::CCalPreviewDlg(const CalPrintOptions& opts,
 {
     m_pParentWnd = pParent;
     if (pFrame)
-        m_pages = BuildPageList(opts, pFrame->m_viewYear, pFrame->m_viewMonth);
+    {
+        int yr = opts.hebrewPrint ? pFrame->m_viewHebrewYear  : pFrame->m_viewYear;
+        int mo = opts.hebrewPrint ? pFrame->m_viewHebrewMonth : pFrame->m_viewMonth;
+        m_pages = BuildPageList(opts, yr, mo);
+    }
 }
 
 // =============================================================================

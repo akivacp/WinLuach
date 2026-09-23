@@ -249,8 +249,15 @@ void CCalendarView::DrawCell(CDC* pDC, const CRect& rc,
 
     // Hebrew date (top-right, small blue)
     bool leap = IsHebrewLeapYear(cell.hebrew.year);
-    std::wstring hebDay = std::to_wstring(cell.hebrew.day)
-        + L" " + HebrewMonthName(cell.hebrew.month, leap);
+    bool hebScript = m_pFrame->m_useHebrewScript;
+    bool hebNum    = m_pFrame->m_useHebrewNumerals;
+    std::wstring hDayStr = hebNum
+        ? HebrewNumberString(cell.hebrew.day)
+        : std::to_wstring(cell.hebrew.day);
+    std::wstring hMonthStr = hebScript
+        ? g_kHebrewMonthNames[cell.hebrew.month - 1]
+        : HebrewMonthName(cell.hebrew.month, leap);
+    std::wstring hebDay = hDayStr + L" " + hMonthStr;
     pDC->SelectObject(&m_pFrame->m_fontSmall);
     pDC->SetTextColor(cell.isCurrentMonth ? m_pFrame->m_colorHebrewText : RGB(180, 180, 200));
     CRect rcHeb(rc.left + margin, rc.top + margin,

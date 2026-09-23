@@ -124,19 +124,20 @@ BOOL CWinLuachApp::InitInstance()
     // Must be called before any window or Jump List registration.
     SetCurrentProcessExplicitAppUserModelID(L"WinLuach.WinLuach");
 
+    // Parse command-line arguments: 0=show, 1=countdown, 2=options
+    int action = 0;
+    LPCWSTR cmd = GetCommandLineW();
+    if (cmd)
+    {
+        if (wcsstr(cmd, L"/countdown")) action = 1;
+        else if (wcsstr(cmd, L"/options")) action = 2;
+    }
+
     m_singleInstanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\WinLuachSingleInstance");
     if (m_singleInstanceMutex && GetLastError() == ERROR_ALREADY_EXISTS)
     {
         if (HWND hwnd = FindWindowW(nullptr, L"WinLuach - Hebrew Calendar"))
         {
-            // Decode the Jump List argument and forward it to the running instance.
-            int action = 0;  // 0=show, 1=countdown, 2=options
-            LPCWSTR cmd = GetCommandLineW();
-            if (cmd)
-            {
-                if (wcsstr(cmd, L"/countdown")) action = 1;
-                else if (wcsstr(cmd, L"/options")) action = 2;
-            }
             PostMessageW(hwnd, WM_WINLUACH_COMMAND, (WPARAM)action, 0);
             SetForegroundWindow(hwnd);
         }
@@ -170,6 +171,14 @@ BOOL CWinLuachApp::InitInstance()
         pFrame->ShowWindow(SW_SHOW);
         pFrame->UpdateWindow();
     }
+
+    // Route to the requested view (countdown clock or options) if specified.
+    if (action != 0)
+        pFrame->SendMessageW(WM_WINLUACH_COMMAND, action, 0);
+
+    // Open the countdown clock automatically when configured.
+    if (action == 0 && m_settings.countdownOpenOnStartup)
+        pFrame->SendMessageW(WM_WINLUACH_COMMAND, 1, 0);
 
     return TRUE;
 }

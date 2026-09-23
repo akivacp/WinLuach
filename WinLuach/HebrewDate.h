@@ -123,6 +123,14 @@ int  MonthsInHebrewYear(int hebrewYear);
 // Accounts for Cheshvan/Kislev variation and leap year Adar.
 int  DaysInHebrewMonth(int month, int hebrewYear);
 
+// Returns the next Hebrew month (1-13), skipping month 7 in non-leap years,
+// wrapping from 13 back to 1.
+int  NextHebrewMonth(int month, int hebrewYear);
+
+// Returns the previous Hebrew month (1-13), skipping month 7 in non-leap years,
+// wrapping from 1 back to 13.
+int  PrevHebrewMonth(int month, int hebrewYear);
+
 // Returns the number of days in a complete Hebrew year.
 // Hebrew years can be 353, 354, 355, 383, 384, or 385 days.
 int  DaysInHebrewYear(int hebrewYear);
@@ -171,6 +179,14 @@ std::wstring GregorianMonthName(int month);
 // Returns the English name of a day of week.
 // e.g. SUNDAY -> "Sunday"
 std::wstring DayOfWeekName(DayOfWeek dow);
+
+// Hebrew script names for days of week and months.
+extern const wchar_t* g_kHebrewDays[7];
+extern const wchar_t* g_kHebrewMonthNames[13];
+
+// Converts a number (1-30) to Hebrew letter representation.
+// e.g. 1 -> L"\u05D0" (Alef), 15 -> L"\u05D8\u05F4\u05D5" (Tet-Vav)
+std::wstring HebrewNumberString(int n);
 
 // Returns today's Gregorian date from the system clock.
 GregorianDate GetTodayGregorian();

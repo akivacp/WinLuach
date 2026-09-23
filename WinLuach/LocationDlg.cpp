@@ -13,6 +13,7 @@
 
 #include "pch.h"
 #include "LocationDlg.h"
+#include "Resource.h"
 #include <winhttp.h>
 #pragma comment(lib, "Winhttp.lib")
 
@@ -239,6 +240,9 @@ protected:
     {
         CDialog::OnInitDialog();
         SetWindowText(L"Lookup Address");
+        HICON hIcon = AfxGetApp()->LoadIcon(IDI_WINLUACH);
+        SetIcon(hIcon, TRUE);
+        SetIcon(hIcon, FALSE);
         HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         CFont* pF = CFont::FromHandle(hF);
         CRect rc; GetClientRect(&rc);
@@ -651,6 +655,10 @@ BOOL CLocationDlg::OnInitDialog()
 {
     CDialog::OnInitDialog();
     SetWindowText(L"Choose Location");
+
+    HICON hIcon = AfxGetApp()->LoadIcon(IDI_WINLUACH);
+    SetIcon(hIcon, TRUE);
+    SetIcon(hIcon, FALSE);
 
     CRect rcClient;
     GetClientRect(&rcClient);

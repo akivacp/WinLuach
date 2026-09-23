@@ -50,6 +50,9 @@ struct CalPrintOptions
     bool     showFooter     = true;
     bool     use24hr        = false;
     bool     twoColumns     = false;
+    bool     hebrewPrint    = false;   // true → print Hebrew calendar months
+    bool     rtlPrint            = false;   // true → right-to-left layout (Hebrew mode)
+    bool     useHebrewNumerals   = false;   // true → א,ב,ג… instead of 1,2,3…
 };
 
 // Render function type for single-page prints: DC, page rect, showFooter.
@@ -140,6 +143,9 @@ private:
     CButton m_chkShowFooter;
     CButton m_chk24hr;
     CButton m_chkTwoColumns;
+    CButton m_radCivil, m_radHebrew;
+    CButton m_chkRtl;
+    CButton m_chkHebrewNumerals;
 
     enum {
         IDC_PD_RAD_MONTH   = 200,
@@ -157,6 +163,10 @@ private:
         IDC_PD_CHK_FOOTER  = 227,
         IDC_PD_CHK_24HR    = 228,
         IDC_PD_CHK_2COL    = 229,
+        IDC_PD_RAD_CIVIL   = 230,
+        IDC_PD_RAD_HEBREW  = 231,
+        IDC_PD_CHK_RTL     = 232,
+        IDC_PD_CHK_HEB_NUM = 233,
     };
 
     void ReadControls();
