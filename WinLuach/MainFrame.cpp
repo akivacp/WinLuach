@@ -342,6 +342,9 @@ protected:
         CString title;
         title.Format(L"WinLuach %s - Hebrew Calendar", WINLUACH_VERSION_TEXT);
         SetDlgItemText(IDC_ABOUT_TITLE, title);
+        CString built;
+        built.Format(L"Built %s", WINLUACH_BUILD_DATE_TEXT);
+        SetDlgItemText(IDC_ABOUT_BUILD, built);
         return TRUE;
     }
 };
