@@ -164,6 +164,7 @@
     <ClInclude Include="HebrewDate.h" />
     <ClInclude Include="HolidayEngine.h" />
     <ClInclude Include="Location.h" />
+    <ClInclude Include="BackupViewDlg.h" />
     <ClInclude Include="LocationDlg.h" />
     <ClInclude Include="MainFrame.h" />
     <ClInclude Include="OptionsDlg.h" />
@@ -184,6 +185,7 @@
     <ClCompile Include="HebrewDate.cpp" />
     <ClCompile Include="HolidayEngine.cpp" />
     <ClCompile Include="Location.cpp" />
+    <ClCompile Include="BackupViewDlg.cpp" />
     <ClCompile Include="LocationDlg.cpp" />
     <ClCompile Include="MainFrame.cpp" />
     <ClCompile Include="OptionsDlg.cpp" />

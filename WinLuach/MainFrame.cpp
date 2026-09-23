@@ -19,6 +19,7 @@
 #include "ZmanimPanel.h"
 #include "LocationDlg.h"
 #include "OptionsDlg.h"
+#include "BackupViewDlg.h"
 #include "CalPrintDlg.h"
 #include "WinLuachApp.h"
 #include "Resource.h"
@@ -242,6 +243,7 @@ Options
 - Options > Preferences controls display, zmanim, learning, parsha/holiday visibility, printing defaults, tray behavior, and notifications.
 - File > Backup Settings & Data saves one backup file with all preferences, personal events and custom locations.
 - File > Restore Settings & Data restores that backup (older settings-only backups are still accepted).
+- File > View Backup Contents shows everything a backup holds, in readable sections, without restoring it.
 
 Tray And Notifications
 - WinLuach can show a tray icon and daily event notifications depending on Preferences.
@@ -3296,6 +3298,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_WM_MOUSEWHEEL()
     ON_COMMAND(ID_FILE_BACKUP,      &CMainFrame::OnFileBackup)
     ON_COMMAND(ID_FILE_RESTORE,     &CMainFrame::OnFileRestore)
+    ON_COMMAND(ID_FILE_VIEW_BACKUP, &CMainFrame::OnFileViewBackup)
     ON_COMMAND(ID_VIEW_ZOOM_IN,     &CMainFrame::OnViewZoomIn)
     ON_COMMAND(ID_VIEW_ZOOM_OUT,    &CMainFrame::OnViewZoomOut)
     ON_COMMAND(ID_VIEW_ZOOM_RESET,  &CMainFrame::OnViewZoomReset)
@@ -3360,6 +3363,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_BACKUP,      L"&Backup Settings && Data...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_RESTORE,     L"&Restore Settings && Data...");
+    fileMenu.AppendMenu(MF_STRING, ID_FILE_VIEW_BACKUP, L"&View Backup Contents...");
     fileMenu.AppendMenu(MF_SEPARATOR);
     fileMenu.AppendMenu(MF_STRING, ID_FILE_EXPORT_EVT,  L"Export &Events...");
     fileMenu.AppendMenu(MF_STRING, ID_FILE_IMPORT_EVT,  L"&Import Events...");
@@ -6332,11 +6336,42 @@ void CMainFrame::OnFileBackup()
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (!GetSaveFileNameW(&ofn)) return;
 
-    if (WriteMasterBackup(theApp.m_settings, file))
-        MessageBox(L"Backup saved.\n\nIt includes all preferences, personal events and custom locations.",
-            L"WinLuach", MB_OK | MB_ICONINFORMATION);
-    else
+    if (!WriteMasterBackup(theApp.m_settings, file))
+    {
         MessageBox(L"Backup failed.", L"WinLuach", MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (MessageBox(L"Backup saved.\n\nIt includes all preferences, personal events and custom locations.\n\n"
+            L"View what was backed up?", L"WinLuach", MB_YESNO | MB_ICONINFORMATION) == IDYES)
+        ShowBackupContents(file);
+}
+
+// File > View Backup Contents: inspect any backup file without restoring it.
+void CMainFrame::OnFileViewBackup()
+{
+    wchar_t file[MAX_PATH] = {};
+    OPENFILENAMEW ofn = { sizeof(ofn) };
+    ofn.hwndOwner = GetSafeHwnd();
+    ofn.lpstrFilter = L"JSON files\0*.json\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = L"View Backup Contents";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameW(&ofn)) return;
+    ShowBackupContents(file);
+}
+
+void CMainFrame::ShowBackupContents(const std::wstring& path)
+{
+    BackupContents contents;
+    if (!ReadBackupContents(path, contents))
+    {
+        MessageBox(L"This file is not a WinLuach backup, or it could not be read.",
+            L"WinLuach", MB_OK | MB_ICONERROR);
+        return;
+    }
+    CBackupViewDlg dlg(path, contents, this);
+    dlg.DoModal();
 }
 
 void CMainFrame::OnViewZoomIn()

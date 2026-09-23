@@ -844,7 +844,7 @@ bool ExportEvents(const std::vector<UserEventEntry>& events, const std::wstring&
     return true;
 }
 
-static void ParseEventsFromStream(std::wifstream& f, std::vector<UserEventEntry>& events)
+static void ParseEventsFromStream(std::wistream& f, std::vector<UserEventEntry>& events)
 {
     int count = 0;
     std::vector<std::wstring> lines;
@@ -1119,4 +1119,79 @@ BackupRestoreResult RestoreBackup(const std::wstring& path)
     if (events    && !WriteFileBytesAtomic(GetEventsFilePath(), *events + "\r\n")) return BackupRestoreResult::Failed;
     if (locations && !WriteFileBytesAtomic(LocationDB::GetLocationsFilePath(), *locations + "\r\n")) return BackupRestoreResult::Failed;
     return BackupRestoreResult::Master;
+}
+
+// Bytes -> wide the same way the app's wifstream (default "C" locale) reads
+// its files: one byte per character.
+static std::wstring WidenBytes(const std::string& s)
+{
+    std::wstring w;
+    w.reserve(s.size());
+    for (unsigned char c : s) w += (wchar_t)c;
+    return w;
+}
+
+// Decodes a raw JSON string token ("...") written by JsonEscape.
+static std::wstring DecodeJsonStringToken(const std::string& raw)
+{
+    std::wstring w = WidenBytes(raw);
+    if (w.size() < 2 || w.front() != L'"') return w;
+    std::wstring out;
+    for (size_t i = 1; i + 1 < w.size(); ++i)
+    {
+        if (w[i] == L'\\' && i + 2 < w.size()) out += w[++i];
+        else out += w[i];
+    }
+    return out;
+}
+
+bool ReadBackupContents(const std::wstring& path, BackupContents& out)
+{
+    out = BackupContents();
+    std::string data;
+    if (!ReadFileBytes(path, data)) return false;
+    StripBomAndTrim(data);
+
+    std::vector<std::pair<std::string, std::string>> members;
+    if (!ParseTopLevelMembers(data, members)) return false;
+
+    std::string settingsRaw;
+    if (const std::string* marker = FindMember(members, "winluachBackup"))
+    {
+        (void)marker;
+        out.isMaster = true;
+        const std::string* settings = FindMember(members, "settings");
+        if (!settings) return false;
+        settingsRaw = *settings;
+        if (const std::string* created = FindMember(members, "created"))
+            out.created = DecodeJsonStringToken(*created);
+
+        if (const std::string* events = FindMember(members, "events"))
+        {
+            std::wistringstream in(WidenBytes(*events));
+            ParseEventsFromStream(in, out.events);
+            out.hasEvents = true;
+        }
+        if (const std::string* locations = FindMember(members, "locations"))
+        {
+            std::wistringstream in(WidenBytes(*locations));
+            out.locations = ParseCustomLocations(in);
+            out.hasLocations = true;
+        }
+    }
+    else
+    {
+        if (!FindMember(members, "locationName")) return false;
+        settingsRaw = data;
+    }
+
+    std::vector<std::pair<std::string, std::string>> settingMembers;
+    if (!ParseTopLevelMembers(settingsRaw, settingMembers)) return false;
+    for (const auto& m : settingMembers)
+    {
+        std::wstring value = (!m.second.empty() && m.second[0] == '"')
+            ? DecodeJsonStringToken(m.second) : WidenBytes(m.second);
+        out.settings.emplace_back(WidenBytes(m.first), value);
+    }
+    return true;
 }
