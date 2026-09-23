@@ -34,6 +34,19 @@ if (-not (Test-Path $exeOut)) {
     $exeOut = $null
 }
 
+# --- Stop if this version is already released (this script does not build) ---
+try {
+    $null = Invoke-RestMethod "https://api.github.com/repos/akivacp/WinLuach/releases/tags/$tag" -ErrorAction Stop
+    Write-Host "$tag is already released on GitHub. Nothing was committed or published." -ForegroundColor Red
+    Write-Host "Push-Release.ps1 does not build a new version. To publish your changes, run:" -ForegroundColor Yellow
+    Write-Host "  powershell -ExecutionPolicy Bypass -File .\Build-Release.ps1 -Publish"
+    Write-Host "`nPress any key to exit..."
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    return
+} catch {
+    # 404 = not released yet, which is what we want; any other error: carry on
+}
+
 # --- 4. Ask whether to publish ---
 Write-Host ""
 if (-not $Publish) {
