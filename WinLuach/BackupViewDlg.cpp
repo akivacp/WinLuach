@@ -103,6 +103,10 @@ static const std::map<std::wstring, std::wstring>& LabelOverrides()
         { L"reminderDailyMinute",   L"Daily reminder time (minute)" },
         { L"lastUpdateCheckTime",   L"Last update check" },
         { L"disableAutoUpdate",     L"Disable all update checks" },
+        { L"checkUpdatesAuto",      L"Check for updates automatically" },
+        { L"checkUpdatesOnLaunch",  L"Check for updates at startup" },
+        { L"notifySefirahOtherZman", L"Sefirah: other zman (number)" },
+        { L"notifyWebCalEvents",    L"Web calendar events" },
         { L"windowX",               L"Window left" },
         { L"windowY",               L"Window top" },
         { L"windowW",               L"Window width" },
@@ -129,7 +133,8 @@ static std::wstring Humanize(const std::wstring& key)
     const std::pair<const wchar_t*, const wchar_t*> fixes[] =
     {
         { L" gra", L" GRA" }, { L" ma ", L" MA " }, { L" dst", L" DST" }, { L" gmt", L" GMT" },
-        { L" url", L" URL" }, { L" rtl", L" RTL" }
+        { L" url", L" URL" }, { L" rtl", L" RTL" },
+        { L"Win luach", L"WinLuach" }, { L" win luach", L" WinLuach" }, { L"Web cal ", L"Web calendar " }
     };
     for (const auto& f : fixes)
     {
@@ -137,6 +142,8 @@ static std::wstring Humanize(const std::wstring& key)
         while ((p = out.find(f.first)) != std::wstring::npos)
             out.replace(p, wcslen(f.first), f.second);
     }
+    if (out.size() > 4 && out.compare(out.size() - 4, 4, L" bot") == 0)
+        out += L"tom";   // "Margin bot" -> "Margin bottom"
     return out;
 }
 
@@ -192,6 +199,10 @@ static std::wstring ValueForKey(const std::wstring& key, const std::wstring& raw
     else if (key == L"trayNumberStyle") named = Pick(n, { L"Hebrew letters", L"English digits" });
     else if (key == L"updateCheckFrequency") named = Pick(n, { L"Daily", L"Weekly", L"Monthly" });
     else if (key == L"printRange")      named = Pick(n, { L"Month", L"Year", L"Next 12 months" });
+    else if (key == L"language")        named = Pick(n, { L"English" });
+    else if (key == L"notifySefirahMode")      named = Pick(n, { L"At a fixed time", L"Relative to a zman" });
+    else if (key == L"notifySefirahOffsetDir") named = Pick(n, { L"Before", L"After" });
+    else if (key == L"notifySefirahBase")      named = Pick(n, { L"Sunset", L"Tzeis", L"Another zman" });
     else if (key == L"winLuachToastDurationUnit") named = Pick(n, { L"Minutes", L"Hours", L"Days", L"Weeks", L"Months" });
     else if (StartsWith(key, L"notify") && key.size() > 5 && key.substr(key.size() - 5) == L"Style")
         named = Pick(n, { L"Off", L"Windows toast", L"Popup", L"Toast and popup" });
@@ -387,20 +398,25 @@ BOOL CBackupViewDlg::OnInitDialog()
 
     std::vector<BackupRow> rows = BuildRows(m_contents);
 
-    // --- Header: which file, when, what it holds ---
-    std::wstring header = L"File: " + m_path + L"\r\n";
+    // --- Header: which file (one line, path shortened), then when / what it holds ---
+    std::wstring file = L"File: " + m_path;
+    m_file.Create(file.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX | SS_PATHELLIPSIS,
+        CRect(0, 0, 10, 10), this);
+    m_file.SetFont(font);
+
+    std::wstring summary;
     if (m_contents.isMaster)
     {
-        if (!m_contents.created.empty()) header += L"Created: " + m_contents.created + L"      ";
-        header += std::to_wstring(m_contents.settings.size()) + L" preferences · " +
-                  std::to_wstring(m_contents.events.size()) + L" personal events · " +
-                  std::to_wstring(m_contents.locations.size()) + L" custom locations";
+        if (!m_contents.created.empty()) summary += L"Created: " + m_contents.created + L"      ";
+        summary += std::to_wstring(m_contents.settings.size()) + L" preferences · " +
+                   std::to_wstring(m_contents.events.size()) + L" personal events · " +
+                   std::to_wstring(m_contents.locations.size()) + L" custom locations";
     }
     else
     {
-        header += L"Older settings-only backup: preferences only (no personal events or custom locations).";
+        summary = L"Older settings-only backup: preferences only (no personal events or custom locations).";
     }
-    m_header.Create(header.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX,
+    m_header.Create(summary.c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX,
         CRect(0, 0, 10, 10), this);
     m_header.SetFont(font);
 
@@ -421,8 +437,15 @@ BOOL CBackupViewDlg::OnInitDialog()
         std::wstring name = kSectionNames[s];
         if (s == SEC_EVENTS || s == SEC_LOCATIONS || s == SEC_REMINDERS || s == SEC_WEBCAL)
         {
+            // Count the listed items only (not "(none)" or the daily-time rows)
             int real = 0;
-            for (const auto& r : rows) if (r.section == s && r.label != L"(none)") ++real;
+            for (const auto& r : rows)
+            {
+                if (r.section != s || r.label == L"(none)") continue;
+                if (s == SEC_REMINDERS && !StartsWith(r.label, L"Reminder ")) continue;
+                if (s == SEC_WEBCAL && !StartsWith(r.label, L"Calendar ")) continue;
+                ++real;
+            }
             name += L" (" + std::to_wstring(real) + L")";
         }
         LVGROUP g = { sizeof(g) };
@@ -464,10 +487,11 @@ void CBackupViewDlg::Layout()
 {
     if (!::IsWindow(m_list.GetSafeHwnd())) return;
     CRect rc; GetClientRect(&rc);
-    const int pad = 10, headerH = 36, btnW = 90, btnH = 26;
+    const int pad = 10, lineH = 18, btnW = 90, btnH = 26;
 
-    m_header.MoveWindow(pad, pad, rc.Width() - 2 * pad, headerH);
-    int listTop = pad + headerH + 4;
+    m_file.MoveWindow(pad, pad, rc.Width() - 2 * pad, lineH);
+    m_header.MoveWindow(pad, pad + lineH, rc.Width() - 2 * pad, lineH);
+    int listTop = pad + 2 * lineH + 6;
     int listBottom = rc.bottom - pad - btnH - 8;
     m_list.MoveWindow(pad, listTop, rc.Width() - 2 * pad, max(40, listBottom - listTop));
     m_close.MoveWindow(rc.right - pad - btnW, rc.bottom - pad - btnH, btnW, btnH);
