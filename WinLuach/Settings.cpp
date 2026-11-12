@@ -348,6 +348,8 @@ bool SaveSettings(const AppSettings& s)
     {
         f << L"  \"webCal" << i << L"_url\": \"" << JsonEscape(s.webCalendars[i].url) << L"\",\n";
         f << L"  \"webCal" << i << L"_enabled\": " << (s.webCalendars[i].enabled ? L"true" : L"false") << L",\n";
+        f << L"  \"webCal" << i << L"_name\": \"" << JsonEscape(s.webCalendars[i].name) << L"\",\n";
+        f << L"  \"webCal" << i << L"_reminderMinutes\": " << s.webCalendars[i].reminderMinutes << L",\n";
     }
     f << L"  \"zmanimShita\": " << s.zmanimShita << L",\n";
     f << L"  \"alotShita\": "   << s.alotShita   << L",\n";
@@ -597,6 +599,24 @@ bool LoadSettings(AppSettings& s)
                 int idx = std::stoi(line.substr(p, q - p));
                 while ((int)s.webCalendars.size() <= idx) s.webCalendars.push_back({L"", true});
                 s.webCalendars[idx].enabled = ParseJsonBool(line);
+            }
+        }
+        if (line.find(L"\"webCal") != std::wstring::npos)
+        {
+            size_t p = line.find(L"\"webCal") + 7;
+            size_t q = line.find(L'_', p);
+            size_t end = line.find(L'"', p);
+            if (q < end && q > p && line.find_first_not_of(L"0123456789", p) == q)
+            {
+                const auto field = line.substr(q + 1, end - q - 1);
+                if (field == L"name" || field == L"reminderMinutes")
+                {
+                    size_t idx = std::stoul(line.substr(p, q - p));
+                    if (s.webCalendars.size() <= idx) s.webCalendars.resize(idx + 1);
+                    auto& calendar = s.webCalendars[idx];
+                    if (field == L"name") calendar.name = ParseJsonString(line);
+                    else calendar.reminderMinutes = static_cast<int>(max(0.0, min(10080.0, ParseJsonNumber(line))));
+                }
             }
         }
         if (line.find(L"\"notifyPersonalEvents\"") != std::wstring::npos) s.notifyPersonalEvents = (int)ParseJsonNumber(line);

@@ -16,6 +16,9 @@
 // =============================================================================
 
 #pragma once
+#include <map>
+#include <set>
+#include <tuple>
 #include "pch.h"
 #include "HebrewDate.h"
 #include "Zmanim.h"
@@ -38,6 +41,9 @@ struct UserEventInfo
 {
     GregorianDate date;
     std::wstring  title;
+    int startMinute = -1;
+    int64_t startUtc = 0;
+    int reminderMinutes = 0;
 };
 
 struct CalendarEventLine
@@ -174,6 +180,7 @@ public:
     void SetSidebarPaneVisible(SidebarPaneId pane, bool visible);
 
     std::vector<CalendarEventLine> GetCalendarEventLinesForDate(const GregorianDate& g) const;
+    std::wstring GetWebCalendarFeedName(const std::wstring& url) const;
     std::vector<std::wstring> GetUserEventsForDate(const GregorianDate& g) const;
 
     // Opens the day detail popup for the given date
@@ -382,6 +389,7 @@ protected:
     void ChangeYear(int deltaYears);
     void RefreshWebCalendarEvents();
     void CheckZmanNotifications();
+    void CheckWebCalendarReminders();
     void CheckSefirahNotification();
     void CheckAdvancedReminders(); // v0.8.71 — fires ReminderRule engine every minute
     bool ShouldHideToTrayOnClose() const;
@@ -426,7 +434,12 @@ protected:
     bool m_isInTray = false;
     HICON m_hTrayDateIcon = nullptr;
     std::vector<UserEventInfo> m_webEvents;
-    std::wstring               m_icsPath;
+    std::map<std::wstring, std::wstring> m_webCalendarNames;
+    ULONGLONG m_lastWebCalendarRefresh = 0;
+    int m_webCalendarSummaryDay = 0;
+    std::wstring m_webCalendarSummary;
+    std::set<std::tuple<int64_t, int64_t, std::wstring>> m_sentWebCalendarReminders;
+    void LoadCachedWebCalendars();
     std::vector<std::wstring>  m_sentZmanNotificationKeys;
 
     DECLARE_MESSAGE_MAP()
