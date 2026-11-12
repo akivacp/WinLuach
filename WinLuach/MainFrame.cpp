@@ -29,6 +29,7 @@
 #include <fstream>
 #include <thread>
 #include <commctrl.h>
+#include <chrono>
 #include <cmath>
 #include <cwctype>
 #include <shlobj.h>
@@ -156,23 +157,75 @@ static std::wstring UnescapeIcsText(const std::wstring& s)
     return out;
 }
 
-static bool ParseIcsDate(const std::wstring& line, GregorianDate& g)
+static bool ParseIcsStart(const std::wstring& property, const std::wstring& value,
+                          UserEventInfo& event)
 {
-    size_t colon = line.find(L':');
-    if (colon == std::wstring::npos) return false;
-    std::wstring val = line.substr(colon + 1);
-    if (val.size() < 8) return false;
+    using namespace std::chrono;
+    const bool allDay = value.size() == 8;
+    const bool utc = value.size() == 16 && value.back() == L'Z';
+    if ((!allDay && value.size() != 15 && !utc) ||
+        value.find_first_not_of(L"0123456789") < 8 ||
+        (!allDay && (value[8] != L'T' || value.find_first_not_of(L"0123456789", 9) < 15)))
+        return false;
+
+    year_month_day date{year{std::stoi(value.substr(0, 4))},
+        month{static_cast<unsigned>(std::stoi(value.substr(4, 2)))},
+        day{static_cast<unsigned>(std::stoi(value.substr(6, 2)))}};
+    if (!date.ok()) return false;
+    event.date = GregorianDate(int(date.year()), unsigned(date.month()), unsigned(date.day()));
+    if (allDay) return true;
+
+    int hour = std::stoi(value.substr(9, 2));
+    int minute = std::stoi(value.substr(11, 2));
+    int second = std::stoi(value.substr(13, 2));
+    if (hour > 23 || minute > 59 || second > 60) return false;
+    event.startMinute = hour * 60 + minute;
+    auto wallTime = sys_days{date} + hours{hour} + minutes{minute} + seconds{min(second, 59)};
     try
     {
-        g.year = std::stoi(val.substr(0, 4));
-        g.month = std::stoi(val.substr(4, 2));
-        g.day = std::stoi(val.substr(6, 2));
-        return true;
+        const auto* localZone = current_zone();
+        auto instant = wallTime;
+        if (!utc)
+        {
+            const auto* sourceZone = localZone;
+            size_t tz = property.find(L";TZID=");
+            if (tz != std::wstring::npos)
+            {
+                tz += 6;
+                auto id = property.substr(tz, property.find(L';', tz) - tz);
+                if (id.size() >= 2 && id.front() == L'"' && id.back() == L'"')
+                    id = id.substr(1, id.size() - 2);
+                std::string zoneId;
+                for (wchar_t ch : id)
+                {
+                    if (ch > 127) return true;
+                    zoneId.push_back(static_cast<char>(ch));
+                }
+                sourceZone = locate_zone(zoneId);
+            }
+            auto localStart = local_seconds{wallTime.time_since_epoch()};
+            auto zoneInfo = sourceZone->get_info(localStart);
+            instant = sys_seconds{localStart.time_since_epoch() - zoneInfo.first.offset};
+        }
+        auto localStart = localZone->to_local(instant);
+        auto localDay = floor<days>(localStart);
+        date = year_month_day{sys_days{localDay.time_since_epoch()}};
+        event.date = GregorianDate(int(date.year()), unsigned(date.month()), unsigned(date.day()));
+        event.startMinute = static_cast<int>(duration_cast<minutes>(localStart - localDay).count());
+        event.startUtc = instant.time_since_epoch().count();
     }
-    catch (...)
+    catch (const std::runtime_error&)
     {
-        return false;
+        // Keep the feed's wall time visible when its time zone cannot be resolved.
     }
+    return true;
+}
+
+static std::wstring FormatWebCalendarEvent(const UserEventInfo& event, bool use24Hour)
+{
+    if (event.startMinute < 0) return event.title;
+    return FormatTime({event.startMinute / 60, event.startMinute % 60, 0}, use24Hour) +
+        L" " + event.title;
 }
 
 static CString BuildHelpContentsText()
@@ -3522,6 +3575,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     RefreshZmanim();
     RefreshWebCalendarEvents();
     SetTimer(1, 60000, nullptr);
+    SetTimer(4, 1000, nullptr); // timed web calendar reminders
     if (m_minimizeToTray || m_showTrayIcon)
         AddTrayIcon();
     // Defer today's event notification so window is fully visible first
@@ -3540,6 +3594,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
 void CMainFrame::OnDestroy()
 {
     KillTimer(1);
+    KillTimer(4);
     if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
         m_pOptionsDlg->DestroyWindow();
     if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
@@ -3575,6 +3630,11 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         CheckTodayEvents();
         return;
     }
+    if (nIDEvent == 4)
+    {
+        CheckWebCalendarReminders();
+        return;
+    }
     if (nIDEvent == 1)
     {
         GregorianDate today = GetTodayGregorian();
@@ -3594,6 +3654,8 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         CheckZmanNotifications();
         CheckSefirahNotification();
         CheckAdvancedReminders(); // v0.8.71
+        if (GetTickCount64() - m_lastWebCalendarRefresh >= 15 * 60 * 1000)
+            RefreshWebCalendarEvents();
         return;
     }
     CFrameWnd::OnTimer(nIDEvent);
@@ -4488,7 +4550,8 @@ void CMainFrame::RecreateFonts()
 }
 
 // Parses an ICS file from disk and returns the event list.
-static std::vector<UserEventInfo> ParseIcsFromPath(const std::wstring& icsPath)
+static std::vector<UserEventInfo> ParseIcsFromPath(const std::wstring& icsPath,
+                                                  std::wstring& calendarName)
 {
     std::vector<UserEventInfo> events;
 
@@ -4522,102 +4585,126 @@ static std::vector<UserEventInfo> ParseIcsFromPath(const std::wstring& icsPath)
     }
 
     bool inEvent = false;
-    GregorianDate eventDate;
-    std::wstring summary;
+    int componentDepth = 0;
+    UserEventInfo event;
+    bool hasStart = false;
     for (const auto& line : lines)
     {
+        size_t colon = line.find(L':');
+        if (colon == std::wstring::npos) continue;
+        std::wstring key = line.substr(0, min(colon, line.find(L';')));
+        if (key == L"BEGIN") ++componentDepth;
+        if (key == L"END") --componentDepth;
+        if (componentDepth == 1 &&
+            (key == L"NAME" || (key == L"X-WR-CALNAME" && calendarName.empty())))
+        {
+            auto name = UnescapeIcsText(WebCalTrim(line.substr(colon + 1)));
+            if (!name.empty()) calendarName = std::move(name);
+        }
         if (line == L"BEGIN:VEVENT")
         {
             inEvent = true;
-            eventDate = GregorianDate();
-            summary.clear();
+            event = {};
+            hasStart = false;
         }
         else if (line == L"END:VEVENT")
         {
-            if (inEvent && eventDate.year > 0 && !summary.empty())
-                events.push_back({ eventDate, summary });
+            if (inEvent && hasStart && !event.title.empty())
+                events.push_back(std::move(event));
             inEvent = false;
         }
-        else if (inEvent)
+        else if (inEvent && componentDepth == 2)
         {
-            if (line.rfind(L"DTSTART", 0) == 0)
-                ParseIcsDate(line, eventDate);
-            else if (line.rfind(L"SUMMARY", 0) == 0)
-            {
-                size_t colon = line.find(L':');
-                if (colon != std::wstring::npos)
-                    summary = UnescapeIcsText(WebCalTrim(line.substr(colon + 1)));
-            }
+            if (key == L"DTSTART")
+                hasStart = ParseIcsStart(line.substr(0, colon), WebCalTrim(line.substr(colon + 1)), event);
+            else if (key == L"SUMMARY")
+                event.title = UnescapeIcsText(WebCalTrim(line.substr(colon + 1)));
         }
     }
     return events;
 }
 
-void CMainFrame::RefreshWebCalendarEvents()
+static std::wstring WebCalendarCachePath(const std::wstring& url)
+{
+    // Stable URL-based cache names keep edits and removals from reusing a different feed's cache.
+    uint64_t hash = 14695981039346656037ULL;
+    for (wchar_t ch : url)
+    {
+        hash ^= static_cast<uint16_t>(ch);
+        hash *= 1099511628211ULL;
+    }
+    auto path = GetSettingsFilePath();
+    size_t slash = path.find_last_of(L"\\/");
+    return path.substr(0, slash == std::wstring::npos ? 0 : slash + 1) +
+        L"webcalendar-" + std::to_wstring(hash) + L".ics";
+}
+
+std::wstring CMainFrame::GetWebCalendarFeedName(const std::wstring& url) const
+{
+    auto it = m_webCalendarNames.find(url);
+    return it == m_webCalendarNames.end() ? std::wstring() : it->second;
+}
+
+void CMainFrame::LoadCachedWebCalendars()
 {
     m_webEvents.clear();
+    m_webCalendarNames.clear();
+    for (const auto& calendar : theApp.m_settings.webCalendars)
+    {
+        if (calendar.url.empty()) continue;
+        std::wstring name;
+        auto events = ParseIcsFromPath(WebCalendarCachePath(calendar.url), name);
+        if (!name.empty()) m_webCalendarNames.emplace(calendar.url, std::move(name));
+        if (calendar.enabled)
+        {
+            for (auto& event : events) event.reminderMinutes = calendar.reminderMinutes;
+            m_webEvents.insert(m_webEvents.end(), events.begin(), events.end());
+        }
+    }
+    std::stable_sort(m_webEvents.begin(), m_webEvents.end(), [](const auto& first, const auto& second) {
+        return first.startMinute < second.startMinute;
+    });
+    if (m_pCalView) m_pCalView->Invalidate(FALSE);
+    if (m_pSidebar) m_pSidebar->Invalidate(FALSE);
+}
 
-    const auto& cals = theApp.m_settings.webCalendars;
-    if (cals.empty()) return;
-
-    std::wstring sp = GetSettingsFilePath();
-    size_t sl = sp.find_last_of(L"\\/");
-    std::wstring dir = (sl == std::wstring::npos) ? L"." : sp.substr(0, sl);
+void CMainFrame::RefreshWebCalendarEvents()
+{
+    m_lastWebCalendarRefresh = GetTickCount64();
+    LoadCachedWebCalendars();
 
     // Collect enabled URLs with their cache paths
     struct CalJob { std::wstring url; std::wstring path; };
     std::vector<CalJob> jobs;
-    for (int i = 0; i < (int)cals.size(); i++)
+    for (const auto& calendar : theApp.m_settings.webCalendars)
     {
-        if (!cals[i].enabled || cals[i].url.empty()) continue;
-        std::wstring url = cals[i].url;
+        if (!calendar.enabled || calendar.url.empty()) continue;
+        std::wstring url = calendar.url;
         if (url.rfind(L"webcals://", 0) == 0)      url.replace(0, 10, L"https://");
         else if (url.rfind(L"webcal://", 0) == 0)  url.replace(0, 9,  L"https://");
-        std::wstring path = dir + L"\\webcalendar" + std::to_wstring(i) + L".ics";
-        jobs.push_back({ url, path });
+        jobs.push_back({ std::move(url), WebCalendarCachePath(calendar.url) });
     }
     if (jobs.empty()) return;
-
-    // Keep m_icsPath pointing to first cache file (used in OnWebCalDone)
-    m_icsPath = jobs[0].path;
-
-    // Load any already-cached files immediately
-    for (const auto& j : jobs)
-    {
-        auto ev = ParseIcsFromPath(j.path);
-        m_webEvents.insert(m_webEvents.end(), ev.begin(), ev.end());
-    }
-    if (!m_webEvents.empty())
-    {
-        if (m_pCalView)  m_pCalView->Invalidate(FALSE);
-        if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
-    }
 
     // Download fresh copies in background; post WM_WEBCAL_DONE when all done
     HWND hWnd = GetSafeHwnd();
     std::thread([jobs, hWnd]() {
         for (const auto& j : jobs)
-            URLDownloadToFileW(nullptr, j.url.c_str(), j.path.c_str(), 0, nullptr);
+        {
+            auto tempPath = j.path + L"." + std::to_wstring(GetCurrentProcessId()) +
+                L"." + std::to_wstring(GetCurrentThreadId()) + L".tmp";
+            if (SUCCEEDED(URLDownloadToFileW(nullptr, j.url.c_str(), tempPath.c_str(), 0, nullptr)))
+                MoveFileExW(tempPath.c_str(), j.path.c_str(), MOVEFILE_REPLACE_EXISTING);
+            DeleteFileW(tempPath.c_str());
+        }
         ::PostMessage(hWnd, WM_WEBCAL_DONE, 0, 0);
     }).detach();
 }
 
 LRESULT CMainFrame::OnWebCalDone(WPARAM, LPARAM)
 {
-    m_webEvents.clear();
-    const auto& cals = theApp.m_settings.webCalendars;
-    std::wstring sp = GetSettingsFilePath();
-    size_t sl = sp.find_last_of(L"\\/");
-    std::wstring dir = (sl == std::wstring::npos) ? L"." : sp.substr(0, sl);
-    for (int i = 0; i < (int)cals.size(); i++)
-    {
-        if (!cals[i].enabled) continue;
-        std::wstring path = dir + L"\\webcalendar" + std::to_wstring(i) + L".ics";
-        auto ev = ParseIcsFromPath(path);
-        m_webEvents.insert(m_webEvents.end(), ev.begin(), ev.end());
-    }
-    if (m_pCalView)  m_pCalView->Invalidate(FALSE);
-    if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
+    LoadCachedWebCalendars();
+    CheckWebCalendarReminders();
 
     // Notify user of any web calendar events matching today
     int styleWeb = theApp.m_settings.notifyWebCalEvents;
@@ -4625,12 +4712,40 @@ LRESULT CMainFrame::OnWebCalDone(WPARAM, LPARAM)
         GregorianDate today = GetTodayGregorian();
         std::wstring body;
         for (const auto& ev : m_webEvents)
-            if (ev.date.year == today.year && ev.date.month == today.month && ev.date.day == today.day)
+            if (ev.startMinute < 0 && ev.date.year == today.year && ev.date.month == today.month && ev.date.day == today.day)
                 body += ev.title + L"\n";
-        ShowEventNotification(L"Calendar Events Today", body, styleWeb);
+        const auto day = GregorianToJDN(today);
+        if (!body.empty() && (day != m_webCalendarSummaryDay || body != m_webCalendarSummary))
+        {
+            m_webCalendarSummaryDay = day;
+            m_webCalendarSummary = body;
+            ShowEventNotification(L"Calendar Events Today", body, styleWeb);
+        }
     }
 
     return 0;
+}
+
+void CMainFrame::CheckWebCalendarReminders()
+{
+    const int style = theApp.m_settings.notifyWebCalEvents;
+    if (style <= 0) return;
+
+    using namespace std::chrono;
+    const auto now = floor<seconds>(system_clock::now()).time_since_epoch().count();
+    while (!m_sentWebCalendarReminders.empty() &&
+        std::get<0>(*m_sentWebCalendarReminders.begin()) < now - 24 * 60 * 60)
+        m_sentWebCalendarReminders.erase(m_sentWebCalendarReminders.begin());
+
+    std::wstring body;
+    for (const auto& event : m_webEvents)
+    {
+        const auto fire = event.startUtc - event.reminderMinutes * 60;
+        if (event.startUtc != 0 && fire <= now && fire > now - 60 &&
+            m_sentWebCalendarReminders.emplace(fire, event.startUtc, event.title).second)
+            body += FormatWebCalendarEvent(event, m_use24hr) + L"\n";
+    }
+    ShowEventNotification(L"Calendar Reminder", body, style);
 }
 
 std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const GregorianDate& g) const
@@ -4643,7 +4758,7 @@ std::vector<CalendarEventLine> CMainFrame::GetCalendarEventLinesForDate(const Gr
     for (const auto& ev : m_webEvents)
     {
         if (ev.date.year == g.year && ev.date.month == g.month && ev.date.day == g.day)
-            events.push_back({ ev.title, false, true });
+            events.push_back({ FormatWebCalendarEvent(ev, m_use24hr), false, true });
     }
 
     // Personal recurring events (birthday / anniversary / yahrzeit / custom)

@@ -33,6 +33,8 @@
 struct WebCalEntry {
     std::wstring url;
     bool         enabled = true;
+    std::wstring name;
+    int reminderMinutes = 0; // minutes before a timed event
 };
 
 // ── Personal recurring event (birthday / anniversary / yahrzeit / custom) ────

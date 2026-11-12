@@ -366,7 +366,8 @@ FodyWeavers.xsd
 # WinLuach local-only files (never published)
 # ==============================================================================
 
-# Claude Code worktrees and local settings
+# Local coding assistant settings and worktrees
+.codex/
 .claude/
 
 # Scratch clones of this repo

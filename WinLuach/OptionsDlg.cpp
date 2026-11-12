@@ -1242,6 +1242,7 @@ static void NormalizeCustomZmanSettings(AppSettings& s)
 #define IDC_MNGCAL_REMOVE  1003
 #define IDC_MNGCAL_TOGGLE  1004
 #define IDC_MNGCAL_URL     1005
+#define IDC_MNGCAL_SAVE    1006
 
 class CManageCalendarsDlg : public CDialog
 {
@@ -1251,8 +1252,9 @@ public:
     bool m_changed = false;
 
     CListBox  m_list;
-    CEdit     m_editUrl;
-    CButton   m_btnAdd, m_btnRemove, m_btnToggle, m_btnClose;
+    CEdit     m_editUrl, m_editName, m_editReminder;
+    CStatic   m_urlLabel, m_nameLabel, m_reminderLabel;
+    CButton   m_btnAdd, m_btnSave, m_btnRemove, m_btnToggle, m_btnClose;
 
     CManageCalendarsDlg(std::vector<WebCalEntry>& cals, CWnd* pParent)
         : CDialog(), m_cals(cals), m_pParent(pParent)
@@ -1261,10 +1263,18 @@ public:
 
     virtual INT_PTR DoModal() override
     {
-        DLGTEMPLATE tpl = {};
-        tpl.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
-        tpl.cx = 280; tpl.cy = 200;
-        return InitModalIndirect(&tpl, m_pParent);
+        struct alignas(DWORD) DialogTemplate
+        {
+            DLGTEMPLATE header;
+            WORD menu;
+            WORD windowClass;
+            WORD title;
+        } tpl = {};
+        tpl.header.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER;
+        tpl.header.cx = 340;
+        tpl.header.cy = 220;
+        if (!InitModalIndirect(&tpl.header, m_pParent)) return -1;
+        return CDialog::DoModal();
     }
 
     virtual BOOL OnInitDialog() override
@@ -1275,52 +1285,114 @@ public:
         int W = rc.Width(), H = rc.Height();
         int p = 8;
 
-        m_list.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-            CRect(p, p, W - p, H - 70), this, IDC_MNGCAL_LIST);
-        m_editUrl.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-            CRect(p, H - 62, W - 76, H - 42), this, IDC_MNGCAL_URL);
-        m_editUrl.SetFont(GetFont());
+        m_list.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+            CRect(p, p, W - p, H - 152), this, IDC_MNGCAL_LIST);
+        m_nameLabel.Create(L"&Name", WS_CHILD | WS_VISIBLE,
+            CRect(p, H - 143, 55, H - 122), this);
+        m_editName.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(56, H - 145, W - p, H - 122), this, 1007);
+        m_editName.SendMessage(EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"Use calendar feed name"));
+        m_urlLabel.Create(L"&URL", WS_CHILD | WS_VISIBLE,
+            CRect(p, H - 115, 55, H - 94), this);
+        m_editUrl.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
+            CRect(56, H - 117, W - p, H - 94), this, IDC_MNGCAL_URL);
+        m_reminderLabel.Create(L"&Reminder minutes before start (0 = at start)", WS_CHILD | WS_VISIBLE,
+            CRect(p, H - 87, 260, H - 66), this);
+        m_editReminder.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
+            CRect(265, H - 89, 322, H - 66), this, 1008);
+        m_editReminder.LimitText(5);
         m_btnAdd.Create(L"Add", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(W - 72, H - 62, W - p, H - 42), this, IDC_MNGCAL_ADD);
+            CRect(p, H - 60, 68, H - 36), this, IDC_MNGCAL_ADD);
+        m_btnSave.Create(L"Save Changes", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(72, H - 60, 184, H - 36), this, IDC_MNGCAL_SAVE);
         m_btnToggle.Create(L"Enable/Disable", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(p, H - 36, 110, H - p), this, IDC_MNGCAL_TOGGLE);
+            CRect(188, H - 60, 300, H - 36), this, IDC_MNGCAL_TOGGLE);
         m_btnRemove.Create(L"Remove", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(114, H - 36, 190, H - p), this, IDC_MNGCAL_REMOVE);
+            CRect(304, H - 60, 380, H - 36), this, IDC_MNGCAL_REMOVE);
         m_btnClose.Create(L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
             CRect(W - 72, H - 36, W - p, H - p), this, IDOK);
 
-        CFont* f = GetFont();
-        m_list.SetFont(f); m_btnAdd.SetFont(f); m_btnToggle.SetFont(f);
-        m_btnRemove.SetFont(f); m_btnClose.SetFont(f);
+        CFont* f = CFont::FromHandle(static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)));
+        for (CWnd* control : std::initializer_list<CWnd*>{ &m_list, &m_editUrl, &m_editName,
+            &m_urlLabel, &m_nameLabel, &m_reminderLabel, &m_editReminder,
+            &m_btnAdd, &m_btnSave, &m_btnToggle, &m_btnRemove, &m_btnClose })
+            control->SetFont(f);
         RebuildList();
         return TRUE;
     }
 
-    void RebuildList()
+    void LoadSelection()
+    {
+        int sel = m_list.GetCurSel();
+        bool selected = sel >= 0 && sel < static_cast<int>(m_cals.size());
+        m_btnSave.EnableWindow(selected);
+        m_btnRemove.EnableWindow(selected);
+        m_btnToggle.EnableWindow(selected);
+        m_editName.SetWindowText(selected ? m_cals[sel].name.c_str() : L"");
+        m_editUrl.SetWindowText(selected ? m_cals[sel].url.c_str() : L"");
+        SetDlgItemInt(1008, selected ? m_cals[sel].reminderMinutes : 0, FALSE);
+    }
+
+    void RebuildList(int selection = LB_ERR)
     {
         m_list.ResetContent();
+        auto frame = static_cast<CMainFrame*>(AfxGetMainWnd());
         for (const auto& e : m_cals)
         {
+            auto name = e.name;
+            if (name.empty() && frame) name = frame->GetWebCalendarFeedName(e.url);
+            if (name.empty()) name = e.url;
             CString s;
-            s.Format(L"%s  %s", e.enabled ? L"[on] " : L"[off]", e.url.c_str());
+            s.Format(L"%s  %s", e.enabled ? L"[on] " : L"[off]", name.c_str());
             m_list.AddString(s);
         }
+        m_list.SetCurSel(selection);
+        LoadSelection();
     }
 
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
     {
         UINT id = LOWORD(wParam), code = HIWORD(wParam);
-        if (id == IDC_MNGCAL_ADD && code == BN_CLICKED)
+        if (id == IDC_MNGCAL_LIST && code == LBN_SELCHANGE)
         {
-            CString url; m_editUrl.GetWindowText(url); url.Trim();
-            if (!url.IsEmpty())
+            LoadSelection();
+            return TRUE;
+        }
+        if ((id == IDC_MNGCAL_ADD || id == IDC_MNGCAL_SAVE) && code == BN_CLICKED)
+        {
+            CString url, name;
+            m_editUrl.GetWindowText(url); url.Trim();
+            m_editName.GetWindowText(name); name.Trim();
+            if (url.IsEmpty())
             {
-                WebCalEntry e; e.url = (LPCWSTR)url; e.enabled = true;
-                m_cals.push_back(e);
-                m_editUrl.SetWindowText(L"");
-                RebuildList();
-                m_changed = true;
+                MessageBox(L"Enter the calendar feed URL.", L"Manage Web Calendars", MB_OK | MB_ICONINFORMATION);
+                m_editUrl.SetFocus();
+                return TRUE;
             }
+            BOOL validOffset = FALSE;
+            UINT reminderMinutes = GetDlgItemInt(1008, &validOffset, FALSE);
+            if (!validOffset || reminderMinutes > 10080)
+            {
+                MessageBox(L"Enter a reminder from 0 to 10080 minutes before the event.",
+                    L"Manage Web Calendars", MB_OK | MB_ICONINFORMATION);
+                m_editReminder.SetFocus();
+                return TRUE;
+            }
+            if (id == IDC_MNGCAL_ADD)
+            {
+                m_cals.push_back({ url.GetString(), true, name.GetString(), static_cast<int>(reminderMinutes) });
+                RebuildList();
+            }
+            else
+            {
+                int sel = m_list.GetCurSel();
+                if (sel == LB_ERR) return TRUE;
+                m_cals[sel].url = url.GetString();
+                m_cals[sel].name = name.GetString();
+                m_cals[sel].reminderMinutes = static_cast<int>(reminderMinutes);
+                RebuildList(sel);
+            }
+            m_changed = true;
             return TRUE;
         }
         if (id == IDC_MNGCAL_REMOVE && code == BN_CLICKED)
@@ -1340,8 +1412,7 @@ public:
             if (sel >= 0 && sel < (int)m_cals.size())
             {
                 m_cals[sel].enabled = !m_cals[sel].enabled;
-                RebuildList();
-                m_list.SetCurSel(sel);
+                RebuildList(sel);
                 m_changed = true;
             }
             return TRUE;

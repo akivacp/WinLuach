@@ -101,10 +101,13 @@ if (-not $Publish) {
 } else {
 
     # --- 8. Commit and push any pending source changes ---
-    $pendingChanges = git status --porcelain
+    $pendingChanges = git status --porcelain --untracked-files=no
+    if ($LASTEXITCODE -ne 0) { Write-Error "git status failed." }
     if ($pendingChanges) {
         Write-Host "Committing pending source changes ..." -ForegroundColor Yellow
-        git add -A
+        # New files must be staged explicitly before publishing.
+        git add -u
+        if ($LASTEXITCODE -ne 0) { Write-Error "git add failed." }
 
         # Guard: never publish personal data, local tooling, or nested repos
         $newFiles = @(git diff --cached --name-only --diff-filter=A)
@@ -112,7 +115,7 @@ if (-not $Publish) {
         $blocked  = @($newFiles | Where-Object {
             $_ -match '(^|/)(settings|events|locations)\.json$' -or
             $_ -match '(^|/)WinLuach_.*backup.*\.json$' -or
-            $_ -match '(^|/)\.claude/' -or $_ -match '^temp-clone/' -or $_ -match '\.log$'
+            $_ -match '(^|/)\.(claude|codex)/' -or $_ -match '^temp-clone/' -or $_ -match '\.log$'
         }) + $nested
         if ($blocked.Count -gt 0) {
             git reset -q
