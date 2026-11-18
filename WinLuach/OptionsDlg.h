@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // WinLuach - Hebrew Calendar Application
 // File:    OptionsDlg.h
 // Purpose: MFC preferences dialog (clock format, Israel/Diaspora, shita).
@@ -68,7 +68,7 @@ protected:
     afx_msg void OnManageCals();
     afx_msg void OnPreviewNotification();
     afx_msg void OnAdvancedReminders();
-    afx_msg void OnTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnCategoryChanged();
     // v0.8.0 - Notification handler for the Zmanim sub-tab control.
     afx_msg void OnZmanimSubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnNotifySubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
@@ -92,7 +92,8 @@ private:
     CButton m_radGRA;
     CButton m_radMA72;
     CButton m_radMA90;
-    CTabCtrl m_tab;
+    CListBox m_tab;
+    CFont m_optionsFont;
 
     CButton m_radCivilMonth;
     CButton m_radHebrewMonth;
