@@ -43,6 +43,29 @@ private:
     int m_previewKind = 0;
 };
 
+// A clipped, scrollable settings area; navigation and action buttons stay fixed.
+class COptionsContentWnd : public CDialog
+{
+public:
+    BOOL CreateContent(CWnd* parent, const CRect& rect);
+    void CaptureLayout(int designWidth);
+    void Layout(bool resetScroll = false);
+    void EnsureFocusVisible();
+protected:
+    LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam) override;
+    afx_msg void OnVScroll(UINT code, UINT position, CScrollBar* bar);
+    afx_msg BOOL OnMouseWheel(UINT flags, short delta, CPoint point);
+    DECLARE_MESSAGE_MAP()
+private:
+    struct Item { CWnd* window; CRect original; };
+    std::vector<Item> m_items;
+    int m_designWidth = 0;
+    int m_scroll = 0;
+    int m_extent = 0;
+    bool m_layingOut = false;
+    void ScrollTo(int position);
+};
+
 class COptionsDlg : public CDialog
 {
 public:
@@ -73,6 +96,7 @@ protected:
     afx_msg void OnZmanimSubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnNotifySubTabChanged(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnSize(UINT nType, int cx, int cy);
+    afx_msg void OnGetMinMaxInfo(MINMAXINFO* info);
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam) override;
     afx_msg void OnDisableAutoUpdate();
     afx_msg void OnCheckNow();
@@ -94,6 +118,7 @@ private:
     CButton m_radMA90;
     CListBox m_tab;
     CFont m_optionsFont;
+    COptionsContentWnd m_content;
 
     CButton m_radCivilMonth;
     CButton m_radHebrewMonth;
@@ -234,6 +259,7 @@ private:
     CButton m_btnCancel;
     CButton m_btnApply;
 
+    void LayoutOptions(int cx, int cy);
     void ReadControlsIntoResult();
     bool ApplyToParent();
     void ShowOptionsPage(int page);
