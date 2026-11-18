@@ -72,6 +72,7 @@
 #include <cmath>
 #include <cwctype>
 #include <fstream>
+#include <algorithm>
 
 #define IDC_OPT_RAD_AMPM       301
 #define IDC_OPT_RAD_24HR       302
@@ -327,6 +328,180 @@ static bool ParseHexColor(CString text, COLORREF& out)
     return true;
 }
 
+BEGIN_MESSAGE_MAP(COptionsContentWnd, CDialog)
+    ON_WM_VSCROLL()
+    ON_WM_MOUSEWHEEL()
+END_MESSAGE_MAP()
+
+BOOL COptionsContentWnd::CreateContent(CWnd* parent, const CRect& rect)
+{
+    // DS_CONTROL makes this a nested dialog: focus and auto-radio navigation
+    // stay within the correct dialog boundary instead of walking the outer
+    // dialog's control tree through a generic window.
+    struct ContentTemplate {
+        DLGTEMPLATE dialog;
+        WORD menu;
+        WORD windowClass;
+        WORD title;
+    } content = {};
+    content.dialog.style = WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | DS_CONTROL;
+    content.dialog.dwExtendedStyle = WS_EX_CONTROLPARENT;
+    if (!CreateIndirect(&content.dialog, parent)) return FALSE;
+    SetDlgCtrlID(7999);
+    MoveWindow(rect, FALSE);
+    return TRUE;
+}
+
+LRESULT COptionsContentWnd::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_COMMAND || message == WM_NOTIFY)
+        return GetParent()->SendMessage(message, wParam, lParam);
+    return CDialog::WindowProc(message, wParam, lParam);
+}
+
+void COptionsContentWnd::CaptureLayout(int designWidth)
+{
+    m_designWidth = designWidth;
+    for (CWnd* child = GetWindow(GW_CHILD); child; child = child->GetNextWindow())
+    {
+        CRect rect;
+        child->GetWindowRect(&rect);
+        ScreenToClient(&rect);
+        if (rect.Width() > 2 && rect.Height() > 2)
+            m_items.push_back({ child, rect });
+    }
+    std::stable_sort(m_items.begin(), m_items.end(), [](const Item& a, const Item& b) {
+        return a.original.top == b.original.top ? a.original.left < b.original.left :
+            a.original.top < b.original.top;
+    });
+}
+
+void COptionsContentWnd::Layout(bool resetScroll)
+{
+    if (m_items.empty() || m_layingOut) return;
+    // Moving a control or updating scrollbar visibility can synchronously
+    // generate more window messages. Never enter the same layout twice.
+    struct LayoutGuard {
+        bool& active;
+        explicit LayoutGuard(bool& value) : active(value) { active = true; }
+        ~LayoutGuard() { active = false; }
+    } guard(m_layingOut);
+    if (resetScroll) m_scroll = 0;
+    CRect client;
+    GetClientRect(&client);
+    // Reserve scrollbar space even before it appears, avoiding width oscillation.
+    const int width = max(120, client.Width() - GetSystemMetrics(SM_CXVSCROLL));
+    const bool compact = width < m_designWidth - 80;
+    int nextY = 12;
+    m_extent = 0;
+    CClientDC dc(this);
+    std::vector<std::pair<CWnd*, CRect>> positions;
+    for (const auto& item : m_items)
+    {
+        CWnd* child = item.window;
+        if (!(child->GetStyle() & WS_VISIBLE)) continue;
+        CRect rect = item.original;
+        const bool button = child->IsKindOf(RUNTIME_CLASS(CButton)) != FALSE;
+        const bool group = button && (child->GetStyle() & BS_TYPEMASK) == BS_GROUPBOX;
+        const bool combo = child->IsKindOf(RUNTIME_CLASS(CComboBox)) != FALSE;
+        const bool tab = child->IsKindOf(RUNTIME_CLASS(CTabCtrl)) != FALSE;
+        if (compact)
+        {
+            int height = 26;
+            if (tab)
+            {
+                child->MoveWindow(8, nextY, width - 16, 150, FALSE);
+                CRect body(0, 0, width - 16, 150);
+                static_cast<CTabCtrl*>(child)->AdjustRect(FALSE, &body);
+                height = body.top + 8;
+            }
+            else if (group) { nextY += 12; height = 24; }
+            else if (child->GetDlgCtrlID() == IDC_OPT_COLOR_SAMPLE) height = 150;
+            else if (!combo && (button || child->IsKindOf(RUNTIME_CLASS(CStatic))))
+            {
+                CString label;
+                child->GetWindowText(label);
+                CFont* oldFont = dc.SelectObject(child->GetFont());
+                CRect textRect(0, 0, max(40, width - 56), 0);
+                dc.DrawText(label, &textRect, DT_CALCRECT | DT_WORDBREAK);
+                dc.SelectObject(oldFont);
+                height = max(24, textRect.Height() + 8);
+            }
+            rect = CRect(12, nextY, width - 12, nextY + height);
+            nextY = rect.bottom + 6;
+        }
+        if (!compact)
+        {
+            rect.left = MulDiv(rect.left, width, m_designWidth);
+            rect.right = MulDiv(rect.right, width, m_designWidth);
+        }
+        if (button && !group) child->ModifyStyle(0, BS_MULTILINE);
+        if (child->IsKindOf(RUNTIME_CLASS(CStatic)))
+            child->ModifyStyle(SS_CENTERIMAGE, 0);
+        m_extent = max(m_extent, rect.bottom + 12);
+        positions.push_back({ child, rect });
+    }
+    m_scroll = max(0, min(m_scroll, max(0, m_extent - client.Height())));
+    for (auto& position : positions)
+    {
+        CRect rect = position.second;
+        rect.OffsetRect(0, -m_scroll);
+        const bool combo = position.first->IsKindOf(RUNTIME_CLASS(CComboBox)) != FALSE;
+        position.first->MoveWindow(rect.left, rect.top, rect.Width(),
+            combo ? max(180, rect.Height()) : rect.Height(), FALSE);
+    }
+    SCROLLINFO info = { sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE | SIF_POS };
+    info.nMin = 0;
+    info.nMax = max(0, m_extent - 1);
+    info.nPage = client.Height();
+    info.nPos = m_scroll;
+    SetScrollInfo(SB_VERT, &info, TRUE);
+    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+void COptionsContentWnd::ScrollTo(int position)
+{
+    m_scroll = position;
+    Layout();
+}
+
+void COptionsContentWnd::OnVScroll(UINT code, UINT, CScrollBar*)
+{
+    CRect client;
+    GetClientRect(&client);
+    SCROLLINFO info = { sizeof(SCROLLINFO), SIF_TRACKPOS };
+    GetScrollInfo(SB_VERT, &info);
+    switch (code)
+    {
+    case SB_LINEUP: ScrollTo(m_scroll - 32); break;
+    case SB_LINEDOWN: ScrollTo(m_scroll + 32); break;
+    case SB_PAGEUP: ScrollTo(m_scroll - client.Height()); break;
+    case SB_PAGEDOWN: ScrollTo(m_scroll + client.Height()); break;
+    case SB_THUMBTRACK: case SB_THUMBPOSITION: ScrollTo(info.nTrackPos); break;
+    case SB_TOP: ScrollTo(0); break;
+    case SB_BOTTOM: ScrollTo(m_extent); break;
+    }
+}
+
+BOOL COptionsContentWnd::OnMouseWheel(UINT, short delta, CPoint)
+{
+    ScrollTo(m_scroll - MulDiv(delta, 96, WHEEL_DELTA));
+    return TRUE;
+}
+
+void COptionsContentWnd::EnsureFocusVisible()
+{
+    CWnd* focus = GetFocus();
+    if (!focus || !IsChild(focus)) return;
+    CRect rect, client;
+    focus->GetWindowRect(&rect);
+    ScreenToClient(&rect);
+    GetClientRect(&client);
+    if (rect.top < 0) ScrollTo(m_scroll + rect.top - 8);
+    else if (rect.bottom > client.bottom)
+        ScrollTo(m_scroll + rect.bottom - client.bottom + 8);
+}
+
 BEGIN_MESSAGE_MAP(CColorPreviewWnd, CWnd)
     ON_WM_PAINT()
 END_MESSAGE_MAP()
@@ -470,7 +645,7 @@ public:
     virtual INT_PTR DoModal() override
     {
         struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
-        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
+        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX | DS_CENTER;
         buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
         buf.t.cx = 380; buf.t.cy = 260;
         wcscpy_s(buf.title, L"Manage Calendars");
@@ -778,7 +953,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 360; b.t.cy = 235;  // expanded for anchor row (v0.8.71)
         wcscpy_s(b.title, L"Reminder");
@@ -1045,7 +1220,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 430; b.t.cy = 260;
         wcscpy_s(b.title, L"Advanced Reminders");
@@ -1202,6 +1377,7 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_NOTIFY_SUBTAB, &COptionsDlg::OnNotifySubTabChanged)
     ON_WM_SIZE()
+    ON_WM_GETMINMAXINFO()
 END_MESSAGE_MAP()
 
 // =============================================================================
@@ -1445,7 +1621,7 @@ COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
 
 static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
 {
-    t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
+    t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX | DS_CENTER;
     t.dwExtendedStyle = WS_EX_APPWINDOW;
     t.cdit = 0;
     t.x = 0;
@@ -1558,6 +1734,11 @@ BOOL COptionsDlg::OnInitDialog()
     m_radTzaisPreset.clear();
     m_radShaahZmanitPreset.clear();    // v0.8.83
 
+    // Use a real DS_CONTROL child dialog for nested dialog navigation.
+    if (!m_content.CreateContent(this,
+        CRect(navigationWidth + 8, 12, W + navigationWidth - 12, H - 52)))
+        return FALSE;
+
     // All categories remain visible, without horizontal tab scrolling.
     m_tab.CreateEx(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_HASSTRINGS |
@@ -1579,20 +1760,20 @@ BOOL COptionsDlg::OnInitDialog()
     auto mkGroup = [&](std::vector<CWnd*>& page, const wchar_t* text, int x, int y, int w, int h) {
         CButton* b = new CButton;
         b->Create(text, WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-            CRect(x, y, x + w, y + h), this, staticId++);
+            CRect(x, y, x + w, y + h), &m_content, staticId++);
         track(page, b);
     };
     auto mkStatic = [&](std::vector<CWnd*>& page, const wchar_t* text, int x, int y, int w, int h) {
         CStatic* s = new CStatic;
         s->Create(text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
-            CRect(x, y, x + w, y + h), this, staticId++);
+            CRect(x, y, x + w, y + h), &m_content, staticId++);
         track(page, s);
     };
     auto initCombo = [&](std::vector<CWnd*>& page, CComboBox& combo, int x, int y, int w, UINT id,
         std::initializer_list<const wchar_t*> items, int sel)
     {
         combo.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            CRect(x, y, x + w, y + 160), this, id);
+            CRect(x, y, x + w, y + 160), &m_content, id);
         track(page, &combo);
         for (const wchar_t* item : items)
             combo.AddString(item);
@@ -1601,7 +1782,7 @@ BOOL COptionsDlg::OnInitDialog()
     auto setEdit = [&](std::vector<CWnd*>& page, CEdit& edit, int x, int y, int w, UINT id, double value) {
         CString s; s.Format(L"%.2f", value);
         edit.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-            CRect(x, y, x + w, y + 22), this, id);
+            CRect(x, y, x + w, y + 22), &m_content, id);
         track(page, &edit);
         edit.SetWindowText(s);
     };
@@ -1610,16 +1791,16 @@ BOOL COptionsDlg::OnInitDialog()
     int y = 38;
     mkGroup(m_pageGeneral, L"Display", 14, y, W - 28, 92); y += 20;
     m_radAmPm.Create(L"AM / PM", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(28, y, 110, y + 20), this, IDC_OPT_RAD_AMPM); track(m_pageGeneral, &m_radAmPm);
+        CRect(28, y, 110, y + 20), &m_content, IDC_OPT_RAD_AMPM); track(m_pageGeneral, &m_radAmPm);
     m_rad24hr.Create(L"24 Hour", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(118, y, 205, y + 20), this, IDC_OPT_RAD_24HR); track(m_pageGeneral, &m_rad24hr);
+        CRect(118, y, 205, y + 20), &m_content, IDC_OPT_RAD_24HR); track(m_pageGeneral, &m_rad24hr);
     m_radCivilMonth.Create(L"Civil month", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(215, y, 310, y + 20), this, IDC_OPT_RAD_CIVIL); track(m_pageGeneral, &m_radCivilMonth);
+        CRect(215, y, 310, y + 20), &m_content, IDC_OPT_RAD_CIVIL); track(m_pageGeneral, &m_radCivilMonth);
     m_radHebrewMonth.Create(L"Hebrew month", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(315, y, W - 28, y + 20), this, IDC_OPT_RAD_HEBREW); track(m_pageGeneral, &m_radHebrewMonth);
+        CRect(315, y, W - 28, y + 20), &m_content, IDC_OPT_RAD_HEBREW); track(m_pageGeneral, &m_radHebrewMonth);
     y += 26;
     m_chkDateTracking.Create(L"Date tracking (on mouse hover)", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 240, y + 20), this, IDC_OPT_TRACKING); track(m_pageGeneral, &m_chkDateTracking);
+        CRect(28, y, 240, y + 20), &m_content, IDC_OPT_TRACKING); track(m_pageGeneral, &m_chkDateTracking);
     mkStatic(m_pageGeneral, L"Font size", 250, y, 65, 20);
     initCombo(m_pageGeneral, m_cmbFontSize, 318, y - 1, 96, IDC_OPT_FONT_SIZE,
         { L"Tiny (13)", L"Normal (14)", L"Medium (15)", L"Large (16)",
@@ -1631,48 +1812,48 @@ BOOL COptionsDlg::OnInitDialog()
     y += 26;
     m_btnResetCalendar.Create(L"Reset Calendar Settings...",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, y, 210, y + 26), this, IDC_OPT_RESET_CALENDAR);
+        CRect(28, y, 210, y + 26), &m_content, IDC_OPT_RESET_CALENDAR);
     track(m_pageGeneral, &m_btnResetCalendar);
 
     // Auto-Update group
     y = 236;
     mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 140); y += 22;
     m_chkDisableAutoUpdate.Create(L"Disable all update checks", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 220, y + 20), this, IDC_OPT_DISABLE_AUTOUPDATE);
+        CRect(28, y, 220, y + 20), &m_content, IDC_OPT_DISABLE_AUTOUPDATE);
     track(m_pageGeneral, &m_chkDisableAutoUpdate); y += 26;
     m_chkCheckUpdatesAuto.Create(L"Check for updates automatically", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 230, y + 20), this, IDC_OPT_CHECK_AUTO);
+        CRect(28, y, 230, y + 20), &m_content, IDC_OPT_CHECK_AUTO);
     track(m_pageGeneral, &m_chkCheckUpdatesAuto); y += 24;
     mkStatic(m_pageGeneral, L"Frequency:", 28, y, 60, 20);
     initCombo(m_pageGeneral, m_cmbUpdateFrequency, 90, y - 1, 120, IDC_OPT_UPDATE_FREQ,
         { L"Daily", L"Weekly", L"Monthly" }, m_current.updateCheckFrequency);
     y += 26;
     m_chkCheckOnLaunch.Create(L"Check on launch", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 180, y + 20), this, IDC_OPT_CHECK_LAUNCH);
+        CRect(28, y, 180, y + 20), &m_content, IDC_OPT_CHECK_LAUNCH);
     track(m_pageGeneral, &m_chkCheckOnLaunch);
     m_btnCheckUpdatesNow.Create(L"Check Now",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(190, y - 2, 270, y + 22), this, IDC_OPT_CHECK_NOW);
+        CRect(190, y - 2, 270, y + 22), &m_content, IDC_OPT_CHECK_NOW);
     track(m_pageGeneral, &m_btnCheckUpdatesNow);
 
     y = 38;
     mkGroup(m_pageMonth, L"Calendar events & daily learning", 14, y, W - 28, 146); y += 20;
     m_chkParshios.Create(L"Parshios", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 150, y + 20), this, IDC_OPT_PARSHIOS); track(m_pageMonth, &m_chkParshios);
+        CRect(28, y, 150, y + 20), &m_content, IDC_OPT_PARSHIOS); track(m_pageMonth, &m_chkParshios);
     m_chkDafYomi.Create(L"Daf yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(240, y, 345, y + 20), this, IDC_OPT_DAF); track(m_pageMonth, &m_chkDafYomi); y += 24;
+        CRect(240, y, 345, y + 20), &m_content, IDC_OPT_DAF); track(m_pageMonth, &m_chkDafYomi); y += 24;
     m_chkMoadim.Create(L"Moadim", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 150, y + 20), this, IDC_OPT_MOADIM); track(m_pageMonth, &m_chkMoadim);
+        CRect(28, y, 150, y + 20), &m_content, IDC_OPT_MOADIM); track(m_pageMonth, &m_chkMoadim);
     m_chkYerushalmi.Create(L"Yerushalmi yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(240, y, 395, y + 20), this, IDC_OPT_YERUSHALMI); track(m_pageMonth, &m_chkYerushalmi); y += 24;
+        CRect(240, y, 395, y + 20), &m_content, IDC_OPT_YERUSHALMI); track(m_pageMonth, &m_chkYerushalmi); y += 24;
     m_chkUserEvents.Create(L"Personal events", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 160, y + 20), this, IDC_OPT_USER_EVENTS); track(m_pageMonth, &m_chkUserEvents);
+        CRect(28, y, 160, y + 20), &m_content, IDC_OPT_USER_EVENTS); track(m_pageMonth, &m_chkUserEvents);
     m_chkHalacha.Create(L"Halacha yomit", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(240, y, 395, y + 20), this, IDC_OPT_HALACHA); track(m_pageMonth, &m_chkHalacha); y += 24;
+        CRect(240, y, 395, y + 20), &m_content, IDC_OPT_HALACHA); track(m_pageMonth, &m_chkHalacha); y += 24;
     m_chkMishna.Create(L"Mishna yomit", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(240, y, 395, y + 20), this, IDC_OPT_MISHNA); track(m_pageMonth, &m_chkMishna); y += 24;
+        CRect(240, y, 395, y + 20), &m_content, IDC_OPT_MISHNA); track(m_pageMonth, &m_chkMishna); y += 24;
     m_chkTanach.Create(L"Tanach yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(240, y, 395, y + 20), this, IDC_OPT_TANACH); track(m_pageMonth, &m_chkTanach);
+        CRect(240, y, 395, y + 20), &m_content, IDC_OPT_TANACH); track(m_pageMonth, &m_chkTanach);
 
     // --- v0.8.78: Fast Days group (moved from Zmanim tab + new BeHaB options) ---
     y = 196;
@@ -1681,21 +1862,21 @@ BOOL COptionsDlg::OnInitDialog()
     // Chatzos on fast days (moved from Zmanim tab)
     m_chkChatzosOnFasts.Create(L"Show chatzos on fast-day cells",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_FASTS);
+        CRect(28, y, W - 28, y + 20), &m_content, IDC_OPT_CHATZOS_FASTS);
     track(m_pageMonth, &m_chkChatzosOnFasts);
     y += 26;
 
     // BeHaB (Mon-Thu-Mon of Cheshvan / Iyar)
     m_chkShowBeHaB.Create(L"Show BeHaB days  (Mon-Thu-Mon after Sukkot & Pesach)",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, W - 28, y + 20), this, IDC_OPT_SHOW_BEHAB);
+        CRect(28, y, W - 28, y + 20), &m_content, IDC_OPT_SHOW_BEHAB);
     track(m_pageMonth, &m_chkShowBeHaB);
     y += 26;
 
     // Chatzos on BeHaB — grayed out when BeHaB is off
     m_chkChatzosOnBeHaB.Create(L"  └ Show chatzos on BeHaB cells",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, W - 28, y + 20), this, IDC_OPT_CHATZOS_BEHAB);
+        CRect(28, y, W - 28, y + 20), &m_content, IDC_OPT_CHATZOS_BEHAB);
     track(m_pageMonth, &m_chkChatzosOnBeHaB);
 
     // ── Display: Hebrew text options ──────────────────────────────────────
@@ -1703,12 +1884,12 @@ BOOL COptionsDlg::OnInitDialog()
     mkGroup(m_pageMonth, L"Hebrew Display", 14, y, W - 28, 70); y += 22;
     m_chkHebrewScript.Create(L"Use Hebrew lettering  (ראשון, תשרי...)",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, W - 28, y + 20), this, IDC_OPT_HEBREW_SCRIPT);
+        CRect(28, y, W - 28, y + 20), &m_content, IDC_OPT_HEBREW_SCRIPT);
     track(m_pageMonth, &m_chkHebrewScript);
     y += 24;
     m_chkHebrewNumerals.Create(L"Use Hebrew numerals for day numbers  (א, ב, ג...)",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, W - 28, y + 20), this, IDC_OPT_HEBREW_NUMERALS);
+        CRect(28, y, W - 28, y + 20), &m_content, IDC_OPT_HEBREW_NUMERALS);
     track(m_pageMonth, &m_chkHebrewNumerals);
 
     // v0.8.82 — moved Holiday Schedule below the Updates group (y=330)
@@ -1717,21 +1898,21 @@ BOOL COptionsDlg::OnInitDialog()
 
     mkGroup(m_pageGeneral, L"Holiday Schedule", 14, y, W - 28, 54); y += 22;
     m_radDiaspora.Create(L"Diaspora (outside Israel)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(28, y, 220, y + 20), this, IDC_OPT_RAD_DIASPORA); track(m_pageGeneral, &m_radDiaspora);
+        CRect(28, y, 220, y + 20), &m_content, IDC_OPT_RAD_DIASPORA); track(m_pageGeneral, &m_radDiaspora);
     m_radIsrael.Create(L"Israel", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(240, y, 330, y + 20), this, IDC_OPT_RAD_ISRAEL); track(m_pageGeneral, &m_radIsrael);
+        CRect(240, y, 330, y + 20), &m_content, IDC_OPT_RAD_ISRAEL); track(m_pageGeneral, &m_radIsrael);
     y = 38;
 
     mkGroup(m_pageInterface, L"Startup & calendars", 14, y, W - 28, 86); y += 20;
 
     // ── General (non-tray) options ────────────────────────────────────────────
     m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, y, 200, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
+        CRect(28, y, 200, y + 24), &m_content, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
     m_chkStartWithWindows.Create(L"Start with Windows", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(215, y + 4, 360, y + 24), this, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
+        CRect(215, y + 4, 360, y + 24), &m_content, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
     y += 30;
     m_chkDesktopShortcut.Create(L"Desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 180, y + 20), this, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut);
+        CRect(28, y, 180, y + 20), &m_content, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut);
     y += 30;
 
     // ── System Tray ───────────────────────────────────────────────────────────
@@ -1739,30 +1920,30 @@ BOOL COptionsDlg::OnInitDialog()
     mkGroup(m_pageInterface, L"System tray", 14, y, W - 28, 226);
     y += 20;
     m_chkShowTrayIcon.Create(L"Pin WinLuach to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 230, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
+        CRect(28, y, 230, y + 20), &m_content, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
     m_chkMinimizeToTray.Create(L"Minimize to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 185, y + 20), this, IDC_OPT_MIN_TRAY); track(m_pageInterface, &m_chkMinimizeToTray);
+        CRect(28, y, 185, y + 20), &m_content, IDC_OPT_MIN_TRAY); track(m_pageInterface, &m_chkMinimizeToTray);
     initCombo(m_pageInterface, m_cmbTrayWhen, 200, y - 1, 220, IDC_OPT_TRAY_WHEN,
         { L"when minimized", L"when closed", L"when minimized or closed" },
         max(0, min(2, m_current.minimizeTrayWhen)));
     m_chkMinimizeOnStartup.Create(L"Start minimized", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y + 24, 190, y + 44), this, IDC_OPT_MIN_STARTUP); track(m_pageInterface, &m_chkMinimizeOnStartup); y += 48;
+        CRect(28, y + 24, 190, y + 44), &m_content, IDC_OPT_MIN_STARTUP); track(m_pageInterface, &m_chkMinimizeOnStartup); y += 48;
     mkStatic(m_pageInterface, L"Tray text", 28, y, 75, 22);
     m_btnTrayTextColor.Create(L"Color...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(105, y, 180, y + 24), this, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
+        CRect(105, y, 180, y + 24), &m_content, IDC_OPT_TRAY_COLOR); track(m_pageInterface, &m_btnTrayTextColor);
     m_btnTrayFont.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(188, y, 262, y + 24), this, IDC_OPT_TRAY_FONT); track(m_pageInterface, &m_btnTrayFont);
+        CRect(188, y, 262, y + 24), &m_content, IDC_OPT_TRAY_FONT); track(m_pageInterface, &m_btnTrayFont);
     y += 30;
     m_chkTrayBackEnabled.Create(L"Tray background", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-        CRect(28, y, 152, y + 20), this, IDC_OPT_TRAY_BACK_ENABLED); track(m_pageInterface, &m_chkTrayBackEnabled);
+        CRect(28, y, 152, y + 20), &m_content, IDC_OPT_TRAY_BACK_ENABLED); track(m_pageInterface, &m_chkTrayBackEnabled);
     m_btnTrayBackColor.Create(L"Background...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(160, y - 2, 270, y + 22), this, IDC_OPT_TRAY_BACK_COLOR); track(m_pageInterface, &m_btnTrayBackColor);
+        CRect(160, y - 2, 270, y + 22), &m_content, IDC_OPT_TRAY_BACK_COLOR); track(m_pageInterface, &m_btnTrayBackColor);
     mkStatic(m_pageInterface, L"Tray date:", 282, y, 70, 22);
     initCombo(m_pageInterface, m_cmbTrayNumber, 350, y - 1, 66, IDC_OPT_TRAY_NUMBER,
         { L"Heb", L"Eng" }, max(0, min(1, m_current.trayNumberStyle)));
     y += 32;
     m_btnTrayDefaults.Create(L"Restore Tray Defaults", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, y, 185, y + 24), this, IDC_OPT_TRAY_DEFAULTS); track(m_pageInterface, &m_btnTrayDefaults);
+        CRect(28, y, 185, y + 24), &m_content, IDC_OPT_TRAY_DEFAULTS); track(m_pageInterface, &m_btnTrayDefaults);
 
     // Tray Tooltip tab
     y = 38;
@@ -1770,13 +1951,13 @@ BOOL COptionsDlg::OnInitDialog()
     // v0.8.82 — instruction label + max-5 warning
     m_statTrayTipInstruction.Create(L"Select up to 5 zmanim to display in the tray tooltip:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
-        CRect(28, y, W - 28, y + 16), this, IDC_STATIC);
+        CRect(28, y, W - 28, y + 16), &m_content, IDC_STATIC);
     m_statTrayTipInstruction.SetFont(pFont);
     track(m_pageTrayTooltip, &m_statTrayTipInstruction);
     y += 18;
     m_statTrayTipMaxMsg.Create(L"  ⚠ Maximum of 5 zmanim selected.  Uncheck one to select another.",
         WS_CHILD | SS_LEFT,          // hidden initially — shown when max reached
-        CRect(28, y, W - 28, y + 16), this, IDC_OPT_TRAY_TIP_LIMIT_MSG);
+        CRect(28, y, W - 28, y + 16), &m_content, IDC_OPT_TRAY_TIP_LIMIT_MSG);
     m_statTrayTipMaxMsg.SetFont(pFont);
     track(m_pageTrayTooltip, &m_statTrayTipMaxMsg);
     y += 20;
@@ -1788,7 +1969,7 @@ BOOL COptionsDlg::OnInitDialog()
         int yy = y + row * 19;
         m_chkTrayTooltipZmanim[i].Create(kTrayTooltipZmanLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + 190, yy + 18), this, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
+            CRect(x0, yy, x0 + 190, yy + 18), &m_content, IDC_OPT_TRAY_TIP_ZMAN_FIRST + i);
         track(m_pageTrayTooltip, &m_chkTrayTooltipZmanim[i]);
         m_chkTrayTooltipZmanim[i].SetCheck((m_current.trayTooltipZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
@@ -1803,7 +1984,7 @@ BOOL COptionsDlg::OnInitDialog()
         int yy = y + row * 20;
         m_chkTrayTooltipCustomZmanim[i].Create(kTrayTooltipCustomZmanLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + 190, yy + 18), this, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + i);
+            CRect(x0, yy, x0 + 190, yy + 18), &m_content, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + i);
         track(m_pageTrayTooltip, &m_chkTrayTooltipCustomZmanim[i]);
         m_chkTrayTooltipCustomZmanim[i].SetCheck((m_current.trayTooltipCustomZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
@@ -1819,7 +2000,7 @@ BOOL COptionsDlg::OnInitDialog()
         int yy = y + row * 22;
         m_chkYearDetails[i].Create(kYearDetailLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + (W - 56) / 2 - 4, yy + 20), this, IDC_OPT_YEAR_DETAIL_FIRST + i);
+            CRect(x0, yy, x0 + (W - 56) / 2 - 4, yy + 20), &m_content, IDC_OPT_YEAR_DETAIL_FIRST + i);
         track(m_pageYearDetails, &m_chkYearDetails[i]);
         m_chkYearDetails[i].SetCheck((m_current.yearDetailsMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
@@ -1828,7 +2009,7 @@ BOOL COptionsDlg::OnInitDialog()
     mkGroup(m_pageColors, L"Calendar Cell and Text Colors", 14, 38, W - 28, 324);
     mkStatic(m_pageColors, L"Text", 28, 63, 55, 20);
     m_cmbColorItem.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        CRect(86, 60, 256, 220), this, IDC_OPT_COLOR_ITEM);
+        CRect(86, 60, 256, 220), &m_content, IDC_OPT_COLOR_ITEM);
     track(m_pageColors, &m_cmbColorItem);
     for (const auto& pref : kCalendarColorPrefs)
         m_cmbColorItem.AddString(pref.label);
@@ -1836,16 +2017,16 @@ BOOL COptionsDlg::OnInitDialog()
 
     mkStatic(m_pageColors, L"Hex", 270, 63, 38, 20);
     m_editColorHex.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-        CRect(310, 60, 388, 82), this, IDC_OPT_COLOR_HEX);
+        CRect(310, 60, 388, 82), &m_content, IDC_OPT_COLOR_HEX);
     track(m_pageColors, &m_editColorHex);
 
     m_btnColorPicker.Create(L"Choose...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, 92, 110, 117), this, IDC_OPT_COLOR_PICKER);
+        CRect(28, 92, 110, 117), &m_content, IDC_OPT_COLOR_PICKER);
     track(m_pageColors, &m_btnColorPicker);
 
     mkStatic(m_pageColors, L"Sample day", 126, 95, 82, 20);
     m_cmbColorPreview.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-        CRect(210, 92, 388, 252), this, IDC_OPT_COLOR_PREVIEW);
+        CRect(210, 92, 388, 252), &m_content, IDC_OPT_COLOR_PREVIEW);
     track(m_pageColors, &m_cmbColorPreview);
     for (const wchar_t* name : kColorPreviewNames)
         m_cmbColorPreview.AddString(name);
@@ -1854,11 +2035,11 @@ BOOL COptionsDlg::OnInitDialog()
     CString previewClass = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW,
         ::LoadCursor(nullptr, IDC_ARROW), (HBRUSH)(COLOR_WINDOW + 1), nullptr);
     m_colorPreview.Create(previewClass, L"", WS_CHILD | WS_VISIBLE | WS_BORDER,
-        CRect(28, 130, W - 28, 302), this, IDC_OPT_COLOR_SAMPLE);
+        CRect(28, 130, W - 28, 302), &m_content, IDC_OPT_COLOR_SAMPLE);
     track(m_pageColors, &m_colorPreview);
 
     m_btnRestoreColors.Create(L"Restore Default Colors", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(28, 318, 205, 344), this, IDC_OPT_COLOR_RESTORE);
+        CRect(28, 318, 205, 344), &m_content, IDC_OPT_COLOR_RESTORE);
     track(m_pageColors, &m_btnRestoreColors);
 
     // Zmanim tab
@@ -1871,11 +2052,11 @@ BOOL COptionsDlg::OnInitDialog()
     y += 34;
     mkStatic(m_pageZmanim, L"Mincha and shaah zmanis shita:", 28, y, 300, 20); y += 24;
     m_radGRA.Create(L"GRA / Baal HaTanya", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(40, y, 190, y + 20), this, IDC_OPT_RAD_GRA); track(m_pageZmanim, &m_radGRA);
+        CRect(40, y, 190, y + 20), &m_content, IDC_OPT_RAD_GRA); track(m_pageZmanim, &m_radGRA);
     m_radMA72.Create(L"Magen Avraham (72 min)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(205, y, 385, y + 20), this, IDC_OPT_RAD_MA72); track(m_pageZmanim, &m_radMA72); y += 24;
+        CRect(205, y, 385, y + 20), &m_content, IDC_OPT_RAD_MA72); track(m_pageZmanim, &m_radMA72); y += 24;
     m_radMA90.Create(L"Magen Avraham (90 min)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(40, y, 220, y + 20), this, IDC_OPT_RAD_MA90); track(m_pageZmanim, &m_radMA90); y += 34;
+        CRect(40, y, 220, y + 20), &m_content, IDC_OPT_RAD_MA90); track(m_pageZmanim, &m_radMA90); y += 34;
     mkStatic(m_pageZmanim, L"Preset alos:", 28, y, 95, 22);
     initCombo(m_pageZmanim, m_cmbAlotShita, 125, y - 1, 210, IDC_OPT_ALOT_SHITA,
         { L"GRA (16.1 degrees)", L"Magen Avraham (72 min)", L"Magen Avraham (90 min)" },
@@ -1891,20 +2072,20 @@ BOOL COptionsDlg::OnInitDialog()
     mkStatic(m_pageZmanim, L"Displayed alos value:", 28, y, 140, 22);
     setEdit(m_pageZmanim, m_editCustomAlot, 160, y, 60, IDC_OPT_ALOT_VALUE, m_current.customAlotValue);
     m_radAlotDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(230, y, 305, y + 20), this, IDC_OPT_ALOT_DEG); track(m_pageZmanim, &m_radAlotDegrees);
+        CRect(230, y, 305, y + 20), &m_content, IDC_OPT_ALOT_DEG); track(m_pageZmanim, &m_radAlotDegrees);
     m_radAlotMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(310, y, 385, y + 20), this, IDC_OPT_ALOT_MIN); track(m_pageZmanim, &m_radAlotMinutes);
+        CRect(310, y, 385, y + 20), &m_content, IDC_OPT_ALOT_MIN); track(m_pageZmanim, &m_radAlotMinutes);
     m_radAlotZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(230, y + 22, W - 28, y + 42), this, IDC_OPT_ALOT_ZMANIS); track(m_pageZmanim, &m_radAlotZmanis);
+        CRect(230, y + 22, W - 28, y + 42), &m_content, IDC_OPT_ALOT_ZMANIS); track(m_pageZmanim, &m_radAlotZmanis);
     y += 48;
     mkStatic(m_pageZmanim, L"Displayed tzeis value:", 28, y, 140, 22);
     setEdit(m_pageZmanim, m_editCustomTzeit, 160, y, 60, IDC_OPT_TZEIT_VALUE, m_current.customTzeitValue);
     m_radTzeitDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(230, y, 305, y + 20), this, IDC_OPT_TZEIT_DEG); track(m_pageZmanim, &m_radTzeitDegrees);
+        CRect(230, y, 305, y + 20), &m_content, IDC_OPT_TZEIT_DEG); track(m_pageZmanim, &m_radTzeitDegrees);
     m_radTzeitMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(310, y, 385, y + 20), this, IDC_OPT_TZEIT_MIN); track(m_pageZmanim, &m_radTzeitMinutes);
+        CRect(310, y, 385, y + 20), &m_content, IDC_OPT_TZEIT_MIN); track(m_pageZmanim, &m_radTzeitMinutes);
     m_radTzeitZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(230, y + 22, W - 28, y + 42), this, IDC_OPT_TZEIT_ZMANIS); track(m_pageZmanim, &m_radTzeitZmanis);
+        CRect(230, y + 22, W - 28, y + 42), &m_content, IDC_OPT_TZEIT_ZMANIS); track(m_pageZmanim, &m_radTzeitZmanis);
 
     // Zman Shitos tab
     y = 38;
@@ -1918,11 +2099,11 @@ BOOL COptionsDlg::OnInitDialog()
     mkStatic(m_pageZmanShitos, L"Value:", 28, y, 68, 22);
     setEdit(m_pageZmanShitos, m_editCustomSofZman, 100, y, 60, IDC_OPT_SOFZMAN_VALUE, m_current.customSofZmanValue);
     m_radSofZmanDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(175, y, 250, y + 20), this, IDC_OPT_SOFZMAN_DEG); track(m_pageZmanShitos, &m_radSofZmanDegrees);
+        CRect(175, y, 250, y + 20), &m_content, IDC_OPT_SOFZMAN_DEG); track(m_pageZmanShitos, &m_radSofZmanDegrees);
     m_radSofZmanMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(255, y, 330, y + 20), this, IDC_OPT_SOFZMAN_MIN); track(m_pageZmanShitos, &m_radSofZmanMinutes);
+        CRect(255, y, 330, y + 20), &m_content, IDC_OPT_SOFZMAN_MIN); track(m_pageZmanShitos, &m_radSofZmanMinutes);
     m_radSofZmanZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(175, y + 24, W - 28, y + 44), this, IDC_OPT_SOFZMAN_ZMANIS); track(m_pageZmanShitos, &m_radSofZmanZmanis);
+        CRect(175, y + 24, W - 28, y + 44), &m_content, IDC_OPT_SOFZMAN_ZMANIS); track(m_pageZmanShitos, &m_radSofZmanZmanis);
 
     y = 172;
     mkGroup(m_pageZmanShitos, L"Misheyakir", 14, y, W - 28, 118); y += 24;
@@ -1934,11 +2115,11 @@ BOOL COptionsDlg::OnInitDialog()
     mkStatic(m_pageZmanShitos, L"Value:", 28, y, 68, 22);
     setEdit(m_pageZmanShitos, m_editCustomMisheyakir, 100, y, 60, IDC_OPT_MISHEYAKIR_VALUE, m_current.customMisheyakirValue);
     m_radMisheyakirDegrees.Create(L"degrees", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        CRect(175, y, 250, y + 20), this, IDC_OPT_MISHEYAKIR_DEG); track(m_pageZmanShitos, &m_radMisheyakirDegrees);
+        CRect(175, y, 250, y + 20), &m_content, IDC_OPT_MISHEYAKIR_DEG); track(m_pageZmanShitos, &m_radMisheyakirDegrees);
     m_radMisheyakirMinutes.Create(L"minutes", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(255, y, 330, y + 20), this, IDC_OPT_MISHEYAKIR_MIN); track(m_pageZmanShitos, &m_radMisheyakirMinutes);
+        CRect(255, y, 330, y + 20), &m_content, IDC_OPT_MISHEYAKIR_MIN); track(m_pageZmanShitos, &m_radMisheyakirMinutes);
     m_radMisheyakirZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        CRect(175, y + 24, W - 28, y + 44), this, IDC_OPT_MISHEYAKIR_ZMANIS); track(m_pageZmanShitos, &m_radMisheyakirZmanis);
+        CRect(175, y + 24, W - 28, y + 44), &m_content, IDC_OPT_MISHEYAKIR_ZMANIS); track(m_pageZmanShitos, &m_radMisheyakirZmanis);
 
     // Notifications tab — 3 sub-tabs: General | Zmanim | Reminders
     {
@@ -1946,7 +2127,7 @@ BOOL COptionsDlg::OnInitDialog()
         int notifyPageBottom = H - 56;
         m_notifySubTab.Create(
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
-            CRect(20, 38, W - 20, notifyPageBottom), this, IDC_OPT_NOTIFY_SUBTAB);
+            CRect(20, 38, W - 20, notifyPageBottom), &m_content, IDC_OPT_NOTIFY_SUBTAB);
         m_notifySubTab.SetFont(pFont);
         {
             TCITEM sti = {};
@@ -1963,11 +2144,11 @@ BOOL COptionsDlg::OnInitDialog()
         mkGroup(m_pageNotifyGeneral, L"Toast notification type", 28, y, W - 56, 76); y += 22;
         m_radUseWindowsNotify.Create(L"Windows built-in notifications",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-            CRect(42, y, 242, y + 20), this, IDC_OPT_RAD_WINNOTIFY);
+            CRect(42, y, 242, y + 20), &m_content, IDC_OPT_RAD_WINNOTIFY);
         track(m_pageNotifyGeneral, &m_radUseWindowsNotify);
         m_radUseWinLuachToast.Create(L"WinLuach Toast",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(248, y, 400, y + 20), this, IDC_OPT_RAD_WINLUACHTOAST);
+            CRect(248, y, 400, y + 20), &m_content, IDC_OPT_RAD_WINLUACHTOAST);
         track(m_pageNotifyGeneral, &m_radUseWinLuachToast);
         bool isWLToast = m_current.useWinLuachToast;
         m_radUseWindowsNotify.SetCheck(!isWLToast ? BST_CHECKED : BST_UNCHECKED);
@@ -1975,7 +2156,7 @@ BOOL COptionsDlg::OnInitDialog()
         y += 26;
         mkStatic(m_pageNotifyGeneral, L"Display for:", 42, y, 80, 22);
         m_editToastDuration.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-            CRect(124, y, 166, y + 22), this, IDC_OPT_TOAST_DURATION);
+            CRect(124, y, 166, y + 22), &m_content, IDC_OPT_TOAST_DURATION);
         track(m_pageNotifyGeneral, &m_editToastDuration);
         { CString dur; dur.Format(L"%d", max(1, m_current.winLuachToastDuration)); m_editToastDuration.SetWindowText(dur); }
         initCombo(m_pageNotifyGeneral, m_cmbToastDurationUnit, 172, y - 1, 100, IDC_OPT_TOAST_UNIT,
@@ -1991,7 +2172,7 @@ BOOL COptionsDlg::OnInitDialog()
             { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
             max(0, min(3, m_current.notifyPersonalEvents)));
         m_btnPreviewNotify.Create(L"Test", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(300, y, 352, y + 24), this, IDC_OPT_PREVIEW_NOTIFY);
+            CRect(300, y, 352, y + 24), &m_content, IDC_OPT_PREVIEW_NOTIFY);
         track(m_pageNotifyGeneral, &m_btnPreviewNotify);
         y += 28;
         mkStatic(m_pageNotifyGeneral, L"Web calendars:", 42, y, 112, 22);
@@ -2009,7 +2190,7 @@ BOOL COptionsDlg::OnInitDialog()
         bool isOtherOmer  = (m_current.notifySefirahMode == 1 && m_current.notifySefirahBase == 2);
         // Row 1: relative to sunset / tzais
         m_radNotifySefirahSunTzais.Create(L"relative to:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE);
+            CRect(42, y, 138, y + 20), &m_content, IDC_OPT_NOTIFY_SEFIRAH_MODE);
         track(m_pageNotifyGeneral, &m_radNotifySefirahSunTzais);
         m_radNotifySefirahSunTzais.SetCheck(!isManualOmer && !isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
         initCombo(m_pageNotifyGeneral, m_cmbNotifySefirahBase, 142, y - 1, 82, IDC_OPT_NOTIFY_SEFIRAH_BASE,
@@ -2017,11 +2198,11 @@ BOOL COptionsDlg::OnInitDialog()
         y += 26;
         // Row 2: other zman
         m_radNotifySefirahOther.Create(L"other zman:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
+            CRect(42, y, 138, y + 20), &m_content, IDC_OPT_NOTIFY_SEFIRAH_MODE + 1);
         track(m_pageNotifyGeneral, &m_radNotifySefirahOther);
         m_radNotifySefirahOther.SetCheck(isOtherOmer ? BST_CHECKED : BST_UNCHECKED);
         m_cmbNotifySefirahOtherZman.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            CRect(142, y - 1, W - 42, y + 160), this, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
+            CRect(142, y - 1, W - 42, y + 160), &m_content, IDC_OPT_NOTIFY_SEFIRAH_OTHER);
         track(m_pageNotifyGeneral, &m_cmbNotifySefirahOtherZman);
         for (const wchar_t* label : kZmanCheckboxLabels)
             m_cmbNotifySefirahOtherZman.AddString(label);
@@ -2029,18 +2210,18 @@ BOOL COptionsDlg::OnInitDialog()
         y += 26;
         // Row 3: manual time
         m_radNotifySefirahManual.Create(L"manual time:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(42, y, 138, y + 20), this, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
+            CRect(42, y, 138, y + 20), &m_content, IDC_OPT_NOTIFY_SEFIRAH_MODE + 2);
         track(m_pageNotifyGeneral, &m_radNotifySefirahManual);
         m_radNotifySefirahManual.SetCheck(isManualOmer ? BST_CHECKED : BST_UNCHECKED);
         mkStatic(m_pageNotifyGeneral, L"at:", 144, y, 24, 22);
         m_cmbNotifySefirahHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(172, y - 1, 212, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
+            CRect(172, y - 1, 212, y + 140), &m_content, IDC_OPT_NOTIFY_SEFIRAH_HOUR);
         track(m_pageNotifyGeneral, &m_cmbNotifySefirahHour);
         m_cmbNotifySefirahMinute.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(216, y - 1, 256, y + 140), this, IDC_OPT_NOTIFY_SEFIRAH_MIN);
+            CRect(216, y - 1, 256, y + 140), &m_content, IDC_OPT_NOTIFY_SEFIRAH_MIN);
         track(m_pageNotifyGeneral, &m_cmbNotifySefirahMinute);
         m_cmbNotifySefirahAmPm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(260, y - 1, 304, y + 90), this, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
+            CRect(260, y - 1, 304, y + 90), &m_content, IDC_OPT_NOTIFY_SEFIRAH_AMPM);
         track(m_pageNotifyGeneral, &m_cmbNotifySefirahAmPm);
         FillClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm);
         SetClockCombos(m_cmbNotifySefirahHour, m_cmbNotifySefirahMinute, m_cmbNotifySefirahAmPm,
@@ -2049,7 +2230,7 @@ BOOL COptionsDlg::OnInitDialog()
         // Row 4: offset
         mkStatic(m_pageNotifyGeneral, L"offset:", 42, y, 48, 22);
         m_editNotifySefirahOffset.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-            CRect(92, y, 132, y + 22), this, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
+            CRect(92, y, 132, y + 22), &m_content, IDC_OPT_NOTIFY_SEFIRAH_OFFSET);
         track(m_pageNotifyGeneral, &m_editNotifySefirahOffset);
         {
             CString off;
@@ -2076,7 +2257,7 @@ BOOL COptionsDlg::OnInitDialog()
             int yy = y + row * 20;
             m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                CRect(x0, yy, x0 + 170, yy + 18), this, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
+                CRect(x0, yy, x0 + 170, yy + 18), &m_content, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
             track(m_pageNotifyZmanim, &m_chkNotifyZmanim[i]);
             m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
         }
@@ -2091,7 +2272,7 @@ BOOL COptionsDlg::OnInitDialog()
             max(0, min(3, m_current.notifyMoadimStyle)));
         mkStatic(m_pageNotifyReminders, L"before:", 252, y, 50, 22);
         m_editNotifyMoadimAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-            CRect(304, y, 346, y + 22), this, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
+            CRect(304, y, 346, y + 22), &m_content, IDC_OPT_NOTIFY_MOADIM_OFFSETS);
         track(m_pageNotifyReminders, &m_editNotifyMoadimAmount);
         initCombo(m_pageNotifyReminders, m_cmbNotifyMoadimUnit, 352, y - 1, 84, IDC_OPT_NOTIFY_MOADIM_UNIT,
             { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 2);
@@ -2123,14 +2304,14 @@ BOOL COptionsDlg::OnInitDialog()
         y += 28;
         mkStatic(m_pageNotifyReminders, L"Parsha before:", 42, y, 100, 22);
         m_editNotifyParshaAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-            CRect(144, y, 184, y + 22), this, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
+            CRect(144, y, 184, y + 22), &m_content, IDC_OPT_NOTIFY_PARSHA_OFFSETS);
         track(m_pageNotifyReminders, &m_editNotifyParshaAmount);
         initCombo(m_pageNotifyReminders, m_cmbNotifyParshaUnit, 190, y - 1, 56, IDC_OPT_NOTIFY_PARSHA_UNIT,
             { L"minutes", L"hours", L"days", L"weeks", L"months" }, 3);
         SetOffsetControls(m_current.notifyParshaOffsets, m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
         mkStatic(m_pageNotifyReminders, L"Personal before:", 250, y, 96, 22);
         m_editNotifyPersonalAmount.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER,
-            CRect(342, y, 376, y + 22), this, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
+            CRect(342, y, 376, y + 22), &m_content, IDC_OPT_NOTIFY_PERSONAL_OFFSETS);
         track(m_pageNotifyReminders, &m_editNotifyPersonalAmount);
         initCombo(m_pageNotifyReminders, m_cmbNotifyPersonalUnit, 380, y - 1, 60, IDC_OPT_NOTIFY_PERSONAL_UNIT,
             { L"minutes", L"hours", L"days", L"weeks", L"months", L"years" }, 0);
@@ -2138,16 +2319,16 @@ BOOL COptionsDlg::OnInitDialog()
         y += 32;
         m_btnAdvancedReminders.Create(L"Manage Advanced Reminders...",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(42, y, 254, y + 26), this, IDC_OPT_ADV_REMINDERS);
+            CRect(42, y, 254, y + 26), &m_content, IDC_OPT_ADV_REMINDERS);
         track(m_pageNotifyReminders, &m_btnAdvancedReminders);
         y += 34;
         mkStatic(m_pageNotifyReminders, L"Daily reminder time:", 42, y + 3, 140, 22);
         m_cmbReminderDailyHour.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(184, y, 224, y + 140), this, IDC_OPT_REMIND_DAILY_HOUR);
+            CRect(184, y, 224, y + 140), &m_content, IDC_OPT_REMIND_DAILY_HOUR);
         m_cmbReminderDailyMin.Create( WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(230, y, 270, y + 140), this, IDC_OPT_REMIND_DAILY_MIN);
+            CRect(230, y, 270, y + 140), &m_content, IDC_OPT_REMIND_DAILY_MIN);
         m_cmbReminderDailyAmpm.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-            CRect(276, y, 316, y + 140), this, IDC_OPT_REMIND_DAILY_AMPM);
+            CRect(276, y, 316, y + 140), &m_content, IDC_OPT_REMIND_DAILY_AMPM);
         FillClockCombos(m_cmbReminderDailyHour, m_cmbReminderDailyMin, m_cmbReminderDailyAmpm);
         {
             int h = m_current.reminderDailyHour;
@@ -2187,7 +2368,7 @@ BOOL COptionsDlg::OnInitDialog()
         CButton* chk = new CButton;
         chk->Create(kZmanimBarLabels[i],
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(x0, yy, x0 + 210, yy + 20), this,
+            CRect(x0, yy, x0 + 210, yy + 20), &m_content,
             IDC_OPT_ZBAR_FIRST + i);
         track(m_pageZmanimBar, chk);
         chk->SetCheck((m_current.zmanimBarMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
@@ -2200,13 +2381,12 @@ BOOL COptionsDlg::OnInitDialog()
     // shaah-zmanis-aware sub-pages (Alos, Misheyakir, Sof MA, Sof GRA, Tzais)
     // reuse the existing CButton/CEdit members from the legacy Zmanim tab.
     // =========================================================================
-    // v0.8.83 — TCS_MULTILINE: 10 sub-tabs wrap to 2 rows instead of showing
-    // scroll arrows. zmanPageTop raised to 90 to clear the 2-row tab strip.
-    int zmanPageTop    = 90;
+    // Wrap the method tabs and measure their display area after insertion.
+    int zmanPageTop = 0;
     int zmanPageBottom = H - 56;
     m_zmanimSubTab.Create(
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS | TCS_MULTILINE,
-        CRect(20, 38, W - 20, zmanPageBottom), this, IDC_OPT_ZSUBTAB);
+        CRect(20, 38, W - 20, zmanPageBottom), &m_content, IDC_OPT_ZSUBTAB);
     m_zmanimSubTab.SetFont(pFont);
     {
         TCITEM sti = {};
@@ -2223,6 +2403,14 @@ BOOL COptionsDlg::OnInitDialog()
         }
     }
 
+    // Use the actual tab display area: font metrics and wrapping determine
+    // the header height, rather than a fixed guess at the number of rows.
+    CRect zmanBody;
+    m_zmanimSubTab.GetClientRect(&zmanBody);
+    m_zmanimSubTab.AdjustRect(FALSE, &zmanBody);
+    m_zmanimSubTab.MapWindowPoints(&m_content, &zmanBody);
+    zmanPageTop = zmanBody.top + 12;
+
     // Helper for laying out a preset radio list + custom value edit on a
     // single sub-page. Returns the next free Y position.
     int subId = IDC_OPT_ZSUB_FIRST;
@@ -2232,15 +2420,15 @@ BOOL COptionsDlg::OnInitDialog()
             std::initializer_list<const wchar_t*> presets,
             int startY) -> int
     {
-        int yy = startY + 14;
+        int yy = startY + 28;
         bool first = true;
         for (const wchar_t* name : presets)
         {
-            DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON;
+            DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | BS_AUTORADIOBUTTON;
             if (first) { style |= WS_GROUP; first = false; }
             CButton* r = new CButton;
             r->Create(name, style,
-                CRect(40, yy, 360, yy + 20), this, subId++);
+                CRect(40, yy, W - 40, yy + 22), &m_content, subId++);
             r->SetFont(pFont);
             page.push_back(r);
             radios.push_back(r);
@@ -2277,12 +2465,12 @@ BOOL COptionsDlg::OnInitDialog()
         int yy = startY + 8;
         // Row 1: [x] Custom degrees: [value edit]
         chkDeg.Create(L"Custom degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(40, yy, 168, yy + 20), this, degChkId);
+            CRect(40, yy, 168, yy + 20), &m_content, degChkId);
         chkDeg.SetFont(pFont);
         chkDeg.SetCheck(BST_UNCHECKED);
         page.push_back(&chkDeg);
         editDeg.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
-            CRect(170, yy, 234, yy + 22), this, degValId);
+            CRect(170, yy, 234, yy + 22), &m_content, degValId);
         editDeg.SetFont(pFont);
         page.push_back(&editDeg);
         yy += 28;
@@ -2291,7 +2479,7 @@ BOOL COptionsDlg::OnInitDialog()
         editMin.MoveWindow(150, yy, 62, 22);
         page.push_back(&editMin);
         cmbMode.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            CRect(218, yy - 1, 360, yy + 60), this, modeId);
+            CRect(218, yy - 1, 360, yy + 60), &m_content, modeId);
         cmbMode.SetFont(pFont);
         cmbMode.AddString(L"Fixed minutes");
         cmbMode.AddString(L"Shaah zmanit min");
@@ -2352,6 +2540,7 @@ BOOL COptionsDlg::OnInitDialog()
         { CString sv; sv.Format(L"%.4g", m_current.customMisheyakirValue > 0 ? m_current.customMisheyakirValue : 50.0); m_editCustomMisheyakir.SetWindowText(sv); }
     }
 
+    std::vector<CWnd*> sofZmanCustomControls;
     // ----- Sof Zman MA sub-page (Shma MA + Tfila MA)
     {
         int yy = zmanPageTop;
@@ -2361,10 +2550,12 @@ BOOL COptionsDlg::OnInitDialog()
               L"72 minutes as 16.1 degrees", L"Custom" }, yy);
         int sel = max(0, min(3, m_current.customSofZmanMaPreset));
         m_radSofMAPreset[sel]->SetCheck(BST_CHECKED);
+        const size_t customStart = m_subPageSofMA.size();
         attachCustomZmanControls(m_subPageSofMA, m_editCustomSofZman,
             m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy,
             m_chkSofCustomDeg, m_editCustomSofDeg, m_cmbSofMinutesMode,
             IDC_OPT_SOF_DEG_CHK, IDC_OPT_SOF_DEG_VAL, IDC_OPT_SOF_MIN_MODE);
+        sofZmanCustomControls.assign(m_subPageSofMA.begin() + customStart, m_subPageSofMA.end());
         m_chkSofCustomDeg.SetCheck(m_current.customSofZmanMode == 0 ? BST_CHECKED : BST_UNCHECKED);
         { CString sv; sv.Format(L"%.4g", m_current.customSofZmanDegreesValue); m_editCustomSofDeg.SetWindowText(sv); }
         m_cmbSofMinutesMode.SetCurSel(m_current.customSofZmanMode == 2 ? 1 : 0);
@@ -2380,10 +2571,11 @@ BOOL COptionsDlg::OnInitDialog()
               L"72 minutes as 16.1 degrees", L"Custom" }, yy);
         int sel = max(0, min(3, m_current.customSofZmanGraPreset));
         m_radSofGRAPreset[sel]->SetCheck(BST_CHECKED);
-        attachCustomZmanControls(m_subPageSofGRA, m_editCustomSofZman,
-            m_radSofZmanDegrees, m_radSofZmanMinutes, m_radSofZmanZmanis, yy,
-            m_chkSofCustomDeg, m_editCustomSofDeg, m_cmbSofMinutesMode,
-            IDC_OPT_SOF_DEG_CHK, IDC_OPT_SOF_DEG_VAL, IDC_OPT_SOF_MIN_MODE);
+        // MA and GRA edit the same custom method. Reuse the controls created
+        // above; creating a second HWND on an attached MFC CWnd corrupts its
+        // handle mapping (and asserts in debug builds).
+        m_subPageSofGRA.insert(m_subPageSofGRA.end(),
+            sofZmanCustomControls.begin(), sofZmanCustomControls.end());
     }
 
     // ----- Mincha Gedola sub-page (simple preset + 'Custom (minutes)')
@@ -2438,7 +2630,7 @@ BOOL COptionsDlg::OnInitDialog()
         // v0.8.82 — minutes type dropdown for custom End of Fast
         mkStatic(m_subPageEndFast, L"Minutes type:", 40, yy + 4, 100, 20);
         m_cmbEndFastMinuteMode.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-            CRect(144, yy + 2, 296, yy + 62), this, IDC_OPT_END_FAST_MIN_MODE);
+            CRect(144, yy + 2, 296, yy + 62), &m_content, IDC_OPT_END_FAST_MIN_MODE);
         m_cmbEndFastMinuteMode.SetFont(pFont);
         m_cmbEndFastMinuteMode.AddString(L"Fixed minutes");
         m_cmbEndFastMinuteMode.AddString(L"Shaah zmanit min");
@@ -2469,18 +2661,10 @@ BOOL COptionsDlg::OnInitDialog()
     {
         int yy = zmanPageTop;
         mkStatic(m_subPageShaahZmanit,
-            L"Select the halachic hour (Sha'a Zmanit) used for the bar display "
-            L"and as the time-unit for Sof Shema / Sof Tefilla calculations:",
-            28, yy, W - 56, 28);
-        yy += 34;
-        mkStatic(m_subPageShaahZmanit,
-            L"This is independent of the Sof Zman start-of-day. "
-            L"For example: start from Hanetz (GRA), but measure each hour "
-            L"using MA72 lengths — giving a later Sof Shema.",
-            28, yy, W - 56, 32);
-        yy += 40;
+            L"Halachic hour for the Zmanim bar and Sof Shema / Tefilla:",
+            28, yy, W - 56, 22);
         yy = makePresetSubPage(m_subPageShaahZmanit, m_radShaahZmanitPreset,
-            { L"GRA — Hanetz to Shkia \xF7 12  (shorter in winter, longer in summer)",
+            { L"GRA — Hanetz to Shkia \xF7 12",
               L"MA 72 min — (Hanetz\x2212" L"72) to (Shkia+72) \xF7 12",
               L"MA 90 min — (Hanetz\x2212" L"90) to (Shkia+90) \xF7 12",
               L"16.1 degrees — dawn to nightfall \xF7 12",
@@ -2501,66 +2685,56 @@ BOOL COptionsDlg::OnInitDialog()
         yy += 22;
         m_radSofShaahDisplayed.Create(L"Use selected Sha'a Zmanit above",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-            CRect(54, yy, 300, yy + 20), this, IDC_OPT_SOF_SHA_USE_DISPLAYED);
+            CRect(54, yy, W - 40, yy + 22), &m_content, IDC_OPT_SOF_SHA_USE_DISPLAYED);
         track(m_subPageShaahZmanit, &m_radSofShaahDisplayed);
         m_radSofShaahDisplayed.SetCheck(m_current.sofZmanShaahMode == 0 ? BST_CHECKED : BST_UNCHECKED);
         yy += 24;
         m_radSofShaahBoundary.Create(L"Use Sof Zman method boundaries",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(54, yy, 300, yy + 20), this, IDC_OPT_SOF_SHA_USE_BOUNDARY);
+            CRect(54, yy, W - 40, yy + 22), &m_content, IDC_OPT_SOF_SHA_USE_BOUNDARY);
         track(m_subPageShaahZmanit, &m_radSofShaahBoundary);
         m_radSofShaahBoundary.SetCheck(m_current.sofZmanShaahMode == 1 ? BST_CHECKED : BST_UNCHECKED);
         yy += 28;
 
-        mkStatic(m_subPageShaahZmanit, L"Custom start boundary:", 40, yy, 160, 20);
-        yy += 22;
-        m_radShaahStartDegrees.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_DEG_RAD);
-        track(m_subPageShaahZmanit, &m_radShaahStartDegrees);
-        m_radShaahStartDegrees.SetCheck(m_current.customShaahStartMode == 0 ? BST_CHECKED : BST_UNCHECKED);
-        setEdit(m_subPageShaahZmanit, m_editCustomShaahStartDeg, 184, yy - 1, 58,
-            IDC_OPT_SHAAH_START_DEG_VAL, m_current.customShaahStartDegreesValue);
-        mkStatic(m_subPageShaahZmanit, L"degrees before Hanetz", 248, yy, 160, 20);
-        yy += 26;
-        m_radShaahStartFixed.Create(L"Fixed offset:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_START_FIXED_RAD);
-        track(m_subPageShaahZmanit, &m_radShaahStartFixed);
-        m_radShaahStartFixed.SetCheck(m_current.customShaahStartMode == 1 ? BST_CHECKED : BST_UNCHECKED);
-        setEdit(m_subPageShaahZmanit, m_editCustomShaahStart, 184, yy - 1, 58,
-            IDC_OPT_SHAAH_START_VALUE, m_current.customShaahStartValue);
-        mkStatic(m_subPageShaahZmanit, L"minutes before Hanetz", 248, yy, 160, 20);
-        yy += 32;
-
-        mkStatic(m_subPageShaahZmanit, L"Custom end boundary:", 40, yy, 160, 20);
-        yy += 22;
-        m_radShaahEndDegrees.Create(L"Detect by degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_DEG_RAD);
-        track(m_subPageShaahZmanit, &m_radShaahEndDegrees);
-        m_radShaahEndDegrees.SetCheck(m_current.customShaahEndMode == 0 ? BST_CHECKED : BST_UNCHECKED);
-        setEdit(m_subPageShaahZmanit, m_editCustomShaahEndDeg, 184, yy - 1, 58,
-            IDC_OPT_SHAAH_END_DEG_VAL, m_current.customShaahEndDegreesValue);
-        mkStatic(m_subPageShaahZmanit, L"degrees after Shkia", 248, yy, 150, 20);
-        yy += 26;
-        m_radShaahEndFixed.Create(L"Fixed offset:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-            CRect(54, yy, 178, yy + 20), this, IDC_OPT_SHAAH_END_FIXED_RAD);
-        track(m_subPageShaahZmanit, &m_radShaahEndFixed);
-        m_radShaahEndFixed.SetCheck(m_current.customShaahEndMode == 1 ? BST_CHECKED : BST_UNCHECKED);
-        setEdit(m_subPageShaahZmanit, m_editCustomShaahEnd, 184, yy - 1, 58,
-            IDC_OPT_SHAAH_END_VALUE, m_current.customShaahEndValue);
-        mkStatic(m_subPageShaahZmanit, L"minutes after Shkia", 248, yy, 150, 20);
+        const int boundaryTop = yy;
+        const int boundaryWidth = (W - 80) / 2;
+        auto addBoundary = [&](int x, const wchar_t* title,
+            CButton& degrees, CEdit& degreesValue, UINT degreesId, UINT degreesValueId,
+            CButton& fixed, CEdit& fixedValue, UINT fixedId, UINT fixedValueId,
+            int mode, double degreeSetting, double fixedSetting) {
+            mkGroup(m_subPageShaahZmanit, title, x, boundaryTop, boundaryWidth, 118);
+            const int row = boundaryTop + 26;
+            degrees.Create(L"Degrees:", WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                BS_AUTORADIOBUTTON | WS_GROUP,
+                CRect(x + 12, row, x + 110, row + 22), &m_content, degreesId);
+            track(m_subPageShaahZmanit, &degrees);
+            degrees.SetCheck(mode == 0 ? BST_CHECKED : BST_UNCHECKED);
+            setEdit(m_subPageShaahZmanit, degreesValue, x + 116, row, 64,
+                degreesValueId, degreeSetting);
+            fixed.Create(L"Minutes:", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
+                CRect(x + 12, row + 30, x + 110, row + 52), &m_content, fixedId);
+            track(m_subPageShaahZmanit, &fixed);
+            fixed.SetCheck(mode == 1 ? BST_CHECKED : BST_UNCHECKED);
+            setEdit(m_subPageShaahZmanit, fixedValue, x + 116, row + 30, 64,
+                fixedValueId, fixedSetting);
+        };
+        addBoundary(28, L"Start: before Hanetz",
+            m_radShaahStartDegrees, m_editCustomShaahStartDeg,
+            IDC_OPT_SHAAH_START_DEG_RAD, IDC_OPT_SHAAH_START_DEG_VAL,
+            m_radShaahStartFixed, m_editCustomShaahStart,
+            IDC_OPT_SHAAH_START_FIXED_RAD, IDC_OPT_SHAAH_START_VALUE,
+            m_current.customShaahStartMode, m_current.customShaahStartDegreesValue,
+            m_current.customShaahStartValue);
+        addBoundary(52 + boundaryWidth, L"End: after Shkia",
+            m_radShaahEndDegrees, m_editCustomShaahEndDeg,
+            IDC_OPT_SHAAH_END_DEG_RAD, IDC_OPT_SHAAH_END_DEG_VAL,
+            m_radShaahEndFixed, m_editCustomShaahEnd,
+            IDC_OPT_SHAAH_END_FIXED_RAD, IDC_OPT_SHAAH_END_VALUE,
+            m_current.customShaahEndMode, m_current.customShaahEndDegreesValue,
+            m_current.customShaahEndValue);
     }
 
-    // Move page controls together into the content area. Combo rectangles retain
-    // their drop-down height; only their origin changes.
-    for (CWnd* child = GetWindow(GW_CHILD); child; child = child->GetNextWindow())
-    {
-        if (child->GetSafeHwnd() == m_tab.GetSafeHwnd()) continue;
-        CRect rect;
-        child->GetWindowRect(&rect);
-        ScreenToClient(&rect);
-        rect.OffsetRect(navigationWidth, 0);
-        child->MoveWindow(rect, FALSE);
-    }
+    m_content.CaptureLayout(W);
     W += navigationWidth;
 
     // OK / Cancel buttons
@@ -2708,7 +2882,21 @@ BOOL COptionsDlg::OnInitDialog()
     UpdateColorButtons();
     UpdateNotificationControls();
     ShowOptionsPage(0);
+    // Open comfortably within the current monitor's usable area, including
+    // smaller laptop screens and taskbars on any edge.
+    MONITORINFO monitor = { sizeof(MONITORINFO) };
+    GetMonitorInfo(MonitorFromWindow(GetSafeHwnd(), MONITOR_DEFAULTTONEAREST), &monitor);
+    CRect work(monitor.rcWork);
+    GetWindowRect(&windowRect);
+    const int initialWidth = min(windowRect.Width(), MulDiv(work.Width(), 85, 100));
+    const int initialHeight = min(windowRect.Height(), MulDiv(work.Height(), 85, 100));
+    SetWindowPos(nullptr, work.left + (work.Width() - initialWidth) / 2,
+        work.top + (work.Height() - initialHeight) / 2, initialWidth, initialHeight, SWP_NOZORDER);
+    // Perform just one layout after all settings and the final size are ready.
     m_initialized = true;
+    GetClientRect(&rcClient);
+    LayoutOptions(rcClient.Width(), rcClient.Height());
+    m_content.ShowWindow(SW_SHOW);
     SetDirty(false);
 
     // Initialize tooltips
@@ -2839,13 +3027,17 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_btnApply,  L"Apply settings immediately without closing");
     m_tooltip.AddTool(&m_btnCancel, L"Close without saving any changes");
 
-    return TRUE;
+    // Choose the initial focus explicitly; do not ask the dialog manager to
+    // discover it by traversing every nested settings control during startup.
+    m_tab.SetFocus();
+    return FALSE;
 }
 
 BOOL COptionsDlg::PreTranslateMessage(MSG* pMsg)
 {
     if (m_tooltip.GetSafeHwnd())
         m_tooltip.RelayEvent(pMsg);
+    if (pMsg->message == WM_KEYUP) m_content.EnsureFocusVisible();
     return CDialog::PreTranslateMessage(pMsg);
 }
 
@@ -2975,12 +3167,15 @@ void COptionsDlg::ShowZmanimSubPage(int sub)
 void COptionsDlg::OnCategoryChanged()
 {
     ShowOptionsPage(max(0, m_tab.GetCurSel()));
+    m_content.Layout(true);
 }
 
 // v0.8.0 - Triggered when the user clicks a different Zmanim sub-tab.
 void COptionsDlg::OnZmanimSubTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
 {
+    if (!m_initialized) { *pResult = 0; return; }
     ShowZmanimSubPage(max(0, m_zmanimSubTab.GetCurSel()));
+    m_content.Layout(true);
     *pResult = 0;
 }
 
@@ -3025,13 +3220,29 @@ void COptionsDlg::ShowNotifySubPage(int sub)
 
 void COptionsDlg::OnNotifySubTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
 {
+    if (!m_initialized) { *pResult = 0; return; }
     ShowNotifySubPage(max(0, m_notifySubTab.GetCurSel()));
+    m_content.Layout(true);
     *pResult = 0;
 }
 
 void COptionsDlg::OnSize(UINT nType, int cx, int cy)
 {
     CDialog::OnSize(nType, cx, cy);
+    if (!m_initialized || nType == SIZE_MINIMIZED) return;
+    LayoutOptions(cx, cy);
+}
+
+void COptionsDlg::LayoutOptions(int cx, int cy)
+{
+    // This helper is safe from both WM_SIZE and WM_INITDIALOG. Calling the
+    // message handler directly during initialization lets MFC's Default()
+    // re-dispatch the current WM_INITDIALOG message and initialize recursively.
+    if (m_content.GetSafeHwnd())
+    {
+        m_content.MoveWindow(172, 12, max(120, cx - 184), max(80, cy - 64));
+        m_content.Layout();
+    }
     if (m_tab.GetSafeHwnd())
         m_tab.MoveWindow(12, 16, 152, max(120, cy - 68));
     if (m_btnOK.GetSafeHwnd())
@@ -3040,6 +3251,14 @@ void COptionsDlg::OnSize(UINT nType, int cx, int cy)
         m_btnApply.MoveWindow(max(82, cx - 148), max(10, cy - 38), 68, 26);
     if (m_btnCancel.GetSafeHwnd())
         m_btnCancel.MoveWindow(max(82, cx - 72), max(10, cy - 38), 64, 26);
+}
+
+void COptionsDlg::OnGetMinMaxInfo(MINMAXINFO* info)
+{
+    CDialog::OnGetMinMaxInfo(info);
+    // Keep navigation and the fixed action row usable at the smallest size.
+    info->ptMinTrackSize.x = 440;
+    info->ptMinTrackSize.y = 300;
 }
 
 void COptionsDlg::SetDirty(bool dirty)
@@ -3445,6 +3664,7 @@ void COptionsDlg::OnResetCalendarSettings()
 
 BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 {
+    if (!m_initialized && lParam != 0) return TRUE;
     UINT id = LOWORD(wParam);
     UINT code = HIWORD(wParam);
     if (id == IDC_OPT_RESET_CALENDAR && code == BN_CLICKED)
