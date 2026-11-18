@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // WinLuach - Hebrew Calendar Application
 // File:    OptionsDlg.cpp
 // Purpose: MFC preferences dialog implementation.
@@ -470,7 +470,7 @@ public:
     virtual INT_PTR DoModal() override
     {
         struct DlgTmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } buf = {};
-        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        buf.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
         buf.t.dwExtendedStyle = WS_EX_APPWINDOW;
         buf.t.cx = 380; buf.t.cy = 260;
         wcscpy_s(buf.title, L"Manage Calendars");
@@ -778,7 +778,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 360; b.t.cy = 235;  // expanded for anchor row (v0.8.71)
         wcscpy_s(b.title, L"Reminder");
@@ -1045,7 +1045,7 @@ public:
     INT_PTR DoModal() override
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[40]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
         b.t.cx = 430; b.t.cy = 260;
         wcscpy_s(b.title, L"Advanced Reminders");
@@ -1198,7 +1198,7 @@ BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
     ON_BN_CLICKED(IDC_OPT_SHOW_BEHAB,     &COptionsDlg::OnShowBeHaBChanged) // v0.8.78
     ON_CONTROL_RANGE(BN_CLICKED, IDC_OPT_TRAY_TIP_ZMAN_FIRST, IDC_OPT_TRAY_TIP_ZMAN_FIRST + 30, OnTrayTipZmanClicked)
     ON_CONTROL_RANGE(BN_CLICKED, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST, IDC_OPT_TRAY_TIP_CUSTOM_ZMAN_FIRST + 6, OnTrayTipZmanClicked)
-    ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_TAB,    &COptionsDlg::OnTabChanged)
+    ON_LBN_SELCHANGE(IDC_OPT_TAB, &COptionsDlg::OnCategoryChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_ZSUBTAB, &COptionsDlg::OnZmanimSubTabChanged)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OPT_NOTIFY_SUBTAB, &COptionsDlg::OnNotifySubTabChanged)
     ON_WM_SIZE()
@@ -1445,7 +1445,7 @@ COptionsDlg::COptionsDlg(const AppSettings& current, CWnd* pParent)
 
 static void FillOptionsTemplate(DLGTEMPLATE& t, wchar_t* title)
 {
-    t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+    t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER;
     t.dwExtendedStyle = WS_EX_APPWINDOW;
     t.cdit = 0;
     t.x = 0;
@@ -1512,8 +1512,15 @@ BOOL COptionsDlg::OnInitDialog()
     int W = rcClient.Width();
     int H = rcClient.Height();
 
-    HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-    CFont* pFont = CFont::FromHandle(hFont);
+    // Keep the content coordinates stable; reserve a separate navigation column.
+    constexpr int navigationWidth = 164;
+    CRect windowRect;
+    GetWindowRect(&windowRect);
+    SetWindowPos(nullptr, 0, 0, windowRect.Width() + navigationWidth,
+        windowRect.Height(), SWP_NOMOVE | SWP_NOZORDER);
+    CenterWindow();
+    m_optionsFont.CreatePointFont(90, L"Segoe UI");
+    CFont* pFont = &m_optionsFont;
 
     m_pageGeneral.clear();
     m_pageMonth.clear();
@@ -1551,29 +1558,22 @@ BOOL COptionsDlg::OnInitDialog()
     m_radTzaisPreset.clear();
     m_radShaahZmanitPreset.clear();    // v0.8.83
 
-    // v0.8.2 - WS_CLIPSIBLINGS so this main tab control does not paint over
-    // its sibling sub-tab control inside the Zmanim page area.
-    m_tab.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_TABS,
-        CRect(6, 6, W - 6, H - 48), this, IDC_OPT_TAB);
+    // All categories remain visible, without horizontal tab scrolling.
+    m_tab.CreateEx(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_HASSTRINGS |
+        LBS_NOINTEGRALHEIGHT, CRect(12, 16, navigationWidth, H - 52), this, IDC_OPT_TAB);
     m_tab.SetFont(pFont);
-    TCITEM ti = {};
-    ti.mask = TCIF_TEXT;
-    // v0.8.0 tab order: General, Month View, Interface, Tray Tooltip,
-    // Zmanim Bar, Colors, Zmanim, Notifications.  "Zman Shitos" merged
-    // into the Zmanim tab as sub-tabs.
-    ti.pszText = const_cast<LPWSTR>(L"General");      m_tab.InsertItem(0, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Month View");   m_tab.InsertItem(1, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Interface");    m_tab.InsertItem(2, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Tray Tooltip"); m_tab.InsertItem(3, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Zmanim Bar");   m_tab.InsertItem(4, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Colors");       m_tab.InsertItem(5, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Zmanim");       m_tab.InsertItem(6, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Notifications"); m_tab.InsertItem(7, &ti);
-    ti.pszText = const_cast<LPWSTR>(L"Year Details");  m_tab.InsertItem(8, &ti);
+    for (const wchar_t* category : { L"General", L"Month View", L"Startup & Tray",
+        L"Tray Tooltip", L"Zmanim Bar", L"Colors", L"Zmanim", L"Notifications", L"Year Details" })
+        m_tab.AddString(category);
+    m_tab.SetCurSel(0);
 
     auto track = [&](std::vector<CWnd*>& page, CWnd* wnd) {
         page.push_back(wnd);
         wnd->SetFont(pFont);
+        if (wnd->IsKindOf(RUNTIME_CLASS(CButton)) &&
+            (wnd->GetStyle() & BS_TYPEMASK) != BS_GROUPBOX)
+            wnd->ModifyStyle(0, WS_TABSTOP);
     };
     int staticId = 8000;
     auto mkGroup = [&](std::vector<CWnd*>& page, const wchar_t* text, int x, int y, int w, int h) {
@@ -1626,7 +1626,7 @@ BOOL COptionsDlg::OnInitDialog()
           L"Larger (17)", L"Big (18)", L"Biggest (19)" },
         max(0, min(6, m_current.fontSize)));
     y = 138;
-    mkGroup(m_pageGeneral, L"Reset", 14, y, W - 28, 78); y += 24;
+    mkGroup(m_pageGeneral, L"Reset calendar", 14, y, W - 28, 86); y += 24;
     mkStatic(m_pageGeneral, L"Restore all calendar settings to their defaults.", 28, y, W - 56, 20);
     y += 26;
     m_btnResetCalendar.Create(L"Reset Calendar Settings...",
@@ -1635,8 +1635,8 @@ BOOL COptionsDlg::OnInitDialog()
     track(m_pageGeneral, &m_btnResetCalendar);
 
     // Auto-Update group
-    y = 216;
-    mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 110); y += 22;
+    y = 236;
+    mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 140); y += 22;
     m_chkDisableAutoUpdate.Create(L"Disable all update checks", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 220, y + 20), this, IDC_OPT_DISABLE_AUTOUPDATE);
     track(m_pageGeneral, &m_chkDisableAutoUpdate); y += 26;
@@ -1656,7 +1656,7 @@ BOOL COptionsDlg::OnInitDialog()
     track(m_pageGeneral, &m_btnCheckUpdatesNow);
 
     y = 38;
-    mkGroup(m_pageMonth, L"Month View", 14, y, W - 28, 118); y += 20;
+    mkGroup(m_pageMonth, L"Calendar events & daily learning", 14, y, W - 28, 146); y += 20;
     m_chkParshios.Create(L"Parshios", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 150, y + 20), this, IDC_OPT_PARSHIOS); track(m_pageMonth, &m_chkParshios);
     m_chkDafYomi.Create(L"Daf yomi", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
@@ -1675,8 +1675,8 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(240, y, 395, y + 20), this, IDC_OPT_TANACH); track(m_pageMonth, &m_chkTanach);
 
     // --- v0.8.78: Fast Days group (moved from Zmanim tab + new BeHaB options) ---
-    y = 164;
-    mkGroup(m_pageMonth, L"Fast Days", 14, y, W - 28, 96); y += 22;
+    y = 196;
+    mkGroup(m_pageMonth, L"Fast Days", 14, y, W - 28, 104); y += 22;
 
     // Chatzos on fast days (moved from Zmanim tab)
     m_chkChatzosOnFasts.Create(L"Show chatzos on fast-day cells",
@@ -1699,7 +1699,7 @@ BOOL COptionsDlg::OnInitDialog()
     track(m_pageMonth, &m_chkChatzosOnBeHaB);
 
     // ── Display: Hebrew text options ──────────────────────────────────────
-    y = 268;
+    y = 312;
     mkGroup(m_pageMonth, L"Hebrew Display", 14, y, W - 28, 70); y += 22;
     m_chkHebrewScript.Create(L"Use Hebrew lettering  (ראשון, תשרי...)",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
@@ -1713,7 +1713,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // v0.8.82 — moved Holiday Schedule below the Updates group (y=330)
     // to fix overlap with Reset group (both were at y=138 previously).
-    y = 330;
+    y = 390;
 
     mkGroup(m_pageGeneral, L"Holiday Schedule", 14, y, W - 28, 54); y += 22;
     m_radDiaspora.Create(L"Diaspora (outside Israel)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
@@ -1722,28 +1722,30 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(240, y, 330, y + 20), this, IDC_OPT_RAD_ISRAEL); track(m_pageGeneral, &m_radIsrael);
     y = 38;
 
-    mkGroup(m_pageInterface, L"Interface", 14, y, W - 28, 280); y += 20;
+    mkGroup(m_pageInterface, L"Startup & calendars", 14, y, W - 28, 86); y += 20;
 
     // ── General (non-tray) options ────────────────────────────────────────────
     m_btnManageCals.Create(L"Manage Calendars...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(28, y, 200, y + 24), this, IDC_OPT_MANAGE_CALS); track(m_pageInterface, &m_btnManageCals);
-    m_chkStartWithWindows.Create(L"start with Windows", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+    m_chkStartWithWindows.Create(L"Start with Windows", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(215, y + 4, 360, y + 24), this, IDC_OPT_START_WINDOWS); track(m_pageInterface, &m_chkStartWithWindows);
     y += 30;
-    m_chkDesktopShortcut.Create(L"desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+    m_chkDesktopShortcut.Create(L"Desktop shortcut", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 180, y + 20), this, IDC_OPT_DESKTOP); track(m_pageInterface, &m_chkDesktopShortcut);
     y += 30;
 
     // ── System Tray ───────────────────────────────────────────────────────────
-    mkGroup(m_pageInterface, L"System Tray", 20, y, W - 40, 192); y += 20;
+    y += 12;
+    mkGroup(m_pageInterface, L"System tray", 14, y, W - 28, 226);
+    y += 20;
     m_chkShowTrayIcon.Create(L"Pin WinLuach to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 230, y + 20), this, IDC_OPT_SHOW_TRAY); track(m_pageInterface, &m_chkShowTrayIcon); y += 24;
     m_chkMinimizeToTray.Create(L"Minimize to system tray", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y, 185, y + 20), this, IDC_OPT_MIN_TRAY); track(m_pageInterface, &m_chkMinimizeToTray);
-    initCombo(m_pageInterface, m_cmbTrayWhen, 190, y - 1, 160, IDC_OPT_TRAY_WHEN,
+    initCombo(m_pageInterface, m_cmbTrayWhen, 200, y - 1, 220, IDC_OPT_TRAY_WHEN,
         { L"when minimized", L"when closed", L"when minimized or closed" },
         max(0, min(2, m_current.minimizeTrayWhen)));
-    m_chkMinimizeOnStartup.Create(L"minimize on startup", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+    m_chkMinimizeOnStartup.Create(L"Start minimized", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         CRect(28, y + 24, 190, y + 44), this, IDC_OPT_MIN_STARTUP); track(m_pageInterface, &m_chkMinimizeOnStartup); y += 48;
     mkStatic(m_pageInterface, L"Tray text", 28, y, 75, 22);
     m_btnTrayTextColor.Create(L"Color...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -1751,7 +1753,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_btnTrayFont.Create(L"Font...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(188, y, 262, y + 24), this, IDC_OPT_TRAY_FONT); track(m_pageInterface, &m_btnTrayFont);
     y += 30;
-    m_chkTrayBackEnabled.Create(L"tray background", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+    m_chkTrayBackEnabled.Create(L"Tray background", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
         CRect(28, y, 152, y + 20), this, IDC_OPT_TRAY_BACK_ENABLED); track(m_pageInterface, &m_chkTrayBackEnabled);
     m_btnTrayBackColor.Create(L"Background...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         CRect(160, y - 2, 270, y + 22), this, IDC_OPT_TRAY_BACK_COLOR); track(m_pageInterface, &m_btnTrayBackColor);
@@ -1764,7 +1766,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Tray Tooltip tab
     y = 38;
-    mkGroup(m_pageTrayTooltip, L"Items Shown In Today's Tray Tooltip", 14, y, W - 28, 358); y += 22;
+    mkGroup(m_pageTrayTooltip, L"Items Shown In Today's Tray Tooltip", 14, y, W - 28, 376); y += 22;
     // v0.8.82 — instruction label + max-5 warning
     m_statTrayTipInstruction.Create(L"Select up to 5 zmanim to display in the tray tooltip:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -1791,7 +1793,7 @@ BOOL COptionsDlg::OnInitDialog()
         m_chkTrayTooltipZmanim[i].SetCheck((m_current.trayTooltipZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
     }
     // Custom (user-configured shita) zmanim for tray tooltip
-    y = 382;
+    y = 426;
     mkGroup(m_pageTrayTooltip, L"Custom Zmanim (your configured shita)", 14, y, W - 28, 112); y += 22;
     for (int i = 0; i < kTrayTooltipCustomZmanCount; ++i)
     {
@@ -1823,7 +1825,7 @@ BOOL COptionsDlg::OnInitDialog()
     }
 
     // Colors tab
-    mkGroup(m_pageColors, L"Calendar Cell and Text Colors", 14, 38, W - 28, 304);
+    mkGroup(m_pageColors, L"Calendar Cell and Text Colors", 14, 38, W - 28, 324);
     mkStatic(m_pageColors, L"Text", 28, 63, 55, 20);
     m_cmbColorItem.Create(WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
         CRect(86, 60, 256, 220), this, IDC_OPT_COLOR_ITEM);
@@ -2548,6 +2550,19 @@ BOOL COptionsDlg::OnInitDialog()
         mkStatic(m_subPageShaahZmanit, L"minutes after Shkia", 248, yy, 150, 20);
     }
 
+    // Move page controls together into the content area. Combo rectangles retain
+    // their drop-down height; only their origin changes.
+    for (CWnd* child = GetWindow(GW_CHILD); child; child = child->GetNextWindow())
+    {
+        if (child->GetSafeHwnd() == m_tab.GetSafeHwnd()) continue;
+        CRect rect;
+        child->GetWindowRect(&rect);
+        ScreenToClient(&rect);
+        rect.OffsetRect(navigationWidth, 0);
+        child->MoveWindow(rect, FALSE);
+    }
+    W += navigationWidth;
+
     // OK / Cancel buttons
     m_btnOK.Create(L"OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
@@ -2957,10 +2972,9 @@ void COptionsDlg::ShowZmanimSubPage(int sub)
     }
 }
 
-void COptionsDlg::OnTabChanged(NMHDR* /*pNMHDR*/, LRESULT* pResult)
+void COptionsDlg::OnCategoryChanged()
 {
     ShowOptionsPage(max(0, m_tab.GetCurSel()));
-    *pResult = 0;
 }
 
 // v0.8.0 - Triggered when the user clicks a different Zmanim sub-tab.
@@ -3019,7 +3033,7 @@ void COptionsDlg::OnSize(UINT nType, int cx, int cy)
 {
     CDialog::OnSize(nType, cx, cy);
     if (m_tab.GetSafeHwnd())
-        m_tab.MoveWindow(6, 6, max(120, cx - 12), max(120, cy - 54));
+        m_tab.MoveWindow(12, 16, 152, max(120, cy - 68));
     if (m_btnOK.GetSafeHwnd())
         m_btnOK.MoveWindow(max(10, cx - 224), max(10, cy - 38), 68, 26);
     if (m_btnApply.GetSafeHwnd())
