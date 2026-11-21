@@ -1720,6 +1720,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_subPageTzais.clear();
     m_subPageShaahZmanit.clear();      // v0.8.83
     m_pageNotifyGeneral.clear();
+    m_pageNotifyDetails.clear();
     m_pageNotifyZmanim.clear();
     m_pageNotifyReminders.clear();
     m_zmanimBarChecks.clear();
@@ -2132,12 +2133,28 @@ BOOL COptionsDlg::OnInitDialog()
         {
             TCITEM sti = {};
             sti.mask = TCIF_TEXT;
-            const wchar_t* subNames[] = { L"General", L"Zmanim", L"Reminders" };
-            for (int i = 0; i < 3; ++i) {
+            const wchar_t* subNames[] = { L"General", L"Zmanim", L"Reminders", L"Toast details" };
+            for (int i = 0; i < 4; ++i) {
                 sti.pszText = const_cast<LPWSTR>(subNames[i]);
                 m_notifySubTab.InsertItem(i, &sti);
             }
         }
+
+        const wchar_t* detailLabels[] = {
+            L"Show end of Shabbos in every toast during Shabbos",
+            L"Show end of Yom Tov in every toast (dark orange)",
+            L"Show fast end time in every toast on fast days",
+            L"Show the previous zman that has passed",
+            L"Show how much time has elapsed since the previous zman" };
+        bool detailValues[] = { m_current.toastShowShabbosEnd, m_current.toastShowYomTovEnd, m_current.toastShowFastEnd, m_current.toastShowPreviousZman, m_current.toastShowElapsed };
+        for (int i = 0; i < 5; ++i) {
+            m_toastDetails[i].Create(detailLabels[i], WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(32, notifyPageTop + 8 + i * 32, W - 32, notifyPageTop + 36 + i * 32), &m_content, 8300 + i);
+            track(m_pageNotifyDetails, &m_toastDetails[i]);
+            m_toastDetails[i].SetCheck(detailValues[i]);
+        }
+        mkStatic(m_pageNotifyDetails, L"Shabbos and Yom Tov end times appear from candle lighting until nightfall.\nWinLuach Toast refreshes elapsed time while open. Windows notifications show a snapshot.",
+            32, notifyPageTop + 184, W - 64, 68);
 
         // ── General sub-page ──────────────────────────────────────────────
         y = notifyPageTop;
@@ -3187,6 +3204,7 @@ void COptionsDlg::HideAllNotifySubPages()
         for (CWnd* c : v) if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
     };
     hide(m_pageNotifyGeneral);
+    hide(m_pageNotifyDetails);
     hide(m_pageNotifyZmanim);
     hide(m_pageNotifyReminders);
 }
@@ -3194,9 +3212,9 @@ void COptionsDlg::HideAllNotifySubPages()
 void COptionsDlg::ShowNotifySubPage(int sub)
 {
     std::vector<CWnd*>* pages[] = {
-        &m_pageNotifyGeneral, &m_pageNotifyZmanim, &m_pageNotifyReminders
+        &m_pageNotifyGeneral, &m_pageNotifyZmanim, &m_pageNotifyReminders, &m_pageNotifyDetails
     };
-    const int count = 3;
+    const int count = 4;
     for (int i = 0; i < count; ++i)
         for (CWnd* c : *pages[i])
             if (c && c->GetSafeHwnd()) c->ShowWindow(SW_HIDE);
@@ -4134,6 +4152,11 @@ void COptionsDlg::ReadControlsIntoResult()
     }
     m_result.notifyParshaOffsets = ReadOffsetControls(m_editNotifyParshaAmount, m_cmbNotifyParshaUnit);
     m_result.notifyPersonalOffsets = ReadOffsetControls(m_editNotifyPersonalAmount, m_cmbNotifyPersonalUnit);
+    m_result.toastShowShabbosEnd = m_toastDetails[0].GetSafeHwnd() && m_toastDetails[0].GetCheck() == BST_CHECKED;
+    m_result.toastShowYomTovEnd = m_toastDetails[1].GetSafeHwnd() && m_toastDetails[1].GetCheck() == BST_CHECKED;
+    m_result.toastShowFastEnd = m_toastDetails[2].GetSafeHwnd() && m_toastDetails[2].GetCheck() == BST_CHECKED;
+    m_result.toastShowPreviousZman = m_toastDetails[3].GetSafeHwnd() && m_toastDetails[3].GetCheck() == BST_CHECKED;
+    m_result.toastShowElapsed = m_toastDetails[4].GetSafeHwnd() && m_toastDetails[4].GetCheck() == BST_CHECKED;
     m_result.useWinLuachToast = (m_radUseWinLuachToast.GetSafeHwnd() &&
                                   m_radUseWinLuachToast.GetCheck() == BST_CHECKED);
     { CString dur; m_editToastDuration.GetWindowText(dur);

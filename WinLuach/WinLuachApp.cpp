@@ -129,7 +129,8 @@ BOOL CWinLuachApp::InitInstance()
     LPCWSTR cmd = GetCommandLineW();
     if (cmd)
     {
-        if (wcsstr(cmd, L"/countdown")) action = 1;
+        if (wcsstr(cmd, L"/scheduler")) action = 3;
+        else if (wcsstr(cmd, L"/countdown")) action = 1;
         else if (wcsstr(cmd, L"/options")) action = 2;
     }
 
@@ -139,7 +140,7 @@ BOOL CWinLuachApp::InitInstance()
         if (HWND hwnd = FindWindowW(nullptr, L"WinLuach - Hebrew Calendar"))
         {
             PostMessageW(hwnd, WM_WINLUACH_COMMAND, (WPARAM)action, 0);
-            SetForegroundWindow(hwnd);
+            if (action != 3) SetForegroundWindow(hwnd);
         }
         CloseHandle(m_singleInstanceMutex);
         m_singleInstanceMutex = nullptr;
@@ -151,6 +152,7 @@ BOOL CWinLuachApp::InitInstance()
 
     // Load saved settings (fills with defaults on first run)
     LoadSettings(m_settings);
+    if (action == 3 && !m_settings.scheduledLaunchWhenClosed) return FALSE;
 
     // Create and show the main frame
     CMainFrame* pFrame = new CMainFrame();
@@ -162,7 +164,7 @@ BOOL CWinLuachApp::InitInstance()
     // Register Jump List tasks (taskbar right-click menu).
     RegisterJumpList();
 
-    if (m_settings.minimizeToTray && m_settings.minimizeOnStartup)
+    if (action == 3 || (m_settings.minimizeToTray && m_settings.minimizeOnStartup))
     {
         pFrame->ShowWindow(SW_HIDE);
     }
@@ -171,6 +173,8 @@ BOOL CWinLuachApp::InitInstance()
         pFrame->ShowWindow(SW_SHOW);
         pFrame->UpdateWindow();
     }
+
+    pFrame->CheckObservanceAutomation();
 
     // Route to the requested view (countdown clock or options) if specified.
     if (action != 0)

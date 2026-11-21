@@ -26,6 +26,12 @@
 #include "Version.h"
 #include "UpdateChecker.h"
 #include <urlmon.h>
+#include <atlbase.h>
+#include <taskschd.h>
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
+#pragma comment(lib, "taskschd.lib")
+#pragma comment(lib, "oleaut32.lib")
 #include <fstream>
 #include <thread>
 #include <commctrl.h>
@@ -409,6 +415,10 @@ static CTime DateTimeForZman(const GregorianDate& g, const TimeOfDay& t)
     return CTime(g.year, g.month, g.day, max(0, t.hour), max(0, t.minute), max(0, t.second));
 }
 
+#include "ObservanceContext.h"
+
+#include "ObservanceAutomation.h"
+
 static bool ParseUserClockTime(std::wstring text, int& hour, int& minute)
 {
     text = WebCalTrim(text);
@@ -613,6 +623,7 @@ protected:
         TCITEM ti = {}; ti.mask = TCIF_TEXT;
         ti.pszText = const_cast<LPWSTR>(L"Appearance"); m_tabCtrl.InsertItem(0, &ti);
         ti.pszText = const_cast<LPWSTR>(L"Zmanim");     m_tabCtrl.InsertItem(1, &ti);
+        ti.pszText = const_cast<LPWSTR>(L"Schedule"); m_tabCtrl.InsertItem(2, &ti);
 
         auto mkStaticP = [&](const wchar_t* text, int x, int y, int w, int h, std::vector<CWnd*>& page) {
             CStatic* s = new CStatic;
@@ -730,6 +741,40 @@ protected:
         m_page1.push_back(&m_chkAlwaysOnTop);
         m_tooltip.AddTool(&m_chkAlwaysOnTop, L"Keep the clock Always on Top when it reopens, matching its last state");
 
+        m_chkShabbosEnd.Create(L"Show Motzei Shabbos row from candles until nightfall",
+            WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX, CRect(10, 302, W - 10, 326), this, 5952);
+        m_chkShabbosEnd.SetFont(pF);
+        m_chkShabbosEnd.SetCheck(m_settings.countdownShowShabbosEnd);
+        m_page1.push_back(&m_chkShabbosEnd);
+
+        const wchar_t* scheduleLabels[] = {
+            L"Open countdown at Shabbos / Yom Tov candle lighting",
+            L"Minimize WinLuach at candle lighting",
+            L"Launch only countdown even when WinLuach is closed",
+            L"Always on top for scheduled countdown",
+            L"Use saved desktop placement every Shabbos / Yom Tov",
+            L"Mute Windows audio at Shabbos / Yom Tov candles" };
+        bool scheduleValues[] = { m_settings.scheduledCountdown, m_settings.scheduledMinimize,
+            m_settings.scheduledLaunchWhenClosed, m_settings.scheduledTopmost,
+            m_settings.scheduledUsePlacement, m_settings.muteAtCandleLighting };
+        for (int i = 0; i < 6; ++i) {
+            m_scheduleChecks[i].Create(scheduleLabels[i], WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+                CRect(10, 44 + i * 32, W - 10, 72 + i * 32), this, 5960 + i);
+            m_scheduleChecks[i].SetFont(pF); m_scheduleChecks[i].SetCheck(scheduleValues[i]);
+            m_page3.push_back(&m_scheduleChecks[i]);
+        }
+        mkStaticP(L"Place and size the countdown where you want it, then save.",
+            10, 246, W - 20, 24, m_page3);
+        m_btnSavePlacement.Create(L"Save current countdown placement", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+            CRect(10, 276, W - 10, 306), this, 5966);
+        m_btnSavePlacement.SetFont(pF); m_page3.push_back(&m_btnSavePlacement);
+        mkStaticP(L"Moving the clock later will not overwrite this placement.",
+            10, 314, W - 20, 24, m_page3);
+        mkStaticP(L"Windows must be awake and you must be signed in.",
+            10, 348, W - 20, 20, m_page3);
+        mkStaticP(L"Audio stays muted until you unmute it.",
+            10, 372, W - 20, 20, m_page3);
+
         // ── Zmanim page ───────────────────────────────────────────────
         {
             CStatic* znote = new CStatic;
@@ -797,6 +842,7 @@ protected:
     {
         for (CWnd* c : m_page1) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 0 ? SW_SHOW : SW_HIDE);
         for (CWnd* c : m_page2) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 1 ? SW_SHOW : SW_HIDE);
+        for (CWnd* c : m_page3) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 2 ? SW_SHOW : SW_HIDE);
     }
 
     BOOL OnNotify(WPARAM wParam, LPARAM lParam, LRESULT* pResult) override
@@ -820,6 +866,11 @@ protected:
 
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
     {
+        if (LOWORD(wParam) == 5966) {
+            if (m_pFrame) m_pFrame->SaveCountdownPlacement(m_settings);
+            m_scheduleChecks[4].SetCheck(m_settings.scheduledUsePlacement);
+            m_btnApply.EnableWindow(TRUE); return TRUE;
+        }
         HWND h = (HWND)lParam;
         if (HIWORD(wParam) == BN_CLICKED && h)
         {
@@ -899,6 +950,16 @@ protected:
             if (m_chkZmanim[i].GetSafeHwnd() && m_chkZmanim[i].GetCheck() == BST_CHECKED)
                 mask |= (1u << i);
         m_settings.countdownZmanimMask = mask;
+        m_settings.countdownShowShabbosEnd = m_chkShabbosEnd.GetCheck() == BST_CHECKED;
+        bool* scheduleFlags[] = { &m_settings.scheduledCountdown, &m_settings.scheduledMinimize,
+            &m_settings.scheduledLaunchWhenClosed, &m_settings.scheduledTopmost,
+            &m_settings.scheduledUsePlacement, &m_settings.muteAtCandleLighting };
+        for (int i = 0; i < 6; ++i) *scheduleFlags[i] = m_scheduleChecks[i].GetCheck() == BST_CHECKED;
+        if (m_settings.scheduledLaunchWhenClosed) {
+            m_settings.scheduledCountdown = true;
+            m_scheduleChecks[0].SetCheck(BST_CHECKED);
+        }
+
 
         if (m_chkOpenOnStartup.GetSafeHwnd())
             m_settings.countdownOpenOnStartup = (m_chkOpenOnStartup.GetCheck() == BST_CHECKED);
@@ -962,7 +1023,7 @@ private:
     int          m_nextId = 0;
     CTabCtrl     m_tabCtrl;
     CToolTipCtrl m_tooltip;
-    std::vector<CWnd*> m_page1, m_page2;
+    std::vector<CWnd*> m_page1, m_page2, m_page3;
 
     // Appearance tab rows
     CEdit   m_editTitleFace,   m_editTitleSize;
@@ -979,7 +1040,8 @@ private:
     CButton m_chkZmanim[32];
 
     // Startup / window-state options
-    CButton m_chkOpenOnStartup, m_chkAlwaysOnTop;
+    CButton m_chkOpenOnStartup, m_chkAlwaysOnTop, m_chkShabbosEnd;
+    CButton m_scheduleChecks[6], m_btnSavePlacement;
 
     // Dialog buttons
     CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
@@ -989,6 +1051,13 @@ class CCountdownClockWnd : public CFrameWnd
 {
 public:
     explicit CCountdownClockWnd(CMainFrame* frame) : m_pFrame(frame) {}
+
+    void SetTopmost(bool value)
+    {
+        m_alwaysOnTop = value;
+        SetWindowPos(value ? &wndTopMost : &wndNoTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        RebuildMenuBar(); UpdateTopmostUi(false);
+    }
 
     BOOL CreateClock()
     {
@@ -1305,6 +1374,8 @@ protected:
             now.Format(liveFmt).GetString(),
             now.Format(L"%A, %B %d, %Y").GetString());
 
+        CString shabbosEnd = ObservanceEndText(ActiveObservance(*m_pFrame, now, true), L"Motzei Shabbos");
+
         // Determine visible sections and distribute height
         struct Section {
             bool       visible;
@@ -1317,15 +1388,17 @@ protected:
             COLORREF   backColor;
         };
         Section sections[] = {
+            { s.countdownShowShabbosEnd && !shabbosEnd.IsEmpty(), shabbosEnd, FW_BOLD, false,
+                s.countdownCurrentFontFace, s.countdownCurrentFontSize, RGB(0, 90, 180), (COLORREF)s.countdownCurrentBackColor },
             { s.countdownShowTitle,    title,    s.countdownTitleBold   ? FW_BOLD : FW_NORMAL, s.countdownTitleItalic,   s.countdownTitleFontFace,   s.countdownTitleFontSize,   (COLORREF)s.countdownTitleTextColor,   (COLORREF)s.countdownTitleBackColor   },
             { s.countdownShowClock,    countdown,s.countdownClockBold   ? FW_BOLD : FW_NORMAL, s.countdownClockItalic,   s.countdownClockFontFace,   s.countdownClockFontSize,   (COLORREF)s.countdownClockTextColor,   (COLORREF)s.countdownClockBackColor   },
             { s.countdownShowZmanTime, zmanTime, s.countdownCurrentBold ? FW_BOLD : FW_NORMAL, s.countdownCurrentItalic, s.countdownCurrentFontFace, s.countdownCurrentFontSize, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor },
             { s.countdownShowLive,     live,     s.countdownLiveBold    ? FW_BOLD : FW_NORMAL, s.countdownLiveItalic,    s.countdownLiveFontFace,    s.countdownLiveFontSize,    (COLORREF)s.countdownLiveTextColor,    (COLORREF)s.countdownLiveBackColor    },
         };
         // Weights: title=2, clock=4, zmanTime=2, live=2 → total 10 when all visible
-        int weights[] = { 2, 4, 2, 2 };
+        int weights[] = { 2, 2, 4, 2, 2 };
         int totalWeight = 0;
-        for (int i = 0; i < 4; ++i) if (sections[i].visible) totalWeight += weights[i];
+        for (int i = 0; i < 5; ++i) if (sections[i].visible) totalWeight += weights[i];
         if (totalWeight == 0) return;
 
         int totalH = rc.Height();
@@ -1338,18 +1411,19 @@ protected:
             MakeFont(f, sec.face, (int)round(sec.size * scale), sec.fontWeight, sec.italic);
             CRect area(0, curY, rc.Width(), curY + h);
             dc.FillSolidRect(area, sec.backColor);
-            dc.SelectObject(&f);
+            CFont* previousFont = dc.SelectObject(&f);
             dc.SetTextColor(sec.textColor);
             dc.SetBkColor(sec.backColor);
             CRect drawRc = area; drawRc.DeflateRect(8, 2);
             dc.DrawText(sec.text, drawRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            dc.SelectObject(previousFont);
         };
 
         int distributed = 0;
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             if (!sections[i].visible) continue;
-            int h = (i < 3) ? (totalH * weights[i] / totalWeight) : (totalH - distributed);
+            int h = (i < 4) ? (totalH * weights[i] / totalWeight) : (totalH - distributed);
             draw(sections[i], h);
             curY += h;
             distributed += h;
@@ -3194,9 +3268,9 @@ class CWinLuachToastWnd : public CWnd
 {
 public:
     static CWinLuachToastWnd* Show(const std::wstring& title, const std::wstring& body,
-                                   DWORD durationMs, CWinLuachToastWnd** ppSelf)
+                                   DWORD durationMs, CWinLuachToastWnd** ppSelf, CMainFrame* frame)
     {
-        auto* w = new CWinLuachToastWnd(title, body, durationMs, ppSelf);
+        auto* w = new CWinLuachToastWnd(title, body, durationMs, ppSelf, frame);
         if (!w->CreateToast()) { delete w; return nullptr; }
         return w;
     }
@@ -3205,6 +3279,7 @@ protected:
     afx_msg void OnPaint()
     {
         CPaintDC dc(this);
+        int savedDC = dc.SaveDC();
         CRect rc; GetClientRect(&rc);
 
         // Background
@@ -3240,8 +3315,20 @@ protected:
         CRect rcBody(12, 32, rc.right - 12, rc.bottom - 8);
         dc.SelectObject(&fBody);
         dc.SetTextColor(RGB(210, 210, 210));
-        dc.DrawText(m_body.c_str(), (int)m_body.size(), rcBody,
-            DT_LEFT | DT_TOP | DT_WORDBREAK | DT_END_ELLIPSIS);
+        CRect measure = rcBody;
+        dc.DrawText(m_body.c_str(), (int)m_body.size(), measure, DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+        rcBody.bottom = min(rcBody.bottom, rcBody.top + measure.Height());
+        dc.DrawText(m_body.c_str(), (int)m_body.size(), rcBody, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS | DT_NOPREFIX);
+        int y = rcBody.bottom + 8;
+        for (const auto& row : BuildToastDetails(m_frame)) {
+            CRect line(12, y, rc.right - 12, y + 20), size = line;
+            dc.DrawText(row.text.c_str(), -1, size, DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+            line.bottom = min(rc.bottom - 8, y + size.Height());
+            dc.SetTextColor(row.color);
+            dc.DrawText(row.text.c_str(), -1, line, DT_WORDBREAK | DT_NOPREFIX);
+            y = line.bottom + 6;
+        }
+        dc.RestoreDC(savedDC);
     }
 
     afx_msg void OnLButtonDown(UINT, CPoint pt)
@@ -3255,11 +3342,12 @@ protected:
     afx_msg void OnTimer(UINT_PTR id)
     {
         if (id == 1) Close();
+        else if (id == 2) { ResizeToast(); Invalidate(FALSE); }
     }
 
     afx_msg void OnDestroy()
     {
-        KillTimer(1);
+        KillTimer(1); KillTimer(2);
         if (m_ppSelf && *m_ppSelf == this) *m_ppSelf = nullptr;
         CWnd::OnDestroy();
     }
@@ -3270,15 +3358,16 @@ private:
     std::wstring       m_title, m_body;
     DWORD              m_durationMs;
     CWinLuachToastWnd** m_ppSelf;
+    CMainFrame* m_frame = nullptr;
 
     CWinLuachToastWnd(const std::wstring& title, const std::wstring& body,
-                      DWORD durationMs, CWinLuachToastWnd** ppSelf)
-        : m_title(title), m_body(body), m_durationMs(durationMs), m_ppSelf(ppSelf) {}
+                      DWORD durationMs, CWinLuachToastWnd** ppSelf, CMainFrame* frame)
+        : m_title(title), m_body(body), m_durationMs(durationMs), m_ppSelf(ppSelf), m_frame(frame) {}
 
     bool CreateToast()
     {
         // Size and position: bottom-right above taskbar
-        const int W = 340, H = 100;
+        const int W = 380, H = 100;
         RECT wa = {};
         SystemParametersInfo(SPI_GETWORKAREA, 0, &wa, 0);
         int x = wa.right - W - 12;
@@ -3296,17 +3385,33 @@ private:
             x, y, W, H, nullptr, nullptr))
             return false;
 
+        ResizeToast();
         ShowWindow(SW_SHOWNOACTIVATE);
         UpdateWindow();
+        SetTimer(2, 1000, nullptr);
         SetTimer(1, m_durationMs > 0 ? m_durationMs : 5000, nullptr);
         return true;
     }
 
-    void Close()
+    void ResizeToast()
     {
-        DestroyWindow();
-        delete this;
+        CClientDC dc(this); CFont font;
+        font.CreatePointFont(100, L"Segoe UI"); CFont* old = dc.SelectObject(&font);
+        CRect measure(0, 0, 356, 0);
+        dc.DrawText(m_body.c_str(), -1, measure, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+        int height = 48 + measure.Height();
+        for (const auto& row : BuildToastDetails(m_frame)) {
+            measure.SetRect(0, 0, 356, 0);
+            dc.DrawText(row.text.c_str(), -1, measure, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+            height += measure.Height() + 6;
+        }
+        dc.SelectObject(old);
+        RECT work = {}; SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
+        height = min(max(100, height), work.bottom - work.top - 24);
+        SetWindowPos(nullptr, work.right - 392, work.bottom - height - 12, 380, height, SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    void PostNcDestroy() override { delete this; }
+    void Close() { DestroyWindow(); }
 };
 
 BEGIN_MESSAGE_MAP(CWinLuachToastWnd, CWnd)
@@ -3575,6 +3680,7 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
     RefreshZmanim();
     RefreshWebCalendarEvents();
     SetTimer(1, 60000, nullptr);
+    SetTimer(5, 1000, nullptr);
     SetTimer(4, 1000, nullptr); // timed web calendar reminders
     if (m_minimizeToTray || m_showTrayIcon)
         AddTrayIcon();
@@ -3595,6 +3701,7 @@ void CMainFrame::OnDestroy()
 {
     KillTimer(1);
     KillTimer(4);
+    KillTimer(5);
     if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
         m_pOptionsDlg->DestroyWindow();
     if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
@@ -3620,6 +3727,7 @@ void CMainFrame::OnDestroy()
 
 void CMainFrame::OnTimer(UINT_PTR nIDEvent)
 {
+    if (nIDEvent == 5) { CheckObservanceAutomation(); return; }
     if (nIDEvent == 2) { // cleanup temporary tray icon after balloon
         KillTimer(2);
         if (!m_isInTray) RemoveTrayIcon();
@@ -3651,6 +3759,7 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
         {
             UpdateTrayIcon();
         }
+        CheckObservanceAutomation();
         CheckZmanNotifications();
         CheckSefirahNotification();
         CheckAdvancedReminders(); // v0.8.71
@@ -5144,7 +5253,7 @@ void CMainFrame::ShowEventNotification(const std::wstring& title,
             DWORD ms = (DWORD)max(1, s.winLuachToastDuration) * kUnitMs[unit];
             if (m_pToast && m_pToast->GetSafeHwnd())
                 m_pToast->DestroyWindow();
-            m_pToast = CWinLuachToastWnd::Show(title, body, ms, &m_pToast);
+            m_pToast = CWinLuachToastWnd::Show(title, body, ms, &m_pToast, this);
         } else {
             bool addedTemp = false;
             if (!m_isInTray) { AddTrayIcon(); addedTemp = true; }
@@ -5157,7 +5266,13 @@ void CMainFrame::ShowEventNotification(const std::wstring& title,
             nid.dwInfoFlags = NIIF_INFO;
             nid.uTimeout    = 8000;
             wcsncpy_s(nid.szInfoTitle, title.c_str(),  ARRAYSIZE(nid.szInfoTitle) - 1);
-            wcsncpy_s(nid.szInfo,      body.c_str(),   ARRAYSIZE(nid.szInfo)      - 1);
+            std::wstring details;
+            for (const auto& row : BuildToastDetails(this)) details += L"\n" + row.text;
+            // Reserve the native balloon's limited text space for enabled details.
+            size_t capacity = ARRAYSIZE(nid.szInfo) - 1;
+            size_t bodyCapacity = details.size() < capacity ? capacity - details.size() : 0;
+            std::wstring toastBody = body.substr(0, bodyCapacity) + details;
+            wcsncpy_s(nid.szInfo,      toastBody.c_str(),   ARRAYSIZE(nid.szInfo)      - 1);
             Shell_NotifyIconW(NIM_MODIFY, &nid);
 
             if (addedTemp)
@@ -6013,7 +6128,18 @@ void CMainFrame::OnOptionsPrefs()
 
 void CMainFrame::ApplyAndSaveSettings(const AppSettings& s)
 {
+    bool autoLaunch = s.scheduledLaunchWhenClosed && (s.scheduledCountdown || s.scheduledMinimize || s.muteAtCandleLighting);
+    HRESULT taskResult = ConfigureObservanceTask(autoLaunch, s);
+    if (FAILED(taskResult)) {
+        CString error; error.Format(L"Windows could not update the countdown schedule (0x%08X). Automatic launch while closed is unavailable. Other settings will be saved.", (unsigned)taskResult);
+        MessageBox(error, L"Countdown schedule", MB_OK | MB_ICONWARNING);
+    }
+    bool automationChanged = s.scheduledCountdown != theApp.m_settings.scheduledCountdown ||
+        s.scheduledMinimize != theApp.m_settings.scheduledMinimize || s.muteAtCandleLighting != theApp.m_settings.muteAtCandleLighting;
+    if (automationChanged) m_lastObservanceStart = 0;
     theApp.m_settings = s;
+    if (FAILED(taskResult) && autoLaunch) theApp.m_settings.scheduledLaunchWhenClosed = false;
+    m_lastScheduleRefreshDate = GregorianToJDN(GetTodayGregorian());
     ApplySettings(theApp.m_settings);
     SaveSettings(theApp.m_settings);
     ApplyWinLuachShortcut(FOLDERID_Startup, L"WinLuach.lnk", theApp.m_settings.startWithWindows);
@@ -6032,8 +6158,10 @@ void CMainFrame::ApplyAndSaveSettings(const AppSettings& s)
     }
     if (m_pZmanim)   m_pZmanim->Invalidate(FALSE);
     if (m_pSidebar)  m_pSidebar->Invalidate(FALSE);
-    if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd()))
+    if (m_pCountdownClock && ::IsWindow(m_pCountdownClock->GetSafeHwnd())) {
+        m_pCountdownClock->SetTopmost(theApp.m_settings.countdownAlwaysOnTop);
         m_pCountdownClock->Invalidate(FALSE);
+    }
 }
 
 void CMainFrame::OnOptionsDialogClosed(COptionsDlg* dlg)
@@ -6595,6 +6723,7 @@ void CMainFrame::OnFileRestore()
 // wParam: 0=show, 1=countdown clock, 2=options
 LRESULT CMainFrame::OnWinLuachCommand(WPARAM wParam, LPARAM)
 {
+    if (wParam == 3) { CheckObservanceAutomation(); return 0; }
     RestoreFromTray();
     ShowWindow(SW_SHOWNORMAL);
     SetForegroundWindow();
@@ -6606,4 +6735,61 @@ LRESULT CMainFrame::OnWinLuachCommand(WPARAM wParam, LPARAM)
     default: break;  // 0 = just show
     }
     return 0;
+}
+
+void CMainFrame::SaveCountdownPlacement(AppSettings& settings)
+{
+    if (!m_pCountdownClock || !::IsWindow(m_pCountdownClock->GetSafeHwnd())) {
+        OnViewCountdownClock();
+        MessageBox(L"Place and size the countdown, then click Save current countdown placement again.", L"Countdown placement", MB_OK);
+        return;
+    }
+    WINDOWPLACEMENT wp = {}; wp.length = sizeof(wp);
+    m_pCountdownClock->GetWindowPlacement(&wp);
+    RECT r = wp.rcNormalPosition;
+    // WINDOWPLACEMENT uses workspace coordinates; store desktop coordinates.
+    MONITORINFO mi = {}; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi))
+        OffsetRect(&r, mi.rcWork.left - mi.rcMonitor.left, mi.rcWork.top - mi.rcMonitor.top);
+    settings.scheduledX = r.left; settings.scheduledY = r.top;
+    settings.scheduledW = r.right - r.left; settings.scheduledH = r.bottom - r.top;
+    settings.scheduledUsePlacement = true;
+    MessageBox(L"Placement captured. Click Apply or OK to save it for every Shabbos and Yom Tov.", L"Countdown placement", MB_OK);
+}
+
+void CMainFrame::CheckObservanceAutomation()
+{
+    const auto& s = theApp.m_settings;
+    long today = GregorianToJDN(GetTodayGregorian());
+    if (s.scheduledLaunchWhenClosed && m_lastScheduleRefreshDate != today) {
+        m_lastScheduleRefreshDate = today;
+        HRESULT result = ConfigureObservanceTask(true, s);
+        if (FAILED(result)) ShowEventNotification(L"Countdown schedule", L"Windows could not refresh automatic launch. Open WinLuach to keep the candle-lighting schedule running.", 1);
+    }
+    auto active = ActiveObservance(*this, CTime::GetCurrentTime());
+    if (!active.valid) { m_lastObservanceStart = 0; return; }
+    if (m_lastObservanceStart == active.start.GetTime()) return;
+    if (!(s.scheduledCountdown || s.scheduledMinimize || s.muteAtCandleLighting)) return;
+    m_lastObservanceStart = active.start.GetTime();
+    if (s.muteAtCandleLighting) {
+        HRESULT hr = SetWindowsMute(true);
+        if (FAILED(hr)) ShowEventNotification(L"Windows audio", L"Could not mute the default Windows audio output.", 1);
+    }
+    if (s.scheduledCountdown) {
+        OnViewCountdownClock();
+        if (m_pCountdownClock) {
+            if (s.scheduledUsePlacement) {
+                CRect r(s.scheduledX, s.scheduledY, s.scheduledX + max(200, s.scheduledW), s.scheduledY + max(120, s.scheduledH));
+                MONITORINFO mi = {}; mi.cbSize = sizeof(mi);
+                GetMonitorInfo(MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST), &mi);
+                int w = min(r.Width(), mi.rcWork.right - mi.rcWork.left);
+                int h = min(r.Height(), mi.rcWork.bottom - mi.rcWork.top);
+                int x = max(mi.rcWork.left, min(r.left, mi.rcWork.right - w));
+                int y = max(mi.rcWork.top, min(r.top, mi.rcWork.bottom - h));
+                m_pCountdownClock->SetWindowPos(nullptr, x, y, w, h, SWP_NOZORDER);
+            }
+            m_pCountdownClock->SetTopmost(s.scheduledTopmost || s.countdownAlwaysOnTop);
+        }
+    }
+    if (s.scheduledMinimize) ShowWindow(SW_MINIMIZE);
 }

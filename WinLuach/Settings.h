@@ -280,6 +280,21 @@ struct AppSettings
     bool         paneYearDetailsVisible  = true;
     bool         paneMoladVisible        = true;
 
+    // Optional observance context and candle-lighting automation.
+    bool countdownShowShabbosEnd = false;
+    bool toastShowShabbosEnd = false;
+    bool toastShowYomTovEnd = false;
+    bool toastShowFastEnd = false;
+    bool toastShowPreviousZman = false;
+    bool toastShowElapsed = false;
+    bool scheduledCountdown = false;
+    bool scheduledMinimize = false;
+    bool scheduledLaunchWhenClosed = false;
+    bool scheduledTopmost = false;
+    bool scheduledUsePlacement = false;
+    bool muteAtCandleLighting = false;
+    int scheduledX = 180, scheduledY = 180, scheduledW = 380, scheduledH = 220;
+
     // --- Countdown clock ---
     std::wstring countdownTitleFontFace = L"Segoe UI";
     int          countdownTitleFontSize = 14;

@@ -202,6 +202,9 @@ public:
     DisplayZmanimTimes BuildDisplayZmanim(
         const GregorianDate& g, const ZmanimResult& z, bool isDst) const;
 
+    void CheckObservanceAutomation();
+    void SaveCountdownPlacement(AppSettings& settings);
+
     // Current view state (public so child panels can read it)
     int           m_viewYear = 2026;
     int           m_viewMonth = 5;
@@ -426,6 +429,8 @@ protected:
     CSplitterBar*  m_pSplitSidebar = nullptr;
     CSplitterBar*  m_pSplitZmanim  = nullptr;
     CButton        m_btnSidebarToggle;
+    __time64_t m_lastObservanceStart = 0;
+    long m_lastScheduleRefreshDate = 0;
     CCountdownClockWnd* m_pCountdownClock = nullptr;
     COptionsDlg*    m_pOptionsDlg = nullptr;
     CWinLuachToastWnd*  m_pToast = nullptr;

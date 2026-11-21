@@ -224,6 +224,8 @@ private:
     CTabCtrl m_zmanimSubTab;
     CTabCtrl m_notifySubTab;
     std::vector<CWnd*> m_pageNotifyGeneral;
+    std::vector<CWnd*> m_pageNotifyDetails;
+    CButton m_toastDetails[5];
     std::vector<CWnd*> m_pageNotifyZmanim;
     std::vector<CWnd*> m_pageNotifyReminders;
     std::vector<CButton*> m_zmanimBarChecks;     // one per kZmanimBarLabels entry
