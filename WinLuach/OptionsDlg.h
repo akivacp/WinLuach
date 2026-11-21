@@ -26,6 +26,28 @@
 #include "pch.h"
 #include "Settings.h"
 
+// Control notification codes overlap. Check the control type so navigation,
+// action buttons and focus changes do not count as edited settings.
+inline bool IsSettingsControlChange(WPARAM wParam, LPARAM lParam)
+{
+    HWND control = reinterpret_cast<HWND>(lParam);
+    if (!::IsWindow(control)) return false;
+    wchar_t className[32] = {};
+    ::GetClassNameW(control, className, _countof(className));
+    UINT code = HIWORD(wParam);
+    if (_wcsicmp(className, L"Edit") == 0) return code == EN_CHANGE;
+    if (_wcsicmp(className, L"ComboBox") == 0)
+        return code == CBN_SELCHANGE || code == CBN_EDITCHANGE;
+    if (_wcsicmp(className, L"Button") == 0 && code == BN_CLICKED)
+    {
+        UINT type = static_cast<UINT>(::GetWindowLongPtr(control, GWL_STYLE)) & BS_TYPEMASK;
+        return type == BS_CHECKBOX || type == BS_AUTOCHECKBOX ||
+            type == BS_3STATE || type == BS_AUTO3STATE ||
+            type == BS_RADIOBUTTON || type == BS_AUTORADIOBUTTON;
+    }
+    return false;
+}
+
 // Opens the Manage Calendars dialog; updates webCalendars in-place and returns true if changed.
 bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent);
 

@@ -2141,11 +2141,11 @@ BOOL COptionsDlg::OnInitDialog()
         }
 
         const wchar_t* detailLabels[] = {
-            L"Show end of Shabbos in every toast during Shabbos",
-            L"Show end of Yom Tov in every toast (dark orange)",
-            L"Show fast end time in every toast on fast days",
-            L"Show the previous zman that has passed",
-            L"Show how much time has elapsed since the previous zman" };
+            L"Show when Shabbos ends in every notification",
+            L"Show when Yom Tov ends in every notification",
+            L"Show when the fast ends on fast days",
+            L"Show the most recent zman that has passed",
+            L"Show how long ago the previous zman passed" };
         bool detailValues[] = { m_current.toastShowShabbosEnd, m_current.toastShowYomTovEnd, m_current.toastShowFastEnd, m_current.toastShowPreviousZman, m_current.toastShowElapsed };
         for (int i = 0; i < 5; ++i) {
             m_toastDetails[i].Create(detailLabels[i], WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
@@ -2918,7 +2918,8 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Initialize tooltips
     m_tooltip.Create(this, TTS_ALWAYSTIP | TTS_BALLOON);
-    m_tooltip.SetMaxTipWidth(300);
+    m_tooltip.SetMaxTipWidth(360);
+    m_tooltip.SetDelayTime(TTDT_AUTOPOP, 20000);
     m_tooltip.Activate(TRUE);
 
     // General tab
@@ -2991,6 +2992,16 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_radMisheyakirDegrees,  L"Express Misheyakir as degrees below the horizon");
     m_tooltip.AddTool(&m_radMisheyakirMinutes,  L"Express Misheyakir as fixed minutes before sunrise");
     m_tooltip.AddTool(&m_radMisheyakirZmanis,   L"Express Misheyakir as shaah zmanit (proportional) minutes");
+
+    // Extra details shown alongside any notification, regardless of its subject.
+    const wchar_t* detailTips[] = {
+        L"From Friday candle lighting until Motzei Shabbos, add the Shabbos end time to every notification, even a notification for another zman such as Plag. Uses your configured nightfall time.",
+        L"From Yom Tov candle lighting until Yom Tov ends, add its end time to every notification. Handles consecutive days and Israel/diaspora settings. This line is dark orange in WinLuach Toast.",
+        L"On a fast day, add the fast's end time to every notification until the fast ends. Also appears during the opening evening of Yom Kippur and Tisha B'Av. Uses your fast-end setting, or configured nightfall for Yom Kippur.",
+        L"Add the name and time of the most recent zman that has already passed, using your configured zmanim methods. Checks the previous day too when needed.",
+        L"Show how many hours, minutes and seconds have passed since the previous zman. Includes the previous zman's name and time. WinLuach Toast updates every second; Windows notifications show the time when they appeared."
+    };
+    for (int i = 0; i < 5; ++i) m_tooltip.AddTool(&m_toastDetails[i], detailTips[i]);
 
     // Notifications tab
     m_tooltip.AddTool(&m_cmbNotifyPersonal,     L"Notification style for personal calendar events");
@@ -3685,6 +3696,10 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (!m_initialized && lParam != 0) return TRUE;
     UINT id = LOWORD(wParam);
     UINT code = HIWORD(wParam);
+    // Track before dispatch: specialized handlers may return early.
+    if (m_initialized && !m_updatingColorUi && IsSettingsControlChange(wParam, lParam) &&
+        id != IDC_OPT_COLOR_ITEM && id != IDC_OPT_COLOR_PREVIEW)
+        SetDirty(true);
     if (id == IDC_OPT_RESET_CALENDAR && code == BN_CLICKED)
     {
         OnResetCalendarSettings();
@@ -3918,9 +3933,6 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
             return TRUE;
         }
     }
-    if (m_initialized && !m_updatingColorUi &&
-        (code == BN_CLICKED || code == CBN_SELCHANGE || code == EN_CHANGE))
-        SetDirty(true);
     return CDialog::OnCommand(wParam, lParam);
 }
 

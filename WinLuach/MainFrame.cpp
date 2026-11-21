@@ -52,6 +52,7 @@
 #define ID_COUNTDOWN_MAXIMIZE   6104
 #define ID_COUNTDOWN_RESTORE    6105
 #define ID_COUNTDOWN_TOPMOST    6106
+#define ID_COUNTDOWN_CALENDAR   6107
 
 static std::wstring WebCalTrim(const std::wstring& s)
 {
@@ -613,7 +614,8 @@ protected:
 
         // Tooltip control
         m_tooltip.Create(this, TTS_ALWAYSTIP | TTS_BALLOON);
-        m_tooltip.SetMaxTipWidth(300);
+        m_tooltip.SetMaxTipWidth(360);
+        m_tooltip.SetDelayTime(TTDT_AUTOPOP, 20000);
         m_tooltip.Activate(TRUE);
 
         // Tab control
@@ -733,27 +735,36 @@ protected:
         m_page1.push_back(&m_chkOpenOnStartup);
         m_tooltip.AddTool(&m_chkOpenOnStartup, L"Automatically open the countdown clock every time WinLuach launches");
 
-        m_chkAlwaysOnTop.Create(L"Remember Always on Top state",
+        m_chkAlwaysOnTop.Create(L"Keep the countdown above other windows",
             WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
             CRect(10, 278, W - 10, 296), this, 5951);
         m_chkAlwaysOnTop.SetFont(pF);
         m_chkAlwaysOnTop.SetCheck(m_settings.countdownAlwaysOnTop ? BST_CHECKED : BST_UNCHECKED);
         m_page1.push_back(&m_chkAlwaysOnTop);
-        m_tooltip.AddTool(&m_chkAlwaysOnTop, L"Keep the clock Always on Top when it reopens, matching its last state");
+        m_tooltip.AddTool(&m_chkAlwaysOnTop, L"Keep the countdown in front of other windows when you open it. You can also change this from the countdown menu.");
 
-        m_chkShabbosEnd.Create(L"Show Motzei Shabbos row from candles until nightfall",
+        m_chkShabbosEnd.Create(L"Show when Shabbos ends during Shabbos",
             WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX, CRect(10, 302, W - 10, 326), this, 5952);
         m_chkShabbosEnd.SetFont(pF);
         m_chkShabbosEnd.SetCheck(m_settings.countdownShowShabbosEnd);
         m_page1.push_back(&m_chkShabbosEnd);
+        m_tooltip.AddTool(&m_chkShabbosEnd, L"Add a Motzei Shabbos row to the countdown from Friday candle lighting until Shabbos ends. Uses your configured nightfall time.");
 
         const wchar_t* scheduleLabels[] = {
-            L"Open countdown at Shabbos / Yom Tov candle lighting",
-            L"Minimize WinLuach at candle lighting",
-            L"Launch only countdown even when WinLuach is closed",
-            L"Always on top for scheduled countdown",
-            L"Use saved desktop placement every Shabbos / Yom Tov",
-            L"Mute Windows audio at Shabbos / Yom Tov candles" };
+            L"Open the countdown when Shabbos or Yom Tov starts",
+            L"Minimize WinLuach when Shabbos or Yom Tov starts",
+            L"Open it even if WinLuach is closed",
+            L"Keep the scheduled countdown above other windows",
+            L"Use my saved position and size each time",
+            L"Mute Windows sound when Shabbos or Yom Tov starts" };
+        const wchar_t* scheduleTips[] = {
+            L"Automatically open the countdown at candle lighting for Shabbos or Yom Tov. WinLuach must be running unless you also select Open it even if WinLuach is closed.",
+            L"Minimize the main calendar window at Shabbos or Yom Tov candle lighting. The countdown stays open if automatic opening is enabled.",
+            L"Use Windows Task Scheduler to open the countdown even if WinLuach is closed. Candle-lighting times are calculated for your location and updated automatically. The main calendar stays hidden. This also enables automatic countdown opening. Windows must be awake and you must be signed in.",
+            L"When the countdown opens automatically for Shabbos or Yom Tov, keep it in front of other windows. The separate Appearance option controls Always on Top when you open the clock yourself.",
+            L"Each time the countdown opens automatically, restore the position and size captured with Save this position and size. Moving or resizing it later does not change the saved placement.",
+            L"Mute the default Windows sound output at Shabbos or Yom Tov candle lighting. Sound stays muted until you unmute it yourself. WinLuach must be running, or opening while closed must be enabled."
+        };
         bool scheduleValues[] = { m_settings.scheduledCountdown, m_settings.scheduledMinimize,
             m_settings.scheduledLaunchWhenClosed, m_settings.scheduledTopmost,
             m_settings.scheduledUsePlacement, m_settings.muteAtCandleLighting };
@@ -762,12 +773,14 @@ protected:
                 CRect(10, 44 + i * 32, W - 10, 72 + i * 32), this, 5960 + i);
             m_scheduleChecks[i].SetFont(pF); m_scheduleChecks[i].SetCheck(scheduleValues[i]);
             m_page3.push_back(&m_scheduleChecks[i]);
+            m_tooltip.AddTool(&m_scheduleChecks[i], scheduleTips[i]);
         }
         mkStaticP(L"Place and size the countdown where you want it, then save.",
             10, 246, W - 20, 24, m_page3);
-        m_btnSavePlacement.Create(L"Save current countdown placement", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        m_btnSavePlacement.Create(L"Save this position and size", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
             CRect(10, 276, W - 10, 306), this, 5966);
         m_btnSavePlacement.SetFont(pF); m_page3.push_back(&m_btnSavePlacement);
+        m_tooltip.AddTool(&m_btnSavePlacement, L"First move and resize the countdown to where you want it. Click here to capture that position and size, then click Apply or OK to save it. Future Shabbos and Yom Tov countdowns will return there.");
         mkStaticP(L"Moving the clock later will not overwrite this placement.",
             10, 314, W - 20, 24, m_page3);
         mkStaticP(L"Windows must be awake and you must be signed in.",
@@ -835,7 +848,15 @@ protected:
         m_btnCancel.SetFont(pF);
 
         ShowPage(0);
+        m_initialized = true;
+        SetModified(false);
         return TRUE;
+    }
+
+    void SetModified(bool modified = true)
+    {
+        if (m_initialized && m_btnApply.GetSafeHwnd())
+            m_btnApply.EnableWindow(modified ? TRUE : FALSE);
     }
 
     void ShowPage(int page)
@@ -866,6 +887,7 @@ protected:
 
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
     {
+        if (m_initialized && IsSettingsControlChange(wParam, lParam)) SetModified();
         if (LOWORD(wParam) == 5966) {
             if (m_pFrame) m_pFrame->SaveCountdownPlacement(m_settings);
             m_scheduleChecks[4].SetCheck(m_settings.scheduledUsePlacement);
@@ -884,7 +906,7 @@ protected:
             if (h == m_btnLiveBack.GetSafeHwnd())     return Pick(m_settings.countdownLiveBackColor);
         }
         if (LOWORD(wParam) == IDC_CDOPT_APPLY)   { Apply(); return TRUE; }
-        if (LOWORD(wParam) == IDC_CDOPT_RESTORE) { RestoreDefaults(); Apply(); return TRUE; }
+        if (LOWORD(wParam) == IDC_CDOPT_RESTORE) { RestoreDefaults(); SetModified(); return TRUE; }
         return CDialog::OnCommand(wParam, lParam);
     }
 
@@ -893,7 +915,10 @@ protected:
     BOOL Pick(int& target)
     {
         CColorDialog dlg((COLORREF)target, CC_FULLOPEN, this);
-        if (dlg.DoModal() == IDOK) target = (int)dlg.GetColor();
+        if (dlg.DoModal() == IDOK) {
+            target = (int)dlg.GetColor();
+            SetModified();
+        }
         return TRUE;
     }
 
@@ -1045,6 +1070,7 @@ private:
 
     // Dialog buttons
     CButton m_btnOK, m_btnApply, m_btnCancel, m_btnRestoreColors;
+    bool m_initialized = false;
 };
 
 class CCountdownClockWnd : public CFrameWnd
@@ -1112,6 +1138,12 @@ protected:
     {
         CCountdownOptionsDlg dlg(m_pFrame, nullptr);
         dlg.DoModal();
+    }
+
+    afx_msg void OnShowCalendar()
+    {
+        if (m_pFrame && ::IsWindow(m_pFrame->GetSafeHwnd()))
+            m_pFrame->PostMessage(WM_WINLUACH_COMMAND, 0, 0);
     }
 
     afx_msg void OnClockFullscreen()
@@ -1443,6 +1475,8 @@ private:
         CMenu menu, opt;
         menu.CreateMenu();
         opt.CreatePopupMenu();
+        opt.AppendMenu(MF_STRING, ID_COUNTDOWN_CALENDAR, L"&Show Full Calendar");
+        opt.AppendMenu(MF_SEPARATOR);
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_OPTIONS, L"&Options...");
         opt.AppendMenu(MF_SEPARATOR);
         opt.AppendMenu(MF_STRING, ID_COUNTDOWN_FULLSCREEN, L"&Full Screen\tF11");
@@ -1487,6 +1521,7 @@ BEGIN_MESSAGE_MAP(CCountdownClockWnd, CFrameWnd)
     ON_WM_SIZE()
     ON_WM_PAINT()
     ON_WM_INITMENUPOPUP()
+    ON_COMMAND(ID_COUNTDOWN_CALENDAR, &CCountdownClockWnd::OnShowCalendar)
     ON_COMMAND(ID_COUNTDOWN_OPTIONS, &CCountdownClockWnd::OnClockOptions)
     ON_COMMAND(ID_COUNTDOWN_FULLSCREEN, &CCountdownClockWnd::OnClockFullscreen)
     ON_COMMAND(ID_COUNTDOWN_TOPMOST, &CCountdownClockWnd::OnClockTopmost)
@@ -6741,7 +6776,7 @@ void CMainFrame::SaveCountdownPlacement(AppSettings& settings)
 {
     if (!m_pCountdownClock || !::IsWindow(m_pCountdownClock->GetSafeHwnd())) {
         OnViewCountdownClock();
-        MessageBox(L"Place and size the countdown, then click Save current countdown placement again.", L"Countdown placement", MB_OK);
+        MessageBox(L"Move and resize the countdown where you want it, then click Save this position and size again.", L"Countdown placement", MB_OK);
         return;
     }
     WINDOWPLACEMENT wp = {}; wp.length = sizeof(wp);
