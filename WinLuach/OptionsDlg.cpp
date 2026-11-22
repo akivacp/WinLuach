@@ -344,7 +344,9 @@ BOOL COptionsContentWnd::CreateContent(CWnd* parent, const CRect& rect)
         WORD windowClass;
         WORD title;
     } content = {};
-    content.dialog.style = WS_CHILD | WS_CLIPCHILDREN | WS_VSCROLL | DS_CONTROL;
+    // Group boxes and themed labels have transparent interiors. Erase the
+    // whole page when switching categories so hidden controls leave no traces.
+    content.dialog.style = WS_CHILD | WS_VSCROLL | DS_CONTROL;
     content.dialog.dwExtendedStyle = WS_EX_CONTROLPARENT;
     if (!CreateIndirect(&content.dialog, parent)) return FALSE;
     SetDlgCtrlID(7999);
@@ -456,7 +458,8 @@ void COptionsContentWnd::Layout(bool resetScroll)
     info.nPage = client.Height();
     info.nPos = m_scroll;
     SetScrollInfo(SB_VERT, &info, TRUE);
-    RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    RedrawWindow(nullptr, nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 void COptionsContentWnd::ScrollTo(int position)
@@ -1582,7 +1585,8 @@ public:
             }
             return TRUE;
         }
-        if (id == IDC_MNGCAL_TOGGLE && code == BN_CLICKED)
+        if ((id == IDC_MNGCAL_TOGGLE && code == BN_CLICKED) ||
+            (id == IDC_MNGCAL_LIST && code == LBN_DBLCLK))
         {
             int sel = m_list.GetCurSel();
             if (sel >= 0 && sel < (int)m_cals.size())
@@ -1762,6 +1766,7 @@ BOOL COptionsDlg::OnInitDialog()
         CButton* b = new CButton;
         b->Create(text, WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
             CRect(x, y, x + w, y + h), &m_content, staticId++);
+        b->ModifyStyleEx(0, WS_EX_TRANSPARENT);
         track(page, b);
     };
     auto mkStatic = [&](std::vector<CWnd*>& page, const wchar_t* text, int x, int y, int w, int h) {
@@ -2122,7 +2127,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_radMisheyakirZmanis.Create(L"shaah zmanis min", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
         CRect(175, y + 24, W - 28, y + 44), &m_content, IDC_OPT_MISHEYAKIR_ZMANIS); track(m_pageZmanShitos, &m_radMisheyakirZmanis);
 
-    // Notifications tab — 3 sub-tabs: General | Zmanim | Reminders
+    // Notifications tab: General | Zmanim | Reminders | Toast details
     {
         int notifyPageTop = 64;
         int notifyPageBottom = H - 56;
@@ -2183,7 +2188,7 @@ BOOL COptionsDlg::OnInitDialog()
         m_cmbToastDurationUnit.EnableWindow(isWLToast ? TRUE : FALSE);
         y += 30;
 
-        mkGroup(m_pageNotifyGeneral, L"Notification Style", 28, y, W - 56, 212); y += 22;
+        mkGroup(m_pageNotifyGeneral, L"Notification Style", 28, y, W - 56, 246); y += 22;
         mkStatic(m_pageNotifyGeneral, L"Personal events:", 42, y, 112, 22);
         initCombo(m_pageNotifyGeneral, m_cmbNotifyPersonal, 158, y - 1, 126, IDC_OPT_NOTIFY_PERSONAL,
             { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
@@ -2261,24 +2266,29 @@ BOOL COptionsDlg::OnInitDialog()
 
         // ── Zmanim sub-page ───────────────────────────────────────────────
         y = notifyPageTop;
-        mkGroup(m_pageNotifyZmanim, L"Zmanim Notifications", 28, y, W - 56, 168); y += 22;
+        constexpr int notifyZmanColumns = 2;
+        constexpr int notifyZmanRows = (kZmanCheckboxCount + notifyZmanColumns - 1) / notifyZmanColumns;
+        constexpr int notifyZmanRowHeight = 24;
+        mkGroup(m_pageNotifyZmanim, L"Zmanim Notifications", 28, y, W - 56,
+            62 + notifyZmanRows * notifyZmanRowHeight); y += 22;
         mkStatic(m_pageNotifyZmanim, L"Zmanim:", 42, y, 70, 22);
         initCombo(m_pageNotifyZmanim, m_cmbNotifyZmanim, 114, y - 1, 126, IDC_OPT_NOTIFY_ZMAN_STYLE,
             { L"Off", L"Toast", L"Popup", L"Toast + Popup" },
             max(0, min(3, m_current.notifyZmanimStyle)));
         y += 28;
         for (int i = 0; i < kZmanCheckboxCount; ++i) {
-            int col = i / 9;
-            int row = i % 9;
-            int x0 = 42 + col * 190;
-            int yy = y + row * 20;
+            int col = i / notifyZmanRows;
+            int row = i % notifyZmanRows;
+            int columnWidth = (W - 84) / notifyZmanColumns;
+            int x0 = 42 + col * columnWidth;
+            int yy = y + row * notifyZmanRowHeight;
             m_chkNotifyZmanim[i].Create(kZmanCheckboxLabels[i],
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                CRect(x0, yy, x0 + 170, yy + 18), &m_content, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
+                CRect(x0, yy, x0 + columnWidth - 8, yy + 22), &m_content, IDC_OPT_NOTIFY_ZMAN_FIRST + i);
             track(m_pageNotifyZmanim, &m_chkNotifyZmanim[i]);
             m_chkNotifyZmanim[i].SetCheck((m_current.notifyZmanimMask & (1u << i)) ? BST_CHECKED : BST_UNCHECKED);
         }
-        y += 188;
+        y += notifyZmanRows * notifyZmanRowHeight + 12;
 
         // ── Reminders sub-page ────────────────────────────────────────────
         y = notifyPageTop;
