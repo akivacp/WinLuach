@@ -48,6 +48,9 @@ inline bool IsSettingsControlChange(WPARAM wParam, LPARAM lParam)
     return false;
 }
 
+void CaptureOptionsWindow(CWnd& window, OptionsWindowPlacement& placement);
+void RestoreOptionsWindow(CWnd& window, const OptionsWindowPlacement& placement, int defaultWidth, int defaultHeight);
+
 // Opens the Manage Calendars dialog; updates webCalendars in-place and returns true if changed.
 bool ShowManageCalendarsDialog(std::vector<WebCalEntry>& calendars, CWnd* pParent);
 
@@ -71,6 +74,7 @@ class COptionsContentWnd : public CDialog
 public:
     BOOL CreateContent(CWnd* parent, const CRect& rect);
     void CaptureLayout(int designWidth);
+    void SetColumnBreak(int x) { m_columnBreak = x; }
     void Layout(bool resetScroll = false);
     void EnsureFocusVisible();
 protected:
@@ -82,6 +86,7 @@ private:
     struct Item { CWnd* window; CRect original; };
     std::vector<Item> m_items;
     int m_designWidth = 0;
+    int m_columnBreak = 0;
     int m_scroll = 0;
     int m_extent = 0;
     bool m_layingOut = false;
@@ -105,6 +110,7 @@ protected:
     virtual void OnOK() override;
     virtual void OnCancel() override;
     virtual void PostNcDestroy() override;
+    afx_msg void OnDestroy();
     afx_msg void OnApply();
     afx_msg void OnTrayTextColor();
     afx_msg void OnTrayBackColor();
@@ -210,6 +216,7 @@ private:
     CButton   m_chkTzeitCustomDeg;
     CEdit     m_editCustomTzeitDeg;
     CComboBox m_cmbTzeitMinutesMode;
+    CButton m_btnSeasonalTzais;
     CComboBox m_cmbEndFastMinuteMode;   // v0.8.82: fixed vs shaah zmanit for custom end of fast
     CButton   m_radShaahStartDegrees;
     CButton   m_radShaahStartFixed;

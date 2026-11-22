@@ -19,6 +19,7 @@
 #include "ZmanimPanel.h"
 #include "LocationDlg.h"
 #include "OptionsDlg.h"
+#include "SeasonalTzais.h"
 #include "BackupViewDlg.h"
 #include "CalPrintDlg.h"
 #include "WinLuachApp.h"
@@ -585,21 +586,20 @@ class CCountdownOptionsDlg : public CDialog
     }
 
 public:
-    CCountdownOptionsDlg(CMainFrame* frame, CWnd* parent = nullptr)
-        : CDialog(), m_pFrame(frame), m_settings(theApp.m_settings)
+    CCountdownOptionsDlg(CMainFrame* frame, CCountdownOptionsDlg** ownerSlot)
+        : CDialog(), m_pFrame(frame), m_settings(theApp.m_settings), m_ownerSlot(ownerSlot)
     {
-        m_pParentWnd = parent;
+        NormalizeCountdownRowOrder(m_settings.countdownRowOrder);
     }
 
-    INT_PTR DoModal() override
+    BOOL CreateModeless()
     {
         struct Tmpl { DLGTEMPLATE t; WORD menu, cls; wchar_t title[32]; } b = {};
-        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | DS_CENTER;
+        b.t.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX | DS_CENTER;
         b.t.dwExtendedStyle = WS_EX_APPWINDOW;
-        b.t.cx = 270; b.t.cy = 350;
+        b.t.cx = 530; b.t.cy = 350;
         wcscpy_s(b.title, L"Countdown Options");
-        if (!InitModalIndirect((DLGTEMPLATE*)&b, m_pParentWnd)) return -1;
-        return CDialog::DoModal();
+        return CreateIndirect((DLGTEMPLATE*)&b, nullptr);
     }
 
 protected:
@@ -610,7 +610,10 @@ protected:
         HFONT hF = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         CFont* pF = CFont::FromHandle(hF);
         CRect rc; GetClientRect(&rc);
-        int W = rc.Width(), H = rc.Height();
+        const int W = 795; // stable design coordinates, reflowed to the viewport
+        int H = rc.Height();
+        if (!m_content.CreateContent(this, CRect(0, 36, rc.Width(), H - 44))) return FALSE;
+        m_content.SetColumnBreak(380);
 
         // Tooltip control
         m_tooltip.Create(this, TTS_ALWAYSTIP | TTS_BALLOON);
@@ -630,7 +633,7 @@ protected:
         auto mkStaticP = [&](const wchar_t* text, int x, int y, int w, int h, std::vector<CWnd*>& page) {
             CStatic* s = new CStatic;
             s->Create(text, WS_CHILD | SS_LEFT | SS_CENTERIMAGE,
-                CRect(x, y, x + w, y + h), this, 5100 + m_nextId++);
+                CRect(x, y, x + w, y + h), &m_content, 5100 + m_nextId++);
             s->SetFont(pF);
             page.push_back(s);
             return s;
@@ -647,32 +650,33 @@ protected:
         y += 22;
 
         static const wchar_t* kRowLabels[] = {
-            L"Next zman", L"Countdown", L"Zman time", L"Live clock" };
+            L"Next zman", L"Countdown", L"Zman time", L"Live clock", L"Last zman" };
         static const wchar_t* kShowTips[] = {
             L"Show the upcoming zman name in the countdown clock",
             L"Show the HH:MM:SS countdown timer in the countdown clock",
             L"Show the actual clock time of the upcoming zman",
-            L"Show the live current time and date" };
+            L"Show the live current time and date",
+            L"Show the name and time of the last selected zman that passed" };
         bool* showFlags[] = {
             &m_settings.countdownShowTitle,  &m_settings.countdownShowClock,
-            &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive };
+            &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive, &m_settings.countdownShowPreviousZman };
         std::wstring* faceFields[] = {
             &m_settings.countdownTitleFontFace,   &m_settings.countdownClockFontFace,
-            &m_settings.countdownCurrentFontFace, &m_settings.countdownLiveFontFace };
+            &m_settings.countdownCurrentFontFace, &m_settings.countdownLiveFontFace, &m_settings.countdownPreviousFontFace };
         int* sizeFields[] = {
             &m_settings.countdownTitleFontSize,   &m_settings.countdownClockFontSize,
-            &m_settings.countdownCurrentFontSize, &m_settings.countdownLiveFontSize };
-        CEdit* faceEdits[] = { &m_editTitleFace, &m_editClockFace, &m_editCurrentFace, &m_editLiveFace };
-        CEdit* sizeEdits[] = { &m_editTitleSize, &m_editClockSize, &m_editCurrentSize, &m_editLiveSize };
-        CButton* colorBtns[] = { &m_btnTitleColor, &m_btnClockColor, &m_btnCurrentColor, &m_btnLiveColor };
-        CButton* backBtns[]  = { &m_btnTitleBack,  &m_btnClockBack,  &m_btnCurrentBack,  &m_btnLiveBack };
-        CButton* showChks[]  = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive };
+            &m_settings.countdownCurrentFontSize, &m_settings.countdownLiveFontSize, &m_settings.countdownPreviousFontSize };
+        CEdit* faceEdits[] = { &m_editTitleFace, &m_editClockFace, &m_editCurrentFace, &m_editLiveFace, &m_editPreviousFace };
+        CEdit* sizeEdits[] = { &m_editTitleSize, &m_editClockSize, &m_editCurrentSize, &m_editLiveSize, &m_editPreviousSize };
+        CButton* colorBtns[] = { &m_btnTitleColor, &m_btnClockColor, &m_btnCurrentColor, &m_btnLiveColor, &m_btnPreviousColor };
+        CButton* backBtns[]  = { &m_btnTitleBack,  &m_btnClockBack,  &m_btnCurrentBack,  &m_btnLiveBack, &m_btnPreviousBack };
+        CButton* showChks[]  = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive, &m_chkPreviousZman };
 
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             // Show checkbox
             showChks[i]->Create(L"", WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-                CRect(12, y + 3, 48, y + 21), this, 5800 + i);
+                CRect(12, y + 3, 48, y + 21), &m_content, 5800 + i);
             showChks[i]->SetFont(pF);
             showChks[i]->SetCheck(*showFlags[i] ? BST_CHECKED : BST_UNCHECKED);
             m_page1.push_back(showChks[i]);
@@ -681,13 +685,13 @@ protected:
             // Area label
             CStatic* lbl = new CStatic;
             lbl->Create(kRowLabels[i], WS_CHILD | SS_LEFT | SS_CENTERIMAGE,
-                CRect(52, y, 112, y + 22), this, 5300 + m_nextId++);
+                CRect(52, y, 112, y + 22), &m_content, 5300 + m_nextId++);
             lbl->SetFont(pF);
             m_page1.push_back(lbl);
 
             // Font face edit
             faceEdits[i]->Create(WS_CHILD | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-                CRect(118, y, 208, y + 22), this, 5400 + m_nextId++);
+                CRect(118, y, 208, y + 22), &m_content, 5400 + m_nextId++);
             faceEdits[i]->SetFont(pF);
             faceEdits[i]->SetWindowText(faceFields[i]->c_str());
             m_page1.push_back(faceEdits[i]);
@@ -695,21 +699,21 @@ protected:
             // Size edit
             CString sz; sz.Format(L"%d", *sizeFields[i]);
             sizeEdits[i]->Create(WS_CHILD | WS_TABSTOP | WS_BORDER | ES_NUMBER | ES_CENTER,
-                CRect(214, y, 252, y + 22), this, 5500 + m_nextId++);
+                CRect(214, y, 252, y + 22), &m_content, 5500 + m_nextId++);
             sizeEdits[i]->SetFont(pF);
             sizeEdits[i]->SetWindowText(sz);
             m_page1.push_back(sizeEdits[i]);
 
             // Font/color button
             colorBtns[i]->Create(L"Font...", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                CRect(256, y, 302, y + 24), this, 5600 + m_nextId++);
+                CRect(256, y, 302, y + 24), &m_content, 5600 + m_nextId++);
             colorBtns[i]->SetFont(pF);
             m_page1.push_back(colorBtns[i]);
             m_tooltip.AddTool(colorBtns[i], L"Choose font, size, and text color for this area");
 
             // Back color button
             backBtns[i]->Create(L"Back", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-                CRect(306, y, 350, y + 24), this, 5700 + m_nextId++);
+                CRect(306, y, 350, y + 24), &m_content, 5700 + m_nextId++);
             backBtns[i]->SetFont(pF);
             m_page1.push_back(backBtns[i]);
             m_tooltip.AddTool(backBtns[i], L"Choose background color for this area");
@@ -718,18 +722,18 @@ protected:
         }
 
         y += 6;
-        mkStaticP(L"Use Font/Back buttons to choose colors for each area.", 10, y, W - 20, 18, m_page1);
+        mkStaticP(L"Use Font/Back buttons to choose colors for each area.", 10, y, 340, 18, m_page1);
         y += 24;
 
         m_btnRestoreColors.Create(L"Restore Defaults", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(10, y, 180, y + 24), this, IDC_CDOPT_RESTORE);
+            CRect(10, y, 180, y + 24), &m_content, IDC_CDOPT_RESTORE);
         m_btnRestoreColors.SetFont(pF);
         m_page1.push_back(&m_btnRestoreColors);
         m_tooltip.AddTool(&m_btnRestoreColors, L"Restore all countdown clock fonts and colors to their default values");
 
         m_chkOpenOnStartup.Create(L"Open countdown clock when WinLuach starts",
             WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(10, 256, W - 10, 274), this, 5950);
+            CRect(10, 294, 350, 314), &m_content, 5950);
         m_chkOpenOnStartup.SetFont(pF);
         m_chkOpenOnStartup.SetCheck(m_settings.countdownOpenOnStartup ? BST_CHECKED : BST_UNCHECKED);
         m_page1.push_back(&m_chkOpenOnStartup);
@@ -737,14 +741,14 @@ protected:
 
         m_chkAlwaysOnTop.Create(L"Keep the countdown above other windows",
             WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-            CRect(10, 278, W - 10, 296), this, 5951);
+            CRect(10, 320, 350, 340), &m_content, 5951);
         m_chkAlwaysOnTop.SetFont(pF);
         m_chkAlwaysOnTop.SetCheck(m_settings.countdownAlwaysOnTop ? BST_CHECKED : BST_UNCHECKED);
         m_page1.push_back(&m_chkAlwaysOnTop);
         m_tooltip.AddTool(&m_chkAlwaysOnTop, L"Keep the countdown in front of other windows when you open it. You can also change this from the countdown menu.");
 
         m_chkShabbosEnd.Create(L"Show when Shabbos ends during Shabbos",
-            WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX, CRect(10, 302, W - 10, 326), this, 5952);
+            WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX, CRect(10, 346, 350, 370), &m_content, 5952);
         m_chkShabbosEnd.SetFont(pF);
         m_chkShabbosEnd.SetCheck(m_settings.countdownShowShabbosEnd);
         m_page1.push_back(&m_chkShabbosEnd);
@@ -770,7 +774,7 @@ protected:
             m_settings.scheduledUsePlacement, m_settings.muteAtCandleLighting };
         for (int i = 0; i < 6; ++i) {
             m_scheduleChecks[i].Create(scheduleLabels[i], WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-                CRect(10, 44 + i * 32, W - 10, 72 + i * 32), this, 5960 + i);
+                CRect(10, 44 + i * 32, W - 10, 72 + i * 32), &m_content, 5960 + i);
             m_scheduleChecks[i].SetFont(pF); m_scheduleChecks[i].SetCheck(scheduleValues[i]);
             m_page3.push_back(&m_scheduleChecks[i]);
             m_tooltip.AddTool(&m_scheduleChecks[i], scheduleTips[i]);
@@ -778,7 +782,7 @@ protected:
         mkStaticP(L"Place and size the countdown where you want it, then save.",
             10, 246, W - 20, 24, m_page3);
         m_btnSavePlacement.Create(L"Save this position and size", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
-            CRect(10, 276, W - 10, 306), this, 5966);
+            CRect(10, 276, W - 10, 306), &m_content, 5966);
         m_btnSavePlacement.SetFont(pF); m_page3.push_back(&m_btnSavePlacement);
         m_tooltip.AddTool(&m_btnSavePlacement, L"First move and resize the countdown to where you want it. Click here to capture that position and size, then click Apply or OK to save it. Future Shabbos and Yom Tov countdowns will return there.");
         mkStaticP(L"Moving the clock later will not overwrite this placement.",
@@ -788,11 +792,36 @@ protected:
         mkStaticP(L"Audio stays muted until you unmute it.",
             10, 372, W - 20, 20, m_page3);
 
+        // Appearance keeps display controls on the left and row layout on the right.
+        m_chkPreviousElapsed.Create(L"Show how long ago it passed", WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
+            CRect(390, 44, W - 10, 68), &m_content, 5977);
+        m_chkPreviousElapsed.SetFont(pF);
+        m_chkPreviousZman.SetCheck(m_settings.countdownShowPreviousZman);
+        m_chkPreviousElapsed.SetCheck(m_settings.countdownShowPreviousElapsed);
+        m_page1.push_back(&m_chkPreviousElapsed);
+        m_tooltip.AddTool(&m_chkPreviousElapsed, L"Include hours, minutes and seconds since the last zman passed. Updates every second. Tick Show beside Last zman on the left to display this row.");
+        mkStaticP(L"Choose the order of the rows, from top to bottom:", 390, 116, W - 400, 24, m_page1);
+        const wchar_t* sectionNames[] = { L"Shabbos end time", L"Next zman name", L"Countdown timer",
+            L"Next zman's clock time", L"Current time and date", L"Last zman passed" };
+        for (int i = 0; i < 6; ++i) {
+            CString label; label.Format(L"Row %d:", i + 1);
+            mkStaticP(label, 390, 150 + i * 34, 60, 24, m_page1);
+            m_rowOrder[i].Create(WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+                CRect(456, 150 + i * 34, W - 10, 350 + i * 34), &m_content, 5970 + i);
+            m_rowOrder[i].SetFont(pF);
+            for (auto name : sectionNames) m_rowOrder[i].AddString(name);
+            m_rowOrder[i].SetCurSel(m_settings.countdownRowOrder[i]);
+            m_page1.push_back(&m_rowOrder[i]);
+            m_tooltip.AddTool(&m_rowOrder[i], L"Choose what appears in this position. If the chosen row is already elsewhere, the two rows swap places. Hidden rows are skipped without leaving a gap. Click Apply to preview your layout.");
+        }
+        mkStaticP(L"Hidden rows are skipped. Choosing a row swaps its position.", 390, 362, W - 400, 24, m_page1);
+        mkStaticP(L"Use the font controls on the left to style each row.", 390, 392, W - 400, 24, m_page1);
+
         // ── Zmanim page ───────────────────────────────────────────────
         {
             CStatic* znote = new CStatic;
             znote->Create(L"Select which zmanim the clock counts down to:",
-                WS_CHILD | SS_LEFT, CRect(10, 40, W - 10, 58), this, 5100 + m_nextId++);
+                WS_CHILD | SS_LEFT, CRect(10, 40, W - 10, 58), &m_content, 5100 + m_nextId++);
             znote->SetFont(pF);
             m_page2.push_back(znote);
         }
@@ -805,7 +834,7 @@ protected:
             int zx = 10 + col * colW;
             int zy = 62 + row * 20;
             m_chkZmanim[i].Create(kZmanLabels(i), WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-                CRect(zx, zy, zx + colW - 4, zy + 18), this, 5900 + i);
+                CRect(zx, zy, zx + colW - 4, zy + 18), &m_content, 5900 + i);
             m_chkZmanim[i].SetFont(pF);
             m_chkZmanim[i].SetCheck(((m_settings.countdownZmanimMask >> i) & 1) ? BST_CHECKED : BST_UNCHECKED);
             m_page2.push_back(&m_chkZmanim[i]);
@@ -816,7 +845,7 @@ protected:
             int baseY = 62 + 13 * 20 + 6;
             CStatic* sep = new CStatic;
             sep->Create(L"Custom zmanim (your configured shita):",
-                WS_CHILD | SS_LEFT, CRect(10, baseY, W - 10, baseY + 16), this, 5100 + m_nextId++);
+                WS_CHILD | SS_LEFT, CRect(10, baseY, W - 10, baseY + 16), &m_content, 5100 + m_nextId++);
             sep->SetFont(pF);
             m_page2.push_back(sep);
             baseY += 18;
@@ -828,7 +857,7 @@ protected:
                 int zx = 10 + col * colW;
                 int zy = baseY + row * 20;
                 m_chkZmanim[i].Create(kZmanLabels(i), WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX,
-                    CRect(zx, zy, zx + colW - 4, zy + 18), this, 5900 + i);
+                    CRect(zx, zy, zx + colW - 4, zy + 18), &m_content, 5900 + i);
                 m_chkZmanim[i].SetFont(pF);
                 m_chkZmanim[i].SetCheck(((m_settings.countdownZmanimMask >> i) & 1) ? BST_CHECKED : BST_UNCHECKED);
                 m_page2.push_back(&m_chkZmanim[i]);
@@ -847,9 +876,13 @@ protected:
             CRect(W - 80, H - 34, W - 8, H - 8), this, IDCANCEL);
         m_btnCancel.SetFont(pF);
 
-        ShowPage(0);
+        m_content.CaptureLayout(W);
+        m_content.ShowWindow(SW_SHOW);
         m_initialized = true;
+        ShowPage(0);
         SetModified(false);
+        RestoreOptionsWindow(*this, m_settings.countdownOptionsWindow, 620, 540);
+        LayoutDialog();
         return TRUE;
     }
 
@@ -864,6 +897,7 @@ protected:
         for (CWnd* c : m_page1) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 0 ? SW_SHOW : SW_HIDE);
         for (CWnd* c : m_page2) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 1 ? SW_SHOW : SW_HIDE);
         for (CWnd* c : m_page3) if (c && c->GetSafeHwnd()) c->ShowWindow(page == 2 ? SW_SHOW : SW_HIDE);
+        if (m_initialized) m_content.Layout(true);
     }
 
     BOOL OnNotify(WPARAM wParam, LPARAM lParam, LRESULT* pResult) override
@@ -882,12 +916,24 @@ protected:
     {
         if (m_tooltip.GetSafeHwnd())
             m_tooltip.RelayEvent(pMsg);
-        return CDialog::PreTranslateMessage(pMsg);
+        BOOL handled = CDialog::PreTranslateMessage(pMsg);
+        m_content.EnsureFocusVisible();
+        return handled;
     }
 
     BOOL OnCommand(WPARAM wParam, LPARAM lParam) override
     {
         if (m_initialized && IsSettingsControlChange(wParam, lParam)) SetModified();
+        if (m_initialized && HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) >= 5970 && LOWORD(wParam) <= 5975) {
+            int position = LOWORD(wParam) - 5970;
+            int chosen = m_rowOrder[position].GetCurSel();
+            for (int i = 0; i < 6; ++i) if (m_settings.countdownRowOrder[i] == chosen) {
+                std::swap(m_settings.countdownRowOrder[i], m_settings.countdownRowOrder[position]);
+                break;
+            }
+            for (int i = 0; i < 6; ++i) m_rowOrder[i].SetCurSel(m_settings.countdownRowOrder[i]);
+            return TRUE;
+        }
         if (LOWORD(wParam) == 5966) {
             if (m_pFrame) m_pFrame->SaveCountdownPlacement(m_settings);
             m_scheduleChecks[4].SetCheck(m_settings.scheduledUsePlacement);
@@ -896,6 +942,8 @@ protected:
         HWND h = (HWND)lParam;
         if (HIWORD(wParam) == BN_CLICKED && h)
         {
+            if (h == m_btnPreviousColor.GetSafeHwnd()) return PickFont(m_settings.countdownPreviousFontFace, m_settings.countdownPreviousFontSize, m_settings.countdownPreviousTextColor, m_settings.countdownPreviousBold, m_settings.countdownPreviousItalic);
+            if (h == m_btnPreviousBack.GetSafeHwnd()) return Pick(m_settings.countdownPreviousBackColor);
             if (h == m_btnTitleColor.GetSafeHwnd())   return PickFont(m_settings.countdownTitleFontFace,   m_settings.countdownTitleFontSize,   m_settings.countdownTitleTextColor,   m_settings.countdownTitleBold,   m_settings.countdownTitleItalic);
             if (h == m_btnTitleBack.GetSafeHwnd())    return Pick(m_settings.countdownTitleBackColor);
             if (h == m_btnClockColor.GetSafeHwnd())   return PickFont(m_settings.countdownClockFontFace,   m_settings.countdownClockFontSize,   m_settings.countdownClockTextColor,   m_settings.countdownClockBold,   m_settings.countdownClockItalic);
@@ -910,7 +958,41 @@ protected:
         return CDialog::OnCommand(wParam, lParam);
     }
 
-    void OnOK() override { Apply(); CDialog::OnOK(); }
+    void OnOK() override { Apply(); DestroyWindow(); }
+    void OnCancel() override { DestroyWindow(); }
+    void PostNcDestroy() override
+    {
+        if (m_ownerSlot && *m_ownerSlot == this) *m_ownerSlot = nullptr;
+        delete this;
+    }
+    void LayoutDialog()
+    {
+        if (!m_initialized) return;
+        CRect client; GetClientRect(&client);
+        m_tabCtrl.MoveWindow(0, 4, client.Width(), 28);
+        m_content.MoveWindow(0, 36, client.Width(), max(80, client.Height() - 80));
+        m_btnOK.MoveWindow(client.Width() - 236, client.Height() - 34, 72, 26);
+        m_btnApply.MoveWindow(client.Width() - 158, client.Height() - 34, 72, 26);
+        m_btnCancel.MoveWindow(client.Width() - 80, client.Height() - 34, 72, 26);
+        m_content.Layout();
+    }
+    afx_msg void OnSize(UINT type, int cx, int cy)
+    {
+        CDialog::OnSize(type, cx, cy);
+        if (type != SIZE_MINIMIZED) LayoutDialog();
+    }
+    afx_msg void OnGetMinMaxInfo(MINMAXINFO* info)
+    {
+        CDialog::OnGetMinMaxInfo(info);
+        info->ptMinTrackSize.x = 440; info->ptMinTrackSize.y = 300;
+    }
+    afx_msg void OnDestroy()
+    {
+        CaptureOptionsWindow(*this, theApp.m_settings.countdownOptionsWindow);
+        SaveSettings(theApp.m_settings);
+        CDialog::OnDestroy();
+    }
+    DECLARE_MESSAGE_MAP()
 
     BOOL Pick(int& target)
     {
@@ -952,6 +1034,8 @@ protected:
     {
         auto readFace = [](CEdit& e, std::wstring& d) { CString s; e.GetWindowText(s); d = (LPCWSTR)s; };
         auto readSize = [](CEdit& e, int& d)           { CString s; e.GetWindowText(s); d = max(6, min(80, _wtoi(s))); };
+        readFace(m_editPreviousFace, m_settings.countdownPreviousFontFace);
+        readSize(m_editPreviousSize, m_settings.countdownPreviousFontSize);
         readFace(m_editTitleFace,   m_settings.countdownTitleFontFace);
         readSize(m_editTitleSize,   m_settings.countdownTitleFontSize);
         readFace(m_editClockFace,   m_settings.countdownClockFontFace);
@@ -963,9 +1047,9 @@ protected:
 
         // Show/hide checkboxes
         bool* showFlags[] = { &m_settings.countdownShowTitle, &m_settings.countdownShowClock,
-                               &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive };
-        CButton* showChks[] = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive };
-        for (int i = 0; i < 4; ++i)
+                               &m_settings.countdownShowZmanTime, &m_settings.countdownShowLive, &m_settings.countdownShowPreviousZman };
+        CButton* showChks[] = { &m_chkShowTitle, &m_chkShowClock, &m_chkShowZmanTime, &m_chkShowLive, &m_chkPreviousZman };
+        for (int i = 0; i < 5; ++i)
             if (showChks[i]->GetSafeHwnd())
                 *showFlags[i] = (showChks[i]->GetCheck() == BST_CHECKED);
 
@@ -976,6 +1060,8 @@ protected:
                 mask |= (1u << i);
         m_settings.countdownZmanimMask = mask;
         m_settings.countdownShowShabbosEnd = m_chkShabbosEnd.GetCheck() == BST_CHECKED;
+        m_settings.countdownShowPreviousZman = m_chkPreviousZman.GetCheck() == BST_CHECKED;
+        m_settings.countdownShowPreviousElapsed = m_chkPreviousElapsed.GetCheck() == BST_CHECKED;
         bool* scheduleFlags[] = { &m_settings.scheduledCountdown, &m_settings.scheduledMinimize,
             &m_settings.scheduledLaunchWhenClosed, &m_settings.scheduledTopmost,
             &m_settings.scheduledUsePlacement, &m_settings.muteAtCandleLighting };
@@ -995,13 +1081,20 @@ protected:
     void Apply()
     {
         Read();
-        if (m_pFrame) m_pFrame->ApplyAndSaveSettings(m_settings);
+        m_settings.preferencesWindow = theApp.m_settings.preferencesWindow;
+        CaptureOptionsWindow(*this, m_settings.countdownOptionsWindow);
+        AppSettings updated = theApp.m_settings;
+        CopyCountdownPreferences(updated, m_settings);
+        if (m_pFrame) m_pFrame->ApplyAndSaveSettings(updated);
+        m_settings = theApp.m_settings;
         if (m_btnApply.GetSafeHwnd()) m_btnApply.EnableWindow(FALSE);
     }
 
     void SyncFontEdits()
     {
         auto setSize = [](CEdit& e, int v) { CString s; s.Format(L"%d", v); e.SetWindowText(s); };
+        m_editPreviousFace.SetWindowText(m_settings.countdownPreviousFontFace.c_str());
+        setSize(m_editPreviousSize, m_settings.countdownPreviousFontSize);
         m_editTitleFace.SetWindowText(m_settings.countdownTitleFontFace.c_str());
         setSize(m_editTitleSize, m_settings.countdownTitleFontSize);
         m_editClockFace.SetWindowText(m_settings.countdownClockFontFace.c_str());
@@ -1039,18 +1132,30 @@ protected:
         m_settings.countdownLiveFontSize     = d.countdownLiveFontSize;
         m_settings.countdownLiveBold         = d.countdownLiveBold;
         m_settings.countdownLiveItalic       = d.countdownLiveItalic;
+        m_settings.countdownPreviousFontFace = d.countdownPreviousFontFace;
+        m_settings.countdownPreviousFontSize = d.countdownPreviousFontSize;
+        m_settings.countdownPreviousTextColor = d.countdownPreviousTextColor;
+        m_settings.countdownPreviousBackColor = d.countdownPreviousBackColor;
+        m_settings.countdownPreviousBold = d.countdownPreviousBold;
+        m_settings.countdownPreviousItalic = d.countdownPreviousItalic;
         SyncFontEdits();
     }
 
 private:
+    CCountdownOptionsDlg** m_ownerSlot = nullptr;
+    COptionsContentWnd m_content;
     CMainFrame*  m_pFrame = nullptr;
     AppSettings  m_settings;
     int          m_nextId = 0;
     CTabCtrl     m_tabCtrl;
     CToolTipCtrl m_tooltip;
     std::vector<CWnd*> m_page1, m_page2, m_page3;
+    CComboBox m_rowOrder[6];
+    CButton m_chkPreviousZman, m_chkPreviousElapsed;
 
     // Appearance tab rows
+    CEdit m_editPreviousFace, m_editPreviousSize;
+    CButton m_btnPreviousColor, m_btnPreviousBack;
     CEdit   m_editTitleFace,   m_editTitleSize;
     CEdit   m_editClockFace,   m_editClockSize;
     CEdit   m_editCurrentFace, m_editCurrentSize;
@@ -1073,6 +1178,12 @@ private:
     bool m_initialized = false;
 };
 
+BEGIN_MESSAGE_MAP(CCountdownOptionsDlg, CDialog)
+    ON_WM_SIZE()
+    ON_WM_GETMINMAXINFO()
+    ON_WM_DESTROY()
+END_MESSAGE_MAP()
+
 class CCountdownClockWnd : public CFrameWnd
 {
 public:
@@ -1083,6 +1194,11 @@ public:
         m_alwaysOnTop = value;
         SetWindowPos(value ? &wndTopMost : &wndNoTopMost, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         RebuildMenuBar(); UpdateTopmostUi(false);
+    }
+
+    void CloseOptions()
+    {
+        if (m_options && ::IsWindow(m_options->GetSafeHwnd())) m_options->DestroyWindow();
     }
 
     BOOL CreateClock()
@@ -1111,6 +1227,7 @@ protected:
 
     afx_msg void OnDestroy()
     {
+        CloseOptions();
         KillTimer(1);
         if (m_pFrame && m_pFrame->m_pCountdownClock == this)
             m_pFrame->m_pCountdownClock = nullptr;
@@ -1136,8 +1253,18 @@ protected:
 
     afx_msg void OnClockOptions()
     {
-        CCountdownOptionsDlg dlg(m_pFrame, nullptr);
-        dlg.DoModal();
+        if (m_options && ::IsWindow(m_options->GetSafeHwnd())) {
+            m_options->ShowWindow(SW_RESTORE);
+            m_options->SetForegroundWindow();
+            return;
+        }
+        m_options = new CCountdownOptionsDlg(m_pFrame, &m_options);
+        if (!m_options->CreateModeless()) {
+            delete m_options; m_options = nullptr;
+            return;
+        }
+        m_options->ShowWindow(SW_SHOW);
+        m_options->SetForegroundWindow();
     }
 
     afx_msg void OnShowCalendar()
@@ -1242,7 +1369,7 @@ protected:
         bool valid = false;
     };
 
-    UpcomingZman GetUpcoming() const
+    UpcomingZman GetUpcoming(bool previous = false) const
     {
         UpcomingZman best;
         if (!m_pFrame) return best;
@@ -1252,7 +1379,7 @@ protected:
         SYSTEMTIME st = {};
         GetLocalTime(&st);
         GregorianDate today(st.wYear, st.wMonth, st.wDay);
-        for (int d = 0; d < 2; ++d)
+        for (int d = previous ? -8 : 0; d < (previous ? 1 : 2); ++d)
         {
             GregorianDate g = JDNToGregorian(GregorianToJDN(today) + d);
             bool isDst = IsDST(g, m_pFrame->m_location);
@@ -1365,8 +1492,8 @@ protected:
                 const auto& item = items[idx];
                 if (!item.time.IsValid()) continue;
                 CTime t = DateTimeForZman(g, item.time);
-                if (t <= threshold) continue;
-                if (!best.valid || t < best.time)
+                if (previous ? t > now : t <= threshold) continue;
+                if (!best.valid || (previous ? t > best.time : t < best.time))
                     best = { item.label, t, true };
             }
         }
@@ -1408,6 +1535,20 @@ protected:
 
         CString shabbosEnd = ObservanceEndText(ActiveObservance(*m_pFrame, now, true), L"Motzei Shabbos");
 
+        CString previousText;
+        if (s.countdownShowPreviousZman) {
+            auto previous = GetUpcoming(true);
+            if (previous.valid) {
+                previousText.Format(L"Last: %s (%s)", previous.label.c_str(),
+                    previous.time.Format(s.use24Hour ? L"%H:%M" : L"%I:%M %p").GetString());
+                if (s.countdownShowPreviousElapsed) {
+                    CTimeSpan elapsed = CTime::GetCurrentTime() - previous.time;
+                    CString ago; ago.Format(L" - %I64dh %02dm %02ds ago", elapsed.GetTotalHours(), elapsed.GetMinutes(), elapsed.GetSeconds());
+                    previousText += ago;
+                }
+            } else previousText = L"No previous selected zman";
+        }
+
         // Determine visible sections and distribute height
         struct Section {
             bool       visible;
@@ -1426,11 +1567,14 @@ protected:
             { s.countdownShowClock,    countdown,s.countdownClockBold   ? FW_BOLD : FW_NORMAL, s.countdownClockItalic,   s.countdownClockFontFace,   s.countdownClockFontSize,   (COLORREF)s.countdownClockTextColor,   (COLORREF)s.countdownClockBackColor   },
             { s.countdownShowZmanTime, zmanTime, s.countdownCurrentBold ? FW_BOLD : FW_NORMAL, s.countdownCurrentItalic, s.countdownCurrentFontFace, s.countdownCurrentFontSize, (COLORREF)s.countdownCurrentTextColor, (COLORREF)s.countdownCurrentBackColor },
             { s.countdownShowLive,     live,     s.countdownLiveBold    ? FW_BOLD : FW_NORMAL, s.countdownLiveItalic,    s.countdownLiveFontFace,    s.countdownLiveFontSize,    (COLORREF)s.countdownLiveTextColor,    (COLORREF)s.countdownLiveBackColor    },
+            { s.countdownShowPreviousZman, previousText, s.countdownPreviousBold ? FW_BOLD : FW_NORMAL,
+                s.countdownPreviousItalic, s.countdownPreviousFontFace, s.countdownPreviousFontSize,
+                (COLORREF)s.countdownPreviousTextColor, (COLORREF)s.countdownPreviousBackColor },
         };
-        // Weights: title=2, clock=4, zmanTime=2, live=2 → total 10 when all visible
-        int weights[] = { 2, 2, 4, 2, 2 };
+        // Give the countdown timer twice the height of the informational rows.
+        int weights[] = { 2, 2, 4, 2, 2, 2 };
         int totalWeight = 0;
-        for (int i = 0; i < 5; ++i) if (sections[i].visible) totalWeight += weights[i];
+        for (int i = 0; i < 6; ++i) if (sections[i].visible) totalWeight += weights[i];
         if (totalWeight == 0) return;
 
         int totalH = rc.Height();
@@ -1447,18 +1591,31 @@ protected:
             dc.SetTextColor(sec.textColor);
             dc.SetBkColor(sec.backColor);
             CRect drawRc = area; drawRc.DeflateRect(8, 2);
-            dc.DrawText(sec.text, drawRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            // Keep long zman labels and elapsed times readable in a narrow clock.
+            int pointSize = max(6, (int)round(sec.size * scale));
+            int textWidth = dc.GetTextExtent(sec.text).cx;
+            if (textWidth > drawRc.Width() && pointSize > 6 && drawRc.Width() > 0) {
+                dc.SelectObject(previousFont);
+                f.DeleteObject();
+                pointSize = max(6, (int)(pointSize * (double)drawRc.Width() / textWidth));
+                MakeFont(f, sec.face, pointSize, sec.fontWeight, sec.italic);
+                dc.SelectObject(&f);
+            }
+            dc.DrawText(sec.text, drawRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             dc.SelectObject(previousFont);
         };
 
-        int distributed = 0;
-        for (int i = 0; i < 5; ++i)
+        int order[6];
+        std::copy(std::begin(s.countdownRowOrder), std::end(s.countdownRowOrder), std::begin(order));
+        NormalizeCountdownRowOrder(order);
+        int cumulativeWeight = 0;
+        for (int section : order)
         {
-            if (!sections[i].visible) continue;
-            int h = (i < 4) ? (totalH * weights[i] / totalWeight) : (totalH - distributed);
-            draw(sections[i], h);
-            curY += h;
-            distributed += h;
+            if (!sections[section].visible) continue;
+            cumulativeWeight += weights[section];
+            int bottom = rc.top + totalH * cumulativeWeight / totalWeight;
+            draw(sections[section], bottom - curY);
+            curY = bottom;
         }
     }
 
@@ -1470,6 +1627,7 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
+    CCountdownOptionsDlg* m_options = nullptr;
     void RebuildMenuBar()
     {
         CMenu menu, opt;
@@ -3721,10 +3879,6 @@ int CMainFrame::OnCreate(LPCREATESTRUCT lpcs)
         AddTrayIcon();
     // Defer today's event notification so window is fully visible first
     SetTimer(3, 1500, nullptr);
-    if (m_minimizeToTray && s.minimizeOnStartup)
-    {
-        ShowWindow(SW_HIDE);
-    }
     return 0;
 }
 
@@ -4463,8 +4617,11 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
 
     out.alot = CustomMorningBoundary(g, m_location, isDst, z,
         m_customAlotMode, m_customAlotValue, 16.1);
-    out.tzeit = CustomEveningBoundary(g, m_location, isDst, z,
-        m_customTzeitMode, m_customTzeitValue, 8.5);
+    int activeTzaisMode = m_customTzeitMode;
+    double activeTzaisValue = m_customTzeitValue;
+    std::wstring tzaisSeason;
+    ConfiguredTzaisMethod(g, theApp.m_settings, m_location, activeTzaisMode, activeTzaisValue, &tzaisSeason);
+    out.tzeit = CalculateConfiguredTzais(g, theApp.m_settings, m_location, z, isDst);
     out.misheyakir = CustomMorningBoundary(g, m_location, isDst, z,
         m_customMisheyakirMode, m_customMisheyakirValue, 10.2);
 
@@ -4557,7 +4714,8 @@ DisplayZmanimTimes CMainFrame::BuildDisplayZmanim(
     out.misheyakirLabel = BoundaryLabel(L"Misheyakir", m_customMisheyakirMode, m_customMisheyakirValue, false);
     out.sofShemaLabel = BoundaryLabel(L"Sof Shema", m_customSofZmanMode, m_customSofZmanValue, true);
     out.sofTefillaLabel = BoundaryLabel(L"Sof Tefilla", m_customSofZmanMode, m_customSofZmanValue, true);
-    out.tzeitLabel = BoundaryLabel(L"Tzeis", m_customTzeitMode, m_customTzeitValue, false);
+    out.tzeitLabel = BoundaryLabel(L"Tzeis", activeTzaisMode, activeTzaisValue, false);
+    if (!tzaisSeason.empty()) out.tzeitLabel += L" (" + tzaisSeason + L")";
     return out;
 }
 
@@ -4592,7 +4750,8 @@ void CMainFrame::ApplySettings(const AppSettings& s)
         m_customSofZmanValue = 0.0;
     }
     m_customTzeitMode = max(0, min(2, s.customTzeitMode));
-    m_customTzeitValue = s.customTzeitValue > 0.0 ? s.customTzeitValue : 8.5;
+    m_customTzeitValue = (m_customTzeitMode == 0 && s.customTzeitPreset == 5)
+        ? max(0.0, s.customTzeitDegreesValue) : (s.customTzeitValue > 0.0 ? s.customTzeitValue : 8.5);
     // v0.8.0 - mirror zmanim bar mask + end-of-fast preset onto the frame
     // so ZmanimPanel can read them without going back through the settings.
     m_zmanimBarMask = s.zmanimBarMask;
@@ -5846,6 +6005,14 @@ CString CMainFrame::BuildTrayTooltip()
         hToday.day,
         HebrewMonthName(hToday.month, IsHebrewLeapYear(hToday.year)).c_str(),
         hToday.year);
+    ParashaInfo weeklyParsha = GetParasha(hToday, m_isIsrael);
+    if (!weeklyParsha.name.empty()) {
+        tip += L" | ";
+        tip += weeklyParsha.name.c_str();
+        if (weeklyParsha.isCombined && !weeklyParsha.name2.empty()) {
+            tip += L" - "; tip += weeklyParsha.name2.c_str();
+        }
+    }
 
     // Emit all items in order.  Standard items check trayTooltipZmanimMask (bit < 100).
     // Custom items use bit offset +100 and check trayTooltipCustomZmanimMask.
@@ -6730,6 +6897,7 @@ void CMainFrame::OnFileRestore()
     if (m_pOptionsDlg && ::IsWindow(m_pOptionsDlg->GetSafeHwnd()))
         m_pOptionsDlg->DestroyWindow();
 
+    if (m_pCountdownClock) m_pCountdownClock->CloseOptions();
     BackupRestoreResult result = RestoreBackup(file);
     if (result == BackupRestoreResult::Failed)
     {
@@ -6759,13 +6927,14 @@ void CMainFrame::OnFileRestore()
 LRESULT CMainFrame::OnWinLuachCommand(WPARAM wParam, LPARAM)
 {
     if (wParam == 3) { CheckObservanceAutomation(); return 0; }
+    // Opening the countdown must not unhide or restore the main calendar.
+    if (wParam == 1) { OnViewCountdownClock(); return 0; }
     RestoreFromTray();
     ShowWindow(SW_SHOWNORMAL);
     SetForegroundWindow();
 
     switch ((int)wParam)
     {
-    case 1: OnViewCountdownClock(); break;
     case 2: OnOptionsPrefs();       break;
     default: break;  // 0 = just show
     }

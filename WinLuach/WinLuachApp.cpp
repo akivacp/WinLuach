@@ -140,7 +140,7 @@ BOOL CWinLuachApp::InitInstance()
         if (HWND hwnd = FindWindowW(nullptr, L"WinLuach - Hebrew Calendar"))
         {
             PostMessageW(hwnd, WM_WINLUACH_COMMAND, (WPARAM)action, 0);
-            if (action != 3) SetForegroundWindow(hwnd);
+            if (action == 0 || action == 2) SetForegroundWindow(hwnd);
         }
         CloseHandle(m_singleInstanceMutex);
         m_singleInstanceMutex = nullptr;
@@ -164,12 +164,13 @@ BOOL CWinLuachApp::InitInstance()
     // Register Jump List tasks (taskbar right-click menu).
     RegisterJumpList();
 
-    if (action == 3 || (m_settings.minimizeToTray && m_settings.minimizeOnStartup))
-    {
+    // Minimized startup works independently of tray settings. OnSize routes
+    // minimization to the tray only when that behavior is configured.
+    if (action == 3)
         pFrame->ShowWindow(SW_HIDE);
-    }
-    else
-    {
+    else if (m_settings.minimizeOnStartup && action != 2)
+        pFrame->ShowWindow(SW_SHOWMINNOACTIVE);
+    else {
         pFrame->ShowWindow(SW_SHOW);
         pFrame->UpdateWindow();
     }
@@ -182,7 +183,7 @@ BOOL CWinLuachApp::InitInstance()
 
     // Open the countdown clock automatically when configured.
     if (action == 0 && m_settings.countdownOpenOnStartup)
-        pFrame->SendMessageW(WM_WINLUACH_COMMAND, 1, 0);
+        pFrame->SendMessageW(WM_COMMAND, ID_VIEW_COUNTDOWN, 0);
 
     return TRUE;
 }

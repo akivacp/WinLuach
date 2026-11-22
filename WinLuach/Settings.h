@@ -91,8 +91,46 @@ struct ReminderRule
 //           minutes value; degrees have their own field.
 // =============================================================================
 
+inline void NormalizeCountdownRowOrder(int (&order)[6])
+{
+    bool used[6] = {};
+    for (int& section : order) {
+        if (section < 0 || section >= 6 || used[section]) {
+            section = 0;
+            while (used[section]) ++section;
+        }
+        used[section] = true;
+    }
+}
+
+struct OptionsWindowPlacement
+{
+    int x = -1, y = -1, width = 0, height = 0;
+};
+
+// Annual changeover rules: 0=after Pesach/Simchas Torah, 1=DST start/end,
+// 2=Gregorian month/day, 3=nth weekday, 4=Hebrew month/day,
+// 5=March equinox, 6=June solstice, 7=September equinox, 8=December solstice, 9=parsha.
+struct TzaisChangeoverRule
+{
+    int type = 0;
+    int month = 3, day = 20;
+    int week = 2, weekday = 0; // week 1..4, 5=last; weekday Sunday=0
+    int hebrewMonth = 8, hebrewDay = 23;
+    int parshaIndex = 0;
+};
+struct SeasonalTzaisSettings
+{
+    bool enabled = false;
+    int summerMode = 2, winterMode = 1; // -1=normal custom, 1=fixed, 2=shaah zmanis
+    double summerMinutes = 42.0, winterMinutes = 42.0;
+    TzaisChangeoverRule summerStart, winterStart;
+};
+
 struct AppSettings
 {
+    OptionsWindowPlacement preferencesWindow, countdownOptionsWindow;
+
     // --- Location ---
     std::wstring locationName;   // e.g. L"New York City"
     double       latitude = 40.6501;
@@ -229,6 +267,7 @@ struct AppSettings
     int          customSofZmanMode = 0;      // value 0 means netz-to-shkiah
     double       customSofZmanValue = -1.0;  // -1 migrates from legacy zmanimShita (minutes for mode 1/2)
     double       customSofZmanDegreesValue = 16.1; // degrees value for mode 0 (v0.8.82)
+    SeasonalTzaisSettings seasonalTzais;
     int          customTzeitMode = 0;
     double       customTzeitValue = 42.0;        // minutes value for mode 1/2
     double       customTzeitDegreesValue = 8.5;  // degrees value for mode 0 (v0.8.82)
@@ -281,6 +320,10 @@ struct AppSettings
     bool         paneMoladVisible        = true;
 
     // Optional observance context and candle-lighting automation.
+    bool countdownShowPreviousZman = false;
+    bool countdownShowPreviousElapsed = false;
+    // Section IDs: Shabbos end, next zman, timer, zman time, live clock, previous zman.
+    int countdownRowOrder[6] = { 0, 1, 2, 3, 4, 5 };
     bool countdownShowShabbosEnd = false;
     bool toastShowShabbosEnd = false;
     bool toastShowYomTovEnd = false;
@@ -314,6 +357,12 @@ struct AppSettings
     int          countdownCurrentBackColor = 0x00FFFFFF;
     bool         countdownCurrentBold = false;
     bool         countdownCurrentItalic = false;
+    std::wstring countdownPreviousFontFace = L"Segoe UI";
+    int          countdownPreviousFontSize = 13;
+    int          countdownPreviousTextColor = 0x00323232;
+    int          countdownPreviousBackColor = 0x00FFFFFF;
+    bool         countdownPreviousBold = false;
+    bool         countdownPreviousItalic = false;
     std::wstring countdownLiveFontFace = L"Segoe UI";
     int          countdownLiveFontSize = 12;
     int          countdownLiveTextColor = 0x00505050;
@@ -370,6 +419,64 @@ struct AppSettings
             elevation, gmtOffset, usesDST);
     }
 };
+
+// Countdown Options is modeless: merge only its preferences so applying it
+// cannot overwrite changes made in the main Preferences window, or vice versa.
+inline void CopyCountdownPreferences(AppSettings& target, const AppSettings& source)
+{
+    target.countdownShowPreviousZman = source.countdownShowPreviousZman;
+    target.countdownShowPreviousElapsed = source.countdownShowPreviousElapsed;
+    for (int i = 0; i < 6; ++i) target.countdownRowOrder[i] = source.countdownRowOrder[i];
+    target.countdownShowShabbosEnd = source.countdownShowShabbosEnd;
+    target.scheduledCountdown = source.scheduledCountdown;
+    target.scheduledMinimize = source.scheduledMinimize;
+    target.scheduledLaunchWhenClosed = source.scheduledLaunchWhenClosed;
+    target.scheduledTopmost = source.scheduledTopmost;
+    target.scheduledUsePlacement = source.scheduledUsePlacement;
+    target.muteAtCandleLighting = source.muteAtCandleLighting;
+    target.scheduledX = source.scheduledX;
+    target.scheduledY = source.scheduledY;
+    target.scheduledW = source.scheduledW;
+    target.scheduledH = source.scheduledH;
+    target.countdownTitleFontFace = source.countdownTitleFontFace;
+    target.countdownTitleFontSize = source.countdownTitleFontSize;
+    target.countdownTitleTextColor = source.countdownTitleTextColor;
+    target.countdownTitleBackColor = source.countdownTitleBackColor;
+    target.countdownTitleBold = source.countdownTitleBold;
+    target.countdownTitleItalic = source.countdownTitleItalic;
+    target.countdownClockFontFace = source.countdownClockFontFace;
+    target.countdownClockFontSize = source.countdownClockFontSize;
+    target.countdownClockTextColor = source.countdownClockTextColor;
+    target.countdownClockBackColor = source.countdownClockBackColor;
+    target.countdownClockBold = source.countdownClockBold;
+    target.countdownClockItalic = source.countdownClockItalic;
+    target.countdownCurrentFontFace = source.countdownCurrentFontFace;
+    target.countdownCurrentFontSize = source.countdownCurrentFontSize;
+    target.countdownCurrentTextColor = source.countdownCurrentTextColor;
+    target.countdownCurrentBackColor = source.countdownCurrentBackColor;
+    target.countdownCurrentBold = source.countdownCurrentBold;
+    target.countdownCurrentItalic = source.countdownCurrentItalic;
+    target.countdownPreviousFontFace = source.countdownPreviousFontFace;
+    target.countdownPreviousFontSize = source.countdownPreviousFontSize;
+    target.countdownPreviousTextColor = source.countdownPreviousTextColor;
+    target.countdownPreviousBackColor = source.countdownPreviousBackColor;
+    target.countdownPreviousBold = source.countdownPreviousBold;
+    target.countdownPreviousItalic = source.countdownPreviousItalic;
+    target.countdownLiveFontFace = source.countdownLiveFontFace;
+    target.countdownLiveFontSize = source.countdownLiveFontSize;
+    target.countdownLiveTextColor = source.countdownLiveTextColor;
+    target.countdownLiveBackColor = source.countdownLiveBackColor;
+    target.countdownLiveBold = source.countdownLiveBold;
+    target.countdownLiveItalic = source.countdownLiveItalic;
+    target.countdownZmanimMask = source.countdownZmanimMask;
+    target.countdownShowTitle = source.countdownShowTitle;
+    target.countdownShowClock = source.countdownShowClock;
+    target.countdownShowZmanTime = source.countdownShowZmanTime;
+    target.countdownShowLive = source.countdownShowLive;
+    target.countdownOpenOnStartup = source.countdownOpenOnStartup;
+    target.countdownAlwaysOnTop = source.countdownAlwaysOnTop;
+    target.countdownOptionsWindow = source.countdownOptionsWindow;
+}
 
 // =============================================================================
 // FUNCTIONS

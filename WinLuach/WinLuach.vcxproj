@@ -179,6 +179,9 @@
     <ClInclude Include="Version.h" />
     <ClInclude Include="WinLuachApp.h" />
     <ClInclude Include="Zmanim.h" />
+    <ClInclude Include="SeasonalTzais.h" />
+    <ClInclude Include="SeasonalTzaisPersistence.h" />
+    <ClInclude Include="SeasonalTzaisDlg.h" />
     <ClInclude Include="ZmanimPanel.h" />
   </ItemGroup>
   <ItemGroup>

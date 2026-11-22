@@ -64,6 +64,7 @@
 
 #include "pch.h"
 #include "OptionsDlg.h"
+#include "SeasonalTzaisDlg.h"
 #include "MainFrame.h"
 #include "UpdateChecker.h"
 #include "Resource.h"
@@ -333,6 +334,35 @@ BEGIN_MESSAGE_MAP(COptionsContentWnd, CDialog)
     ON_WM_MOUSEWHEEL()
 END_MESSAGE_MAP()
 
+void CaptureOptionsWindow(CWnd& window, OptionsWindowPlacement& placement)
+{
+    WINDOWPLACEMENT wp = {}; wp.length = sizeof(wp);
+    if (!window.GetWindowPlacement(&wp)) return;
+    CRect rect(wp.rcNormalPosition);
+    MONITORINFO monitor = {}; monitor.cbSize = sizeof(monitor);
+    if (GetMonitorInfo(MonitorFromWindow(window.GetSafeHwnd(), MONITOR_DEFAULTTONEAREST), &monitor))
+        rect.OffsetRect(monitor.rcWork.left - monitor.rcMonitor.left, monitor.rcWork.top - monitor.rcMonitor.top);
+    placement.x = rect.left; placement.y = rect.top;
+    placement.width = rect.Width(); placement.height = rect.Height();
+}
+
+void RestoreOptionsWindow(CWnd& window, const OptionsWindowPlacement& placement, int defaultWidth, int defaultHeight)
+{
+    CRect current; window.GetWindowRect(&current);
+    int width = placement.width > 0 ? max(440, placement.width) : defaultWidth;
+    int height = placement.height > 0 ? max(300, placement.height) : defaultHeight;
+    CRect requested(placement.width > 0 ? placement.x : current.left,
+        placement.height > 0 ? placement.y : current.top, 0, 0);
+    requested.right = requested.left + width; requested.bottom = requested.top + height;
+    MONITORINFO monitor = {}; monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfo(MonitorFromRect(&requested, MONITOR_DEFAULTTONEAREST), &monitor)) return;
+    width = min(width, monitor.rcWork.right - monitor.rcWork.left);
+    height = min(height, monitor.rcWork.bottom - monitor.rcWork.top);
+    int x = max(monitor.rcWork.left, min(requested.left, monitor.rcWork.right - width));
+    int y = max(monitor.rcWork.top, min(requested.top, monitor.rcWork.bottom - height));
+    window.SetWindowPos(nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 BOOL COptionsContentWnd::CreateContent(CWnd* parent, const CRect& rect)
 {
     // DS_CONTROL makes this a nested dialog: focus and auto-radio navigation
@@ -397,6 +427,10 @@ void COptionsContentWnd::Layout(bool resetScroll)
     int nextY = 12;
     m_extent = 0;
     CClientDC dc(this);
+    int leftBottom = 0;
+    if (compact && m_columnBreak > 0) for (const auto& item : m_items)
+        if ((item.window->GetStyle() & WS_VISIBLE) && item.original.left < m_columnBreak)
+            leftBottom = max(leftBottom, item.original.bottom);
     std::vector<std::pair<CWnd*, CRect>> positions;
     for (const auto& item : m_items)
     {
@@ -407,7 +441,14 @@ void COptionsContentWnd::Layout(bool resetScroll)
         const bool group = button && (child->GetStyle() & BS_TYPEMASK) == BS_GROUPBOX;
         const bool combo = child->IsKindOf(RUNTIME_CLASS(CComboBox)) != FALSE;
         const bool tab = child->IsKindOf(RUNTIME_CLASS(CTabCtrl)) != FALSE;
-        if (compact)
+        if (compact && m_columnBreak > 0)
+        {
+            // Keep each row together; stack the second column below the first.
+            if (rect.left >= m_columnBreak) rect.OffsetRect(-m_columnBreak, leftBottom + 20);
+            rect.right = min(rect.right, width - 12);
+            if (rect.right <= rect.left) rect.right = rect.left + 24;
+        }
+        else if (compact)
         {
             int height = 26;
             if (tab)
@@ -1363,6 +1404,7 @@ private:
 };
 
 BEGIN_MESSAGE_MAP(COptionsDlg, CDialog)
+    ON_WM_DESTROY()
     ON_BN_CLICKED(IDC_OPT_TRAY_COLOR,      &COptionsDlg::OnTrayTextColor)
     ON_BN_CLICKED(IDC_OPT_TRAY_BACK_COLOR, &COptionsDlg::OnTrayBackColor)
     ON_BN_CLICKED(IDC_OPT_TRAY_FONT,       &COptionsDlg::OnTrayFont)
@@ -1821,25 +1863,25 @@ BOOL COptionsDlg::OnInitDialog()
         CRect(28, y, 210, y + 26), &m_content, IDC_OPT_RESET_CALENDAR);
     track(m_pageGeneral, &m_btnResetCalendar);
 
-    // Auto-Update group
+    // Full-width labels and separate rows stay readable when the page narrows.
     y = 236;
-    mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 140); y += 22;
-    m_chkDisableAutoUpdate.Create(L"Disable all update checks", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 220, y + 20), &m_content, IDC_OPT_DISABLE_AUTOUPDATE);
-    track(m_pageGeneral, &m_chkDisableAutoUpdate); y += 26;
-    m_chkCheckUpdatesAuto.Create(L"Check for updates automatically", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 230, y + 20), &m_content, IDC_OPT_CHECK_AUTO);
-    track(m_pageGeneral, &m_chkCheckUpdatesAuto); y += 24;
-    mkStatic(m_pageGeneral, L"Frequency:", 28, y, 60, 20);
-    initCombo(m_pageGeneral, m_cmbUpdateFrequency, 90, y - 1, 120, IDC_OPT_UPDATE_FREQ,
+    mkGroup(m_pageGeneral, L"Updates", 14, y, W - 28, 190); y += 24;
+    m_chkDisableAutoUpdate.Create(L"Disable all update checks", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 24), &m_content, IDC_OPT_DISABLE_AUTOUPDATE);
+    track(m_pageGeneral, &m_chkDisableAutoUpdate); y += 30;
+    m_chkCheckUpdatesAuto.Create(L"Check for updates automatically", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 24), &m_content, IDC_OPT_CHECK_AUTO);
+    track(m_pageGeneral, &m_chkCheckUpdatesAuto); y += 30;
+    mkStatic(m_pageGeneral, L"Frequency:", 28, y, 100, 24);
+    initCombo(m_pageGeneral, m_cmbUpdateFrequency, 136, y, 150, IDC_OPT_UPDATE_FREQ,
         { L"Daily", L"Weekly", L"Monthly" }, m_current.updateCheckFrequency);
-    y += 26;
-    m_chkCheckOnLaunch.Create(L"Check on launch", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        CRect(28, y, 180, y + 20), &m_content, IDC_OPT_CHECK_LAUNCH);
-    track(m_pageGeneral, &m_chkCheckOnLaunch);
+    y += 32;
+    m_chkCheckOnLaunch.Create(L"Check on launch", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        CRect(28, y, W - 28, y + 24), &m_content, IDC_OPT_CHECK_LAUNCH);
+    track(m_pageGeneral, &m_chkCheckOnLaunch); y += 32;
     m_btnCheckUpdatesNow.Create(L"Check Now",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        CRect(190, y - 2, 270, y + 22), &m_content, IDC_OPT_CHECK_NOW);
+        CRect(28, y, 168, y + 28), &m_content, IDC_OPT_CHECK_NOW);
     track(m_pageGeneral, &m_btnCheckUpdatesNow);
 
     y = 38;
@@ -1900,7 +1942,7 @@ BOOL COptionsDlg::OnInitDialog()
 
     // v0.8.82 — moved Holiday Schedule below the Updates group (y=330)
     // to fix overlap with Reset group (both were at y=138 previously).
-    y = 390;
+    y = 440;
 
     mkGroup(m_pageGeneral, L"Holiday Schedule", 14, y, W - 28, 54); y += 22;
     m_radDiaspora.Create(L"Diaspora (outside Israel)", WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
@@ -2674,10 +2716,13 @@ BOOL COptionsDlg::OnInitDialog()
               L"72 minutes", L"72 minutes as degrees", L"Custom" }, yy);
         int sel = max(0, min(5, m_current.customTzeitPreset));
         m_radTzaisPreset[sel]->SetCheck(BST_CHECKED);
-        attachCustomZmanControls(m_subPageTzais, m_editCustomTzeit,
+        yy = attachCustomZmanControls(m_subPageTzais, m_editCustomTzeit,
             m_radTzeitDegrees, m_radTzeitMinutes, m_radTzeitZmanis, yy,
             m_chkTzeitCustomDeg, m_editCustomTzeitDeg, m_cmbTzeitMinutesMode,
             IDC_OPT_TZEIT_DEG_CHK, IDC_OPT_TZEIT_DEG_VAL, IDC_OPT_TZEIT_MIN_MODE);
+        m_btnSeasonalTzais.Create(L"Advanced: summer / winter methods...", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+            CRect(40,yy+4,W-40,yy+32), &m_content, 8490);
+        track(m_subPageTzais,&m_btnSeasonalTzais);
         m_chkTzeitCustomDeg.SetCheck(m_current.customTzeitMode == 0 ? BST_CHECKED : BST_UNCHECKED);
         { CString sv; sv.Format(L"%.4g", m_current.customTzeitDegreesValue); m_editCustomTzeitDeg.SetWindowText(sv); }
         m_cmbTzeitMinutesMode.SetCurSel(m_current.customTzeitMode == 2 ? 1 : 0);
@@ -2958,7 +3003,7 @@ BOOL COptionsDlg::OnInitDialog()
     m_tooltip.AddTool(&m_chkShowTrayIcon,   L"Keep the WinLuach icon pinned in the system tray while the app is open");
     m_tooltip.AddTool(&m_chkMinimizeToTray, L"Send the window to the system tray when minimized or closed");
     m_tooltip.AddTool(&m_cmbTrayWhen,       L"Choose when the window minimizes to tray");
-    m_tooltip.AddTool(&m_chkMinimizeOnStartup, L"Start the application minimized to the system tray");
+    m_tooltip.AddTool(&m_chkMinimizeOnStartup, L"Start the calendar minimized. It appears in the taskbar, or in the system tray if you have enabled minimizing to the tray. The countdown can still open separately.");
     m_tooltip.AddTool(&m_chkStartWithWindows,  L"Automatically launch WinLuach when Windows starts");
     m_tooltip.AddTool(&m_chkDesktopShortcut,   L"Create a desktop shortcut for WinLuach");
     m_tooltip.AddTool(&m_btnTrayTextColor,  L"Choose the color for the tray icon clock text");
@@ -3013,6 +3058,8 @@ BOOL COptionsDlg::OnInitDialog()
     };
     for (int i = 0; i < 5; ++i) m_tooltip.AddTool(&m_toastDetails[i], detailTips[i]);
 
+    m_tooltip.AddTool(&m_btnSeasonalTzais, L"Use different Custom Tzais methods in summer and winter, with annual changeovers based on holidays, daylight saving time, dates, weekdays, parshios, equinoxes or solstices. Saved with your preferences and backups.");
+
     // Notifications tab
     m_tooltip.AddTool(&m_cmbNotifyPersonal,     L"Notification style for personal calendar events");
     m_tooltip.AddTool(&m_cmbNotifyWebCal,       L"Notification style for web calendar (ICS) events");
@@ -3060,6 +3107,12 @@ BOOL COptionsDlg::OnInitDialog()
             m_tooltip.AddTool(pChk,
                 L"Show this zman in the bottom zmanim panel");
 
+    m_tooltip.AddTool(&m_chkDisableAutoUpdate, L"Turn off automatic and startup update checks. Check Now is disabled while this option is selected.");
+    m_tooltip.AddTool(&m_chkCheckUpdatesAuto, L"Check for a newer WinLuach version at the selected frequency.");
+    m_tooltip.AddTool(&m_cmbUpdateFrequency, L"Choose how often WinLuach checks for updates automatically.");
+    m_tooltip.AddTool(&m_chkCheckOnLaunch, L"Check for a newer version whenever WinLuach starts.");
+    m_tooltip.AddTool(&m_btnCheckUpdatesNow, L"Check for an update now.");
+
     // Bottom buttons
     m_tooltip.AddTool(&m_btnOK,     L"Save settings and close the Options dialog");
     m_tooltip.AddTool(&m_btnApply,  L"Apply settings immediately without closing");
@@ -3067,6 +3120,8 @@ BOOL COptionsDlg::OnInitDialog()
 
     // Choose the initial focus explicitly; do not ask the dialog manager to
     // discover it by traversing every nested settings control during startup.
+    CRect initialWindow; GetWindowRect(&initialWindow);
+    RestoreOptionsWindow(*this, m_current.preferencesWindow, initialWindow.Width(), initialWindow.Height());
     m_tab.SetFocus();
     return FALSE;
 }
@@ -3082,6 +3137,7 @@ BOOL COptionsDlg::PreTranslateMessage(MSG* pMsg)
 // =============================================================================
 // ON OK — reads radio button states into m_result
 // =============================================================================
+
 
 void COptionsDlg::ShowOptionsPage(int page)
 {
@@ -3710,6 +3766,17 @@ BOOL COptionsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (m_initialized && !m_updatingColorUi && IsSettingsControlChange(wParam, lParam) &&
         id != IDC_OPT_COLOR_ITEM && id != IDC_OPT_COLOR_PREVIEW)
         SetDirty(true);
+    if (id == 8490 && code == BN_CLICKED) {
+        ReadControlsIntoResult();
+        CSeasonalTzaisDlg dialog(m_result,this);
+        if (dialog.DoModal()==IDOK) {
+            m_result.seasonalTzais=dialog.GetSettings();
+            if (m_result.seasonalTzais.enabled)
+                for (int i=0;i<(int)m_radTzaisPreset.size();++i) m_radTzaisPreset[i]->SetCheck(i==5?BST_CHECKED:BST_UNCHECKED);
+            SetDirty(true);
+        }
+        return TRUE;
+    }
     if (id == IDC_OPT_RESET_CALENDAR && code == BN_CLICKED)
     {
         OnResetCalendarSettings();
@@ -4294,6 +4361,8 @@ bool COptionsDlg::ApplyToParent()
     CMainFrame* frame = (CMainFrame*)AfxGetMainWnd();
     if (!frame)
         return false;
+    CopyCountdownPreferences(m_result, theApp.m_settings);
+    CaptureOptionsWindow(*this, m_result.preferencesWindow);
     frame->ApplyAndSaveSettings(m_result);
     m_current = m_result;
     SetDirty(false);
@@ -4317,6 +4386,13 @@ void COptionsDlg::OnOK()
         ReadControlsIntoResult();
         CDialog::OnOK();
     }
+}
+
+void COptionsDlg::OnDestroy()
+{
+    CaptureOptionsWindow(*this, theApp.m_settings.preferencesWindow);
+    SaveSettings(theApp.m_settings);
+    CDialog::OnDestroy();
 }
 
 void COptionsDlg::OnCancel()

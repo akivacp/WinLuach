@@ -17,6 +17,7 @@
 
 #include "pch.h"
 #include "Settings.h"
+#include "SeasonalTzaisPersistence.h"
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -387,6 +388,7 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"customSofZmanMode\": " << s.customSofZmanMode << L",\n";
     f << L"  \"customSofZmanValue\": " << s.customSofZmanValue << L",\n";
     f << L"  \"customSofZmanDegreesValue\": " << s.customSofZmanDegreesValue << L",\n";
+    WriteSeasonalTzais(f, s.seasonalTzais);
     f << L"  \"customTzeitMode\": " << s.customTzeitMode << L",\n";
     f << L"  \"customTzeitValue\": " << s.customTzeitValue << L",\n";
     f << L"  \"customTzeitDegreesValue\": " << s.customTzeitDegreesValue << L",\n";
@@ -477,11 +479,17 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"countdownClockBold\": " << (s.countdownClockBold ? L"true" : L"false") << L",\n";
     f << L"  \"countdownClockItalic\": " << (s.countdownClockItalic ? L"true" : L"false") << L",\n";
     f << L"  \"countdownCurrentFontFace\": \"" << JsonEscape(s.countdownCurrentFontFace) << L"\",\n";
+    f << L"  \"countdownPreviousFontFace\": \"" << JsonEscape(s.countdownPreviousFontFace) << L"\",\n";
     f << L"  \"countdownCurrentFontSize\": " << s.countdownCurrentFontSize << L",\n";
+    f << L"  \"countdownPreviousFontSize\": " << s.countdownPreviousFontSize << L",\n";
     f << L"  \"countdownCurrentTextColor\": " << s.countdownCurrentTextColor << L",\n";
+    f << L"  \"countdownPreviousTextColor\": " << s.countdownPreviousTextColor << L",\n";
     f << L"  \"countdownCurrentBackColor\": " << s.countdownCurrentBackColor << L",\n";
+    f << L"  \"countdownPreviousBackColor\": " << s.countdownPreviousBackColor << L",\n";
     f << L"  \"countdownCurrentBold\": " << (s.countdownCurrentBold ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownPreviousBold\": " << (s.countdownPreviousBold ? L"true" : L"false") << L",\n";
     f << L"  \"countdownCurrentItalic\": " << (s.countdownCurrentItalic ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownPreviousItalic\": " << (s.countdownPreviousItalic ? L"true" : L"false") << L",\n";
     f << L"  \"countdownLiveFontFace\": \"" << JsonEscape(s.countdownLiveFontFace) << L"\",\n";
     f << L"  \"countdownLiveFontSize\": " << s.countdownLiveFontSize << L",\n";
     f << L"  \"countdownLiveTextColor\": " << s.countdownLiveTextColor << L",\n";
@@ -495,7 +503,20 @@ bool SaveSettings(const AppSettings& s)
     f << L"  \"countdownShowLive\": " << (s.countdownShowLive ? L"true" : L"false") << L",\n";
     f << L"  \"countdownOpenOnStartup\": " << (s.countdownOpenOnStartup ? L"true" : L"false") << L",\n";
     f << L"  \"countdownAlwaysOnTop\": " << (s.countdownAlwaysOnTop ? L"true" : L"false") << L",\n";
+    const OptionsWindowPlacement* optionWindows[] = { &s.preferencesWindow, &s.countdownOptionsWindow };
+    const wchar_t* optionPrefixes[] = { L"preferencesWindow", L"countdownOptionsWindow" };
+    for (int i = 0; i < 2; ++i) {
+        const auto& window = *optionWindows[i];
+        f << L"  \"" << optionPrefixes[i] << L"X\": " << window.x << L",\n";
+        f << L"  \"" << optionPrefixes[i] << L"Y\": " << window.y << L",\n";
+        f << L"  \"" << optionPrefixes[i] << L"Width\": " << window.width << L",\n";
+        f << L"  \"" << optionPrefixes[i] << L"Height\": " << window.height << L",\n";
+    }
     f << L"  \"countdownShowShabbosEnd\": " << (s.countdownShowShabbosEnd ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownShowPreviousZman\": " << (s.countdownShowPreviousZman ? L"true" : L"false") << L",\n";
+    f << L"  \"countdownShowPreviousElapsed\": " << (s.countdownShowPreviousElapsed ? L"true" : L"false") << L",\n";
+    for (int i = 0; i < 6; ++i)
+        f << L"  \"countdownRowOrder" << i << L"\": " << s.countdownRowOrder[i] << L",\n";
     f << L"  \"toastShowShabbosEnd\": " << (s.toastShowShabbosEnd ? L"true" : L"false") << L",\n";
     f << L"  \"toastShowYomTovEnd\": " << (s.toastShowYomTovEnd ? L"true" : L"false") << L",\n";
     f << L"  \"toastShowFastEnd\": " << (s.toastShowFastEnd ? L"true" : L"false") << L",\n";
@@ -556,6 +577,7 @@ bool LoadSettings(AppSettings& s)
     std::wstring line;
     while (std::getline(f, line))
     {
+        ReadSeasonalTzais(line, s.seasonalTzais, ParseJsonBool, ParseJsonNumber);
         if (line.find(L"\"locationName\"") != std::wstring::npos) s.locationName = ParseJsonString(line);
         if (line.find(L"\"latitude\"") != std::wstring::npos) s.latitude = ParseJsonNumber(line);
         if (line.find(L"\"longitude\"") != std::wstring::npos) s.longitude = ParseJsonNumber(line);
@@ -773,11 +795,17 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"countdownClockBold\"") != std::wstring::npos) s.countdownClockBold = ParseJsonBool(line);
         if (line.find(L"\"countdownClockItalic\"") != std::wstring::npos) s.countdownClockItalic = ParseJsonBool(line);
         if (line.find(L"\"countdownCurrentFontFace\"") != std::wstring::npos) s.countdownCurrentFontFace = ParseJsonString(line);
+        if (line.find(L"\"countdownPreviousFontFace\"") != std::wstring::npos) s.countdownPreviousFontFace = ParseJsonString(line);
         if (line.find(L"\"countdownCurrentFontSize\"") != std::wstring::npos) s.countdownCurrentFontSize = (int)ParseJsonNumber(line);
+        if (line.find(L"\"countdownPreviousFontSize\"") != std::wstring::npos) s.countdownPreviousFontSize = (int)ParseJsonNumber(line);
         if (line.find(L"\"countdownCurrentTextColor\"") != std::wstring::npos) s.countdownCurrentTextColor = (int)ParseJsonNumber(line);
+        if (line.find(L"\"countdownPreviousTextColor\"") != std::wstring::npos) s.countdownPreviousTextColor = (int)ParseJsonNumber(line);
         if (line.find(L"\"countdownCurrentBackColor\"") != std::wstring::npos) s.countdownCurrentBackColor = (int)ParseJsonNumber(line);
+        if (line.find(L"\"countdownPreviousBackColor\"") != std::wstring::npos) s.countdownPreviousBackColor = (int)ParseJsonNumber(line);
         if (line.find(L"\"countdownCurrentBold\"") != std::wstring::npos) s.countdownCurrentBold = ParseJsonBool(line);
+        if (line.find(L"\"countdownPreviousBold\"") != std::wstring::npos) s.countdownPreviousBold = ParseJsonBool(line);
         if (line.find(L"\"countdownCurrentItalic\"") != std::wstring::npos) s.countdownCurrentItalic = ParseJsonBool(line);
+        if (line.find(L"\"countdownPreviousItalic\"") != std::wstring::npos) s.countdownPreviousItalic = ParseJsonBool(line);
         if (line.find(L"\"countdownLiveFontFace\"") != std::wstring::npos) s.countdownLiveFontFace = ParseJsonString(line);
         if (line.find(L"\"countdownLiveFontSize\"") != std::wstring::npos) s.countdownLiveFontSize = (int)ParseJsonNumber(line);
         if (line.find(L"\"countdownLiveTextColor\"") != std::wstring::npos) s.countdownLiveTextColor = (int)ParseJsonNumber(line);
@@ -791,7 +819,22 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"countdownShowLive\"") != std::wstring::npos) s.countdownShowLive = ParseJsonBool(line);
         if (line.find(L"\"countdownOpenOnStartup\"") != std::wstring::npos) s.countdownOpenOnStartup = ParseJsonBool(line);
         if (line.find(L"\"countdownAlwaysOnTop\"") != std::wstring::npos) s.countdownAlwaysOnTop = ParseJsonBool(line);
+        OptionsWindowPlacement* optionWindows[] = { &s.preferencesWindow, &s.countdownOptionsWindow };
+        const wchar_t* optionPrefixes[] = { L"preferencesWindow", L"countdownOptionsWindow" };
+        for (int i = 0; i < 2; ++i) {
+            auto& window = *optionWindows[i];
+            std::wstring key = L"\"" + std::wstring(optionPrefixes[i]);
+            if (line.find(key + L"X\"") != std::wstring::npos) window.x = (int)ParseJsonNumber(line);
+            if (line.find(key + L"Y\"") != std::wstring::npos) window.y = (int)ParseJsonNumber(line);
+            if (line.find(key + L"Width\"") != std::wstring::npos) window.width = (int)ParseJsonNumber(line);
+            if (line.find(key + L"Height\"") != std::wstring::npos) window.height = (int)ParseJsonNumber(line);
+        }
         if (line.find(L"\"countdownShowShabbosEnd\"") != std::wstring::npos) s.countdownShowShabbosEnd = ParseJsonBool(line);
+        if (line.find(L"\"countdownShowPreviousZman\"") != std::wstring::npos) s.countdownShowPreviousZman = ParseJsonBool(line);
+        if (line.find(L"\"countdownShowPreviousElapsed\"") != std::wstring::npos) s.countdownShowPreviousElapsed = ParseJsonBool(line);
+        for (int i = 0; i < 6; ++i)
+            if (line.find(L"\"countdownRowOrder" + std::to_wstring(i) + L"\"") != std::wstring::npos)
+                s.countdownRowOrder[i] = (int)ParseJsonNumber(line);
         if (line.find(L"\"toastShowShabbosEnd\"") != std::wstring::npos) s.toastShowShabbosEnd = ParseJsonBool(line);
         if (line.find(L"\"toastShowYomTovEnd\"") != std::wstring::npos) s.toastShowYomTovEnd = ParseJsonBool(line);
         if (line.find(L"\"toastShowFastEnd\"") != std::wstring::npos) s.toastShowFastEnd = ParseJsonBool(line);
@@ -827,6 +870,8 @@ bool LoadSettings(AppSettings& s)
         if (line.find(L"\"windowW\"") != std::wstring::npos) s.windowW = (int)ParseJsonNumber(line);
         if (line.find(L"\"windowH\"") != std::wstring::npos) s.windowH = (int)ParseJsonNumber(line);
     }
+
+    NormalizeCountdownRowOrder(s.countdownRowOrder);
 
     // Migrate legacy single URL to new list
     if (s.webCalendars.empty() && !s.webCalendarUrl.empty())

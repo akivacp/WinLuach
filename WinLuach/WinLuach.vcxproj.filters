@@ -24,6 +24,15 @@
     <ClInclude Include="HebrewDate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SeasonalTzaisPersistence.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SeasonalTzais.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SeasonalTzaisDlg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Zmanim.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -10,6 +10,7 @@
 
 #include "pch.h"
 #include "ReminderEngine.h"
+#include "SeasonalTzais.h"
 #include "Zmanim.h"          // ZmanimResult, DisplayZmanimTimes, TimeOfDay, CalculateZmanim
 #include "HebrewDate.h"      // JDNToHebrew, JDNToGregorian, GregorianToJDN, GetTodayGregorian
 #include "HolidayEngine.h"   // GetHolidays, HolidayInfo, HOLIDAY_* flags
@@ -260,7 +261,8 @@ CTime ComputeReminderFireTime(const ReminderRule&       rule,
             GregorianDate g = ShiftDate(today, d);
             bool isDst = IsDST(g, location);
             ZmanimResult z = (d == 0) ? todayZ : CalculateZmanim(g, location, isDst);
-            DisplayZmanimTimes dz = todayDz; // custom zmanim only computed for today by caller; use for both days
+            DisplayZmanimTimes dz = todayDz;
+            dz.tzeit = CalculateConfiguredTzais(g,settings,location,z,isDst);
 
             TimeOfDay zt = ZmanTimeForTarget(rule.target, z, dz);
             if (!zt.IsValid()) continue;
@@ -309,7 +311,7 @@ CTime ComputeReminderFireTime(const ReminderRule&       rule,
         {
             bool isDst = IsDST(eveDate, location);
             ZmanimResult ez = CalculateZmanim(eveDate, location, isDst);
-            TimeOfDay zt = (rule.anchor == 1) ? ez.shkia : ez.tzeit_GRA; // 0=Tzais, 1=Shkia
+            TimeOfDay zt = (rule.anchor == 1) ? ez.shkia : CalculateConfiguredTzais(eveDate,settings,location,ez,isDst); // 0=custom Tzais, 1=Shkia
             anchorTime = DateTimeForZmanLocal(eveDate, zt);
         }
 
